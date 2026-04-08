@@ -648,9 +648,11 @@ private extension ReaderAPIAccountDelegate {
 				feed.name = subscription.name
 				feed.editedName = nil
 				feed.homePageURL = subscription.homePageURL
+				feed.faviconURL = subscription.iconURL
 			} else {
 				let feed = account.createFeed(with: subscription.name, url: subscription.url, feedID: subscription.feedID, homePageURL: subscription.homePageURL)
 				feed.externalID = subscription.feedID
+				feed.faviconURL = subscription.iconURL
 				account.addFeedToTreeAtTopLevel(feed)
 			}
 		}
