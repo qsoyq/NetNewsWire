@@ -43,10 +43,22 @@ extension Notification.Name {
 
 		NotificationCenter.default.addObserver(self, selector: #selector(imageDidBecomeAvailable(_:)), name: .imageDidBecomeAvailable, object: imageDownloader)
 		NotificationCenter.default.addObserver(self, selector: #selector(handleLowMemory(_:)), name: .lowMemory, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(feedSettingDidChange(_:)), name: .feedSettingDidChange, object: nil)
 	}
 
 	@objc func handleLowMemory(_ notification: Notification) {
 		cache.removeAll()
+	}
+
+	@objc func feedSettingDidChange(_ notification: Notification) {
+		guard let feed = notification.object as? Feed,
+			  let key = notification.userInfo?[Feed.SettingUserInfoKey] as? Feed.SettingKey,
+			  key == .faviconURL else {
+			return
+		}
+		cache[feed] = nil
+		feedURLToIconURLCache[feed.url] = nil
+		feedURLToIconURLCacheDirty = true
 	}
 
 	func icon(for feed: Feed) -> IconImage? {
@@ -81,6 +93,27 @@ extension Notification.Name {
 			}
 		}
 
+		@MainActor func checkFaviconURL() {
+			if let faviconURL = feed.faviconURL {
+				icon(forURL: faviconURL, feed: feed) { (image) in
+					Task { @MainActor in
+						if self.cache[feed] != nil {
+							return // already cached
+						}
+						if let image = image {
+							self.cache[feed] = IconImage(image)
+							self.cacheIconURLForFeedURL(iconURL: faviconURL, feedURL: feed.url)
+							self.postFeedIconDidBecomeAvailableNotification(feed)
+						} else {
+							checkHomePageURL()
+						}
+					}
+				}
+			} else {
+				checkHomePageURL()
+			}
+		}
+
 		@MainActor func checkFeedIconURL() {
 			if let iconURL = feed.iconURL {
 				icon(forURL: iconURL, feed: feed) { (image) in
@@ -93,12 +126,12 @@ extension Notification.Name {
 							self.cacheIconURLForFeedURL(iconURL: iconURL, feedURL: feed.url)
 							self.postFeedIconDidBecomeAvailableNotification(feed)
 						} else {
-							checkHomePageURL()
+							checkFaviconURL()
 						}
 					}
 				}
 			} else {
-				checkHomePageURL()
+				checkFaviconURL()
 			}
 		}
 
