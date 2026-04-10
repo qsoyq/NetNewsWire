@@ -87,6 +87,9 @@ extension Notification.Name {
 		NotificationCenter.default.addObserver(self, selector: #selector(feedSettingDidChange(_:)), name: .feedSettingDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(displayNameDidChange(_:)), name: .DisplayNameDidChange, object: nil)
 		DistributedNotificationCenter.default().addObserver(self, selector: #selector(appleSideBarDefaultIconSizeChanged(_:)), name: .appleSideBarDefaultIconSizeChanged, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(hideReadFoldersDidChange(_:)), name: UserDefaults.didChangeNotification, object: nil)
+
+		treeControllerDelegate.isReadFoldersFiltered = AppDefaults.shared.hideReadFolders
 
 		outlineView.reloadData()
 
@@ -239,6 +242,14 @@ extension Notification.Name {
 	@objc func feedIconDidBecomeAvailable(_ note: Notification) {
 		guard let feed = note.userInfo?[UserInfoKey.feed] as? Feed else { return }
 		configureCellsForRepresentedObject(feed)
+	}
+
+	@objc func hideReadFoldersDidChange(_ note: Notification) {
+		let newValue = AppDefaults.shared.hideReadFolders
+		if treeControllerDelegate.isReadFoldersFiltered != newValue {
+			treeControllerDelegate.isReadFoldersFiltered = newValue
+			rebuildTreeAndRestoreSelection()
+		}
 	}
 
 	@objc func feedSettingDidChange(_ note: Notification) {

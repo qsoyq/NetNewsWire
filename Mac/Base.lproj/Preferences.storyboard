@@ -363,11 +363,11 @@
             <objects>
                 <viewController storyboardIdentifier="Advanced" id="GNh-Wp-giO" customClass="AdvancedPreferencesViewController" customModule="NetNewsWire" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" id="Hij-7D-6Pw">
-                        <rect key="frame" x="0.0" y="0.0" width="450" height="275"/>
+                        <rect key="frame" x="0.0" y="0.0" width="450" height="315"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <subviews>
                             <customView translatesAutoresizingMaskIntoConstraints="NO" id="uJD-OF-YVY">
-                                <rect key="frame" x="60" y="20" width="330" height="235"/>
+                                <rect key="frame" x="60" y="20" width="330" height="275"/>
                                 <subviews>
                                     <textField focusRingType="none" horizontalHuggingPriority="1000" verticalHuggingPriority="1000" horizontalCompressionResistancePriority="1000" verticalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="EH5-aS-E55">
                                         <rect key="frame" x="-2" y="219" width="87" height="16"/>
@@ -465,13 +465,41 @@
                                         </connections>
                                     </button>
                                     <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="uuc-f2-OFX">
-                                        <rect key="frame" x="91" y="1" width="138" height="24"/>
+                                        <rect key="frame" x="91" y="41" width="138" height="24"/>
                                         <buttonCell key="cell" type="push" title="Privacy Policy" bezelStyle="rounded" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="kSv-Wu-NYx">
                                             <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                             <font key="font" metaFont="system"/>
                                         </buttonCell>
                                         <connections>
                                             <action selector="showPrivacyPolicy:" target="VX1-M3-K0J" id="s1x-cP-hGd"/>
+                                        </connections>
+                                    </button>
+                                    <textField focusRingType="none" horizontalHuggingPriority="1000" verticalHuggingPriority="1000" horizontalCompressionResistancePriority="1000" verticalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="hRF-lb-001">
+                                        <rect key="frame" x="20" y="5" width="65" height="16"/>
+                                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="right" title="Sidebar:" id="hRF-lc-002">
+                                            <font key="font" metaFont="system"/>
+                                            <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
+                                            <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
+                                        </textFieldCell>
+                                    </textField>
+                                    <button horizontalHuggingPriority="1000" verticalHuggingPriority="1000" horizontalCompressionResistancePriority="1000" verticalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="hRF-cb-003">
+                                        <rect key="frame" x="91" y="5" width="239" height="16"/>
+                                        <buttonCell key="cell" type="check" title="Hide folders with no unread items" bezelStyle="regularSquare" imagePosition="left" inset="2" id="hRF-cc-004">
+                                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                            <font key="font" metaFont="system"/>
+                                        </buttonCell>
+                                        <connections>
+                                            <binding destination="hRF-dc-005" name="value" keyPath="values.hideReadFolders" id="hRF-bd-006">
+                                                <dictionary key="options">
+                                                    <bool key="NSAllowsEditingMultipleValuesSelection" value="NO"/>
+                                                    <bool key="NSConditionallySetsEnabled" value="NO"/>
+                                                    <integer key="NSMultipleValuesPlaceholder" value="0"/>
+                                                    <integer key="NSNoSelectionPlaceholder" value="0"/>
+                                                    <integer key="NSNotApplicablePlaceholder" value="0"/>
+                                                    <integer key="NSNullPlaceholder" value="0"/>
+                                                    <bool key="NSRaisesForNotApplicableKeys" value="NO"/>
+                                                </dictionary>
+                                            </binding>
                                         </connections>
                                     </button>
                                 </subviews>
@@ -490,7 +518,13 @@
                                     <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="QCu-J4-0yV" secondAttribute="trailing" id="QVh-z8-aNJ"/>
                                     <constraint firstItem="UHg-1l-FlD" firstAttribute="leading" secondItem="CeE-AE-hRG" secondAttribute="leading" id="QlP-bI-uga"/>
                                     <constraint firstItem="EH5-aS-E55" firstAttribute="top" secondItem="uJD-OF-YVY" secondAttribute="top" id="VDU-as-fdx"/>
-                                    <constraint firstAttribute="bottom" secondItem="uuc-f2-OFX" secondAttribute="bottom" constant="1" id="YA7-Xm-cFO"/>
+                                    <constraint firstAttribute="bottom" secondItem="hRF-cb-003" secondAttribute="bottom" constant="5" id="YA7-Xm-cFO"/>
+                                    <constraint firstItem="hRF-cb-003" firstAttribute="top" secondItem="uuc-f2-OFX" secondAttribute="bottom" constant="20" symbolic="YES" id="hRF-c1-007"/>
+                                    <constraint firstItem="hRF-cb-003" firstAttribute="firstBaseline" secondItem="hRF-lb-001" secondAttribute="firstBaseline" id="hRF-c3-009"/>
+                                    <constraint firstItem="hRF-lb-001" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="uJD-OF-YVY" secondAttribute="leading" id="hRF-c4-010"/>
+                                    <constraint firstItem="hRF-lb-001" firstAttribute="trailing" secondItem="SUN-k3-ZEb" secondAttribute="trailing" id="hRF-c5-011"/>
+                                    <constraint firstItem="hRF-cb-003" firstAttribute="leading" secondItem="UHg-1l-FlD" secondAttribute="leading" id="hRF-c6-012"/>
+                                    <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="hRF-cb-003" secondAttribute="trailing" id="hRF-c7-013"/>
                                     <constraint firstItem="Q6M-Iz-Ypx" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="uJD-OF-YVY" secondAttribute="leading" id="Ygv-ha-RLn"/>
                                     <constraint firstItem="uuc-f2-OFX" firstAttribute="top" secondItem="UHg-1l-FlD" secondAttribute="bottom" constant="20" symbolic="YES" id="aqe-xY-QDd"/>
                                     <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="TKI-a9-bRX" secondAttribute="trailing" id="bLP-TU-TeL"/>
@@ -524,6 +558,7 @@
                 <customObject id="VX1-M3-K0J" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
                 <userDefaultsController id="Y8q-yi-F5Z"/>
                 <userDefaultsController id="mV3-0T-XFc"/>
+                <userDefaultsController id="hRF-dc-005"/>
             </objects>
             <point key="canvasLocation" x="-36" y="422"/>
         </scene>

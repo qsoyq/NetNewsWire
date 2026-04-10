@@ -14,6 +14,7 @@ import Account
 @MainActor final class SidebarTreeControllerDelegate: TreeControllerDelegate {
 	private var filterExceptions = Set<SidebarItemIdentifier>()
 	var isReadFiltered = false
+	var isReadFoldersFiltered = false
 
 	func addFilterException(_ feedID: SidebarItemIdentifier) {
 		filterExceptions.insert(feedID)
@@ -73,7 +74,7 @@ private extension SidebarTreeControllerDelegate {
 
 		if let folders = container.folders {
 			for folder in folders {
-				if let sidebarItemID = folder.sidebarItemID, !(!filterExceptions.contains(sidebarItemID) && isReadFiltered && folder.unreadCount == 0) {
+				if let sidebarItemID = folder.sidebarItemID, !(!filterExceptions.contains(sidebarItemID) && (isReadFiltered || isReadFoldersFiltered) && folder.unreadCount == 0) {
 					children.append(folder)
 				}
 			}

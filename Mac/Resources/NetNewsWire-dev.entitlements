@@ -4,6 +4,10 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(APP_GROUP_ID)</string>
+	</array>
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
@@ -14,12 +18,6 @@
 	<array>
 		<string>com.red-sweater.marsedit4</string>
 		<string>com.red-sweater.marsedit5</string>
-	</array>
-	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
-	<string>$(TeamIdentifierPrefix)$(ORGANIZATION_IDENTIFIER).NetNewsWire</string>
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>$(APP_GROUP_ID)</string>
 	</array>
 </dict>
 </plist>
