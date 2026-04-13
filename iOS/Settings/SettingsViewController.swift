@@ -43,6 +43,7 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var showFullscreenArticlesSwitch: UISwitch!
 	@IBOutlet var colorPaletteDetailLabel: UILabel!
 	@IBOutlet var openLinksInNetNewsWire: UISwitch!
+	@IBOutlet var cacheVideoContentSwitch: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
 
 	var scrollToArticlesSection = false
@@ -107,6 +108,8 @@ final class SettingsViewController: UITableViewController {
 			enableJavaScriptSwitch.isOn = false
 		}
 
+		cacheVideoContentSwitch.isOn = AppDefaults.shared.cacheVideoContent
+
 		colorPaletteDetailLabel.text = String(describing: AppDefaults.userInterfaceColorPalette)
 
 		openLinksInNetNewsWire.isOn = !AppDefaults.shared.useSystemBrowser
@@ -150,7 +153,7 @@ final class SettingsViewController: UITableViewController {
 			}
 			return defaultNumberOfRows
 		case .articles:
-			return traitCollection.userInterfaceIdiom == .phone ? 5 : 4
+			return traitCollection.userInterfaceIdiom == .phone ? 7 : 6
 		case .troubleshooting:
 			let defaultNumberOfRows = super.tableView(tableView, numberOfRowsInSection: section)
 			if !AccountManager.shared.hasiCloudAccount {
@@ -237,6 +240,9 @@ final class SettingsViewController: UITableViewController {
 			case 0:
 				let articleThemes = UIStoryboard.settings.instantiateController(ofType: ArticleThemesTableViewController.self)
 				self.navigationController?.pushViewController(articleThemes, animated: true)
+			case 5:
+				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
+				clearVideoCache()
 			default:
 				break
 			}
@@ -358,6 +364,10 @@ final class SettingsViewController: UITableViewController {
 		} else {
 			AppDefaults.shared.useSystemBrowser = true
 		}
+	}
+
+	@IBAction func switchCacheVideoContent(_ sender: Any) {
+		AppDefaults.shared.cacheVideoContent = cacheVideoContentSwitch.isOn
 	}
 
 	@IBAction func switchJavaScriptPreference(_ sender: Any) {
@@ -529,6 +539,22 @@ private extension SettingsViewController {
 		let docPicker = UIDocumentPickerViewController(forExporting: [tempFile])
 		docPicker.modalPresentationStyle = .formSheet
 		self.present(docPicker, animated: true)
+	}
+
+	func clearVideoCache() {
+		let title = NSLocalizedString("Clear Video Cache", comment: "Clear Video Cache")
+		let message = NSLocalizedString("Are you sure you want to clear the video cache?", comment: "Clear Video Cache Message")
+		let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+
+		let cancelTitle = NSLocalizedString("Cancel", comment: "Cancel")
+		alert.addAction(UIAlertAction(title: cancelTitle, style: .cancel))
+
+		let clearTitle = NSLocalizedString("Clear", comment: "Clear")
+		alert.addAction(UIAlertAction(title: clearTitle, style: .destructive) { _ in
+			VideoCacheDatabase.shared.clearAll()
+		})
+
+		present(alert, animated: true)
 	}
 
 	func openURL(_ urlString: String) {

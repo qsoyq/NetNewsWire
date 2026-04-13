@@ -26,6 +26,7 @@ import WebKit
 		configuration.defaultWebpagePreferences = webpagePreferences
 		configuration.mediaTypesRequiringUserActionForPlayback = .all
 		configuration.setURLSchemeHandler(urlSchemeHandler, forURLScheme: ArticleRenderer.imageIconScheme)
+		configuration.setURLSchemeHandler(VideoCacheSchemeHandler.shared, forURLScheme: VideoCacheSchemeHandler.scheme)
 		configuration.userContentController = userContentController
 
 #if os(iOS)

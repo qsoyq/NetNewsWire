@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>$(APP_GROUP_ID)</string>
+		<string>group.com.qsoyq-uk.NetNewsWire.iOS-DEBUG</string>
 	</array>
 	<key>keychain-access-groups</key>
 	<array>

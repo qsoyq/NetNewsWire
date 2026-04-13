@@ -67,6 +67,7 @@ final class AppDefaults: Sendable {
 		static let currentThemeName = "currentThemeName"
 		static let articleContentJavascriptEnabled = "articleContentJavascriptEnabled"
 		static let refreshFeeds = "refreshFeeds"
+		static let cacheVideoContent = "cacheVideoContent"
 		static let hideReadFeeds = "hideReadFeeds"
 		static let isShowingExtractedArticle = "isShowingExtractedArticle"
 		static let articleWindowScrollY = "articleWindowScrollY"
@@ -168,6 +169,15 @@ final class AppDefaults: Sendable {
 		}
 		set {
 			AppDefaults.setBool(for: Key.refreshFeeds, newValue)
+		}
+	}
+
+	var cacheVideoContent: Bool {
+		get {
+			return AppDefaults.bool(for: Key.cacheVideoContent)
+		}
+		set {
+			AppDefaults.setBool(for: Key.cacheVideoContent, newValue)
 		}
 	}
 
@@ -400,6 +410,7 @@ final class AppDefaults: Sendable {
 	@MainActor static func registerDefaults() {
 		let defaults: [String: Any] = [Key.userInterfaceColorPalette: UserInterfaceColorPalette.automatic.rawValue,
 										Key.refreshFeeds: true,
+										Key.cacheVideoContent: false,
 										Key.timelineGroupByFeed: false,
 										Key.refreshClearsReadArticles: false,
 										Key.timelineNumberOfLines: 2,

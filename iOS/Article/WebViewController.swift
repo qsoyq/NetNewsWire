@@ -615,6 +615,14 @@ private extension WebViewController {
 //		try? html.write(to: fileURL, atomically: true, encoding: .utf8)
 //		print("article.html written to \(fileURL.path)")
 
+		if AppDefaults.shared.cacheVideoContent {
+			let (rewrittenHTML, uncachedVideoURLs) = VideoCacheHTMLRewriter.rewriteForCaching(html)
+			html = rewrittenHTML
+			if !uncachedVideoURLs.isEmpty {
+				VideoCacheSchemeHandler.cacheURLsInBackground(uncachedVideoURLs)
+			}
+		}
+
 		WebViewConfiguration.addContentBlockingRules(to: webView)
 		webView.loadHTMLString(html, baseURL: ArticleRenderer.page.baseURL)
 	}
