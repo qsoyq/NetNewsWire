@@ -958,7 +958,6 @@
 					849C645F1ED37A5D003D8FC0 = {
 						CreatedOnToolsVersion = 8.2.1;
 						LastSwiftMigration = 1620;
-						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
 							com.apple.HardenedRuntime = {
 								enabled = 1;
@@ -1345,8 +1344,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSwidgetextension_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
 			};
 			name = Debug;
 		};
@@ -1355,8 +1352,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSwidgetextension_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
 			};
 			name = Release;
 		};
@@ -1381,9 +1376,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSintentextension_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS-DEBUG.IntentsExtension";
 			};
 			name = Debug;
 		};
@@ -1392,8 +1384,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSintentextension_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
 			};
 			name = Release;
 		};
@@ -1402,8 +1392,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSshareextension_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
 			};
 			name = Debug;
 		};
@@ -1412,8 +1400,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSshareextension_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
 			};
 			name = Release;
 		};
@@ -1454,9 +1440,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSapp_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS-DEBUG";
 			};
 			name = Debug;
 		};
@@ -1465,9 +1448,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_iOSapp_target.xcconfig;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				ORGANIZATION_IDENTIFIER = "com.qsoyq-uk";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS";
 			};
 			name = Release;
 		};
@@ -1492,7 +1472,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_macapp_target.xcconfig;
 			buildSettings = {
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 			};
 			name = Debug;
 		};
@@ -1501,7 +1480,6 @@
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
 			baseConfigurationReferenceRelativePath = NetNewsWire_macapp_target.xcconfig;
 			buildSettings = {
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 			};
 			name = Release;
 		};
