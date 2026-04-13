@@ -560,6 +560,12 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 
 	@IBAction func toggleReadArticlesFilter(_ sender: Any?) {
 		timelineContainerViewController?.toggleReadFilter()
+
+		// Sync sidebar's read filter state with timeline's new state
+		if let newFilterState = timelineContainerViewController?.isReadFiltered,
+		   sidebarViewController?.isReadFiltered != newFilterState {
+			sidebarViewController?.toggleReadFilter()
+		}
 	}
 
 	@objc func selectArticleTheme(_ menuItem: NSMenuItem) {
