@@ -8,6 +8,7 @@
 
 import UIKit
 @preconcurrency import WebKit
+import AVFoundation
 import RSCore
 import RSWeb
 import Account
@@ -370,6 +371,11 @@ extension WebViewController: WKNavigationDelegate {
 			if index != 0, let oldWebView = view as? PreloadedWebView {
 				oldWebView.removeFromSuperview()
 			}
+		}
+
+		if AppDefaults.shared.autoFullscreenVideo {
+			try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+			webView.evaluateJavaScript("setupVideoAutoFullscreen();")
 		}
 	}
 

@@ -44,6 +44,7 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var colorPaletteDetailLabel: UILabel!
 	@IBOutlet var openLinksInNetNewsWire: UISwitch!
 	@IBOutlet var cacheVideoContentSwitch: UISwitch!
+	@IBOutlet var autoFullscreenVideoSwitch: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
 
 	var scrollToArticlesSection = false
@@ -109,6 +110,7 @@ final class SettingsViewController: UITableViewController {
 		}
 
 		cacheVideoContentSwitch.isOn = AppDefaults.shared.cacheVideoContent
+		autoFullscreenVideoSwitch.isOn = AppDefaults.shared.autoFullscreenVideo
 
 		colorPaletteDetailLabel.text = String(describing: AppDefaults.userInterfaceColorPalette)
 
@@ -153,7 +155,7 @@ final class SettingsViewController: UITableViewController {
 			}
 			return defaultNumberOfRows
 		case .articles:
-			return traitCollection.userInterfaceIdiom == .phone ? 7 : 6
+			return traitCollection.userInterfaceIdiom == .phone ? 8 : 7
 		case .troubleshooting:
 			let defaultNumberOfRows = super.tableView(tableView, numberOfRowsInSection: section)
 			if !AccountManager.shared.hasiCloudAccount {
@@ -240,7 +242,7 @@ final class SettingsViewController: UITableViewController {
 			case 0:
 				let articleThemes = UIStoryboard.settings.instantiateController(ofType: ArticleThemesTableViewController.self)
 				self.navigationController?.pushViewController(articleThemes, animated: true)
-			case 5:
+			case 6:
 				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
 				clearVideoCache()
 			default:
@@ -368,6 +370,10 @@ final class SettingsViewController: UITableViewController {
 
 	@IBAction func switchCacheVideoContent(_ sender: Any) {
 		AppDefaults.shared.cacheVideoContent = cacheVideoContentSwitch.isOn
+	}
+
+	@IBAction func switchAutoFullscreenVideo(_ sender: Any) {
+		AppDefaults.shared.autoFullscreenVideo = autoFullscreenVideoSwitch.isOn
 	}
 
 	@IBAction func switchJavaScriptPreference(_ sender: Any) {

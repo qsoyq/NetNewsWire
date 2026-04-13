@@ -134,6 +134,17 @@ function showFeedInspectorSetup() {
 	}
 }
 
+function setupVideoAutoFullscreen() {
+	document.querySelectorAll("video").forEach(element => {
+		if (element.classList.contains("nnwAnimatedGIF")) return;
+		element.addEventListener("playing", function() {
+			if (element.webkitEnterFullscreen && (!element.webkitPresentationMode || element.webkitPresentationMode === "inline")) {
+				element.webkitEnterFullscreen();
+			}
+		});
+	});
+}
+
 function postRenderProcessing() {
 	ImageViewer.init();
 	showFeedInspectorSetup();

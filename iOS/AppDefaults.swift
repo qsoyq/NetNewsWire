@@ -68,6 +68,7 @@ final class AppDefaults: Sendable {
 		static let articleContentJavascriptEnabled = "articleContentJavascriptEnabled"
 		static let refreshFeeds = "refreshFeeds"
 		static let cacheVideoContent = "cacheVideoContent"
+		static let autoFullscreenVideo = "autoFullscreenVideo"
 		static let hideReadFeeds = "hideReadFeeds"
 		static let isShowingExtractedArticle = "isShowingExtractedArticle"
 		static let articleWindowScrollY = "articleWindowScrollY"
@@ -178,6 +179,15 @@ final class AppDefaults: Sendable {
 		}
 		set {
 			AppDefaults.setBool(for: Key.cacheVideoContent, newValue)
+		}
+	}
+
+	var autoFullscreenVideo: Bool {
+		get {
+			return AppDefaults.bool(for: Key.autoFullscreenVideo)
+		}
+		set {
+			AppDefaults.setBool(for: Key.autoFullscreenVideo, newValue)
 		}
 	}
 
@@ -411,6 +421,7 @@ final class AppDefaults: Sendable {
 		let defaults: [String: Any] = [Key.userInterfaceColorPalette: UserInterfaceColorPalette.automatic.rawValue,
 										Key.refreshFeeds: true,
 										Key.cacheVideoContent: false,
+									Key.autoFullscreenVideo: false,
 										Key.timelineGroupByFeed: false,
 										Key.refreshClearsReadArticles: false,
 										Key.timelineNumberOfLines: 2,

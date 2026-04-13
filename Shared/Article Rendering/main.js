@@ -72,7 +72,17 @@ function inlineVideos() {
 		element.setAttribute("playsinline", true);
 		if (!element.classList.contains("nnwAnimatedGIF")) {
 			element.setAttribute("controls", true);
+			element.autoPictureInPicture = true;
 			element.removeAttribute("autoplay");
+		}
+	});
+}
+
+function enableIframePiP() {
+	document.querySelectorAll("iframe").forEach(element => {
+		var allow = element.getAttribute("allow") || "";
+		if (allow.indexOf("picture-in-picture") === -1) {
+			element.setAttribute("allow", allow ? allow + "; picture-in-picture" : "picture-in-picture");
 		}
 	});
 }
@@ -160,6 +170,7 @@ function processPage() {
 	wrapFrames();
 	wrapTables();
 	inlineVideos();
+	enableIframePiP();
 	stripStyles();
 	constrainBodyRelativeIframes();
 	convertImgSrc();

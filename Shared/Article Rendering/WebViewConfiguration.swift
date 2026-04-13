@@ -31,6 +31,7 @@ import WebKit
 
 #if os(iOS)
 		configuration.allowsInlineMediaPlayback = true
+		configuration.allowsPictureInPictureMediaPlayback = true
 #endif
 
 		return configuration

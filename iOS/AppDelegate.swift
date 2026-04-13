@@ -63,6 +63,7 @@ import ErrorLog
 		Task {
 			await WebViewConfiguration.compileContentBlockingRules()
 		}
+
 		AppDefaults.registerDefaults()
 
 		let isFirstRun = AppDefaults.shared.isFirstRun
