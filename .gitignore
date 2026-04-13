@@ -79,3 +79,7 @@ fastlane/test_output
 
 .claude/
 
+.alma-snapshots
+.codesight
+.cursorrules
+.feature-list
