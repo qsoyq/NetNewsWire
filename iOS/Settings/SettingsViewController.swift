@@ -34,6 +34,7 @@ final class SettingsViewController: UITableViewController {
 
 	private weak var opmlAccount: Account?
 
+	@IBOutlet var refreshFeedsSwitch: UISwitch!
 	@IBOutlet var timelineSortOrderSwitch: UISwitch!
 	@IBOutlet var groupByFeedSwitch: UISwitch!
 	@IBOutlet var refreshClearsReadArticlesSwitch: UISwitch!
@@ -65,6 +66,8 @@ final class SettingsViewController: UITableViewController {
 
 	override func viewWillAppear(_ animated: Bool) {
 		super.viewWillAppear(animated)
+
+		refreshFeedsSwitch.isOn = AppDefaults.shared.refreshFeeds
 
 		if AppDefaults.shared.timelineSortDirection == .orderedAscending {
 			timelineSortOrderSwitch.isOn = true
@@ -223,7 +226,7 @@ final class SettingsViewController: UITableViewController {
 			}
 		case .timeline:
 			switch indexPath.row {
-			case 3:
+			case 4:
 				let timeline = UIStoryboard.settings.instantiateController(ofType: TimelineCustomizerCollectionViewController.self)
 				self.navigationController?.pushViewController(timeline, animated: true)
 			default:
@@ -303,6 +306,10 @@ final class SettingsViewController: UITableViewController {
 
 	@IBAction func done(_ sender: Any) {
 		dismiss(animated: true)
+	}
+
+	@IBAction func switchRefreshFeeds(_ sender: Any) {
+		AppDefaults.shared.refreshFeeds = refreshFeedsSwitch.isOn
 	}
 
 	@IBAction func switchTimelineOrder(_ sender: Any) {

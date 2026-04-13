@@ -190,14 +190,16 @@ import ErrorLog
 #endif
 		ArticleStatusSyncTimer.shared.update()
 
-		if let lastRefresh = AppDefaults.shared.lastRefresh {
-			if Date() > lastRefresh.addingTimeInterval(15 * 60) {
-				AccountManager.shared.refreshAllWithoutWaiting(errorHandler: ErrorHandler.log)
+		if AppDefaults.shared.refreshFeeds {
+			if let lastRefresh = AppDefaults.shared.lastRefresh {
+				if Date() > lastRefresh.addingTimeInterval(15 * 60) {
+					AccountManager.shared.refreshAllWithoutWaiting(errorHandler: ErrorHandler.log)
+				} else {
+					AccountManager.shared.syncArticleStatusAllWithoutWaiting()
+				}
 			} else {
-				AccountManager.shared.syncArticleStatusAllWithoutWaiting()
+				AccountManager.shared.refreshAllWithoutWaiting(errorHandler: ErrorHandler.log)
 			}
-		} else {
-			AccountManager.shared.refreshAllWithoutWaiting(errorHandler: ErrorHandler.log)
 		}
 	}
 
@@ -379,6 +381,7 @@ private extension AppDelegate {
 
 	/// Schedule a background app refresh based on `AppDefaults.refreshInterval`.
 	nonisolated func scheduleBackgroundFeedRefresh() {
+		guard AppDefaults.shared.refreshFeeds else { return }
 		// We send this to a dedicated serial queue because as of 11/05/19 on iOS 13.2 the call to the
 		// task scheduler can hang indefinitely.
 		backgroundTaskDispatchQueue.async {

@@ -117,6 +117,39 @@
                             </tableViewSection>
                             <tableViewSection headerTitle="Timeline" id="9Pk-Y8-JVJ">
                                 <cells>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="rFd-K9-xQ3" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="478.5" width="374" height="51.5"/>
+                                        <autoresizingMask key="autoresizingMask"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="rFd-K9-xQ3" id="pLm-V2-nR7">
+                                            <rect key="frame" x="0.0" y="0.0" width="374" height="51.5"/>
+                                            <autoresizingMask key="autoresizingMask"/>
+                                            <subviews>
+                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="250" text="Auto Refresh Feeds" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="qWe-J3-mT4" customClass="VibrantLabel" customModule="NetNewsWire" customModuleProvider="target">
+                                                    <rect key="frame" x="20" y="15" width="112.5" height="21.5"/>
+                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
+                                                    <nil key="textColor"/>
+                                                    <nil key="highlightedColor"/>
+                                                </label>
+                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" on="YES" translatesAutoresizingMaskIntoConstraints="NO" id="bNx-R4-wS8">
+                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
+                                                    <color key="onTintColor" name="primaryAccentColor"/>
+                                                    <connections>
+                                                        <action selector="switchRefreshFeeds:" destination="a0p-rk-skQ" eventType="valueChanged" id="hYe-P5-kL2"/>
+                                                    </connections>
+                                                </switch>
+                                            </subviews>
+                                            <constraints>
+                                                <constraint firstAttribute="trailingMargin" secondItem="bNx-R4-wS8" secondAttribute="trailing" constant="0" id="aB1-cD-eF2"/>
+                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="bNx-R4-wS8" secondAttribute="bottom" constant="6" id="gH3-iJ-kL4"/>
+                                                <constraint firstItem="bNx-R4-wS8" firstAttribute="top" relation="greaterThanOrEqual" secondItem="pLm-V2-nR7" secondAttribute="top" constant="6" id="mN5-oP-qR6"/>
+                                                <constraint firstItem="bNx-R4-wS8" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="qWe-J3-mT4" secondAttribute="trailing" constant="8" id="sT7-uV-wX8"/>
+                                                <constraint firstItem="qWe-J3-mT4" firstAttribute="bottom" secondItem="pLm-V2-nR7" secondAttribute="bottomMargin" id="yZ9-aB-cD0"/>
+                                                <constraint firstItem="bNx-R4-wS8" firstAttribute="centerY" secondItem="pLm-V2-nR7" secondAttribute="centerY" id="eF1-gH-iJ2"/>
+                                                <constraint firstItem="qWe-J3-mT4" firstAttribute="leading" secondItem="pLm-V2-nR7" secondAttribute="leadingMargin" id="kL3-mN-oP4"/>
+                                                <constraint firstItem="qWe-J3-mT4" firstAttribute="top" secondItem="pLm-V2-nR7" secondAttribute="topMargin" id="qR5-sT-uV6"/>
+                                            </constraints>
+                                        </tableViewCellContentView>
+                                    </tableViewCell>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="MpA-w1-Wwh" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
                                         <rect key="frame" x="20" y="478.5" width="374" height="51.5"/>
                                         <autoresizingMask key="autoresizingMask"/>
@@ -611,6 +644,7 @@
                         <outlet property="groupByFeedSwitch" destination="JNi-Wz-RbU" id="TwH-Kd-o6N"/>
                         <outlet property="openLinksInNetNewsWire" destination="dhR-L2-PX3" id="z1b-pX-bwG"/>
                         <outlet property="refreshClearsReadArticlesSwitch" destination="duV-CN-JmH" id="xTd-jF-Ei1"/>
+                        <outlet property="refreshFeedsSwitch" destination="bNx-R4-wS8" id="wY0-zA-bC1"/>
                         <outlet property="showFullscreenArticlesSwitch" destination="2Md-2E-7Z4" id="lEN-VP-wEO"/>
                         <outlet property="timelineSortOrderSwitch" destination="Keq-Np-l9O" id="Zm7-HG-r5h"/>
                     </connections>
