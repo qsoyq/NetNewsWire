@@ -187,7 +187,7 @@ extension Notification.Name {
 		guard notification.object is AccountManager else {
 			return
 		}
-		if isReadFiltered {
+		if isReadFiltered || treeControllerDelegate.isReadFoldersFiltered {
 			rebuildTreeAndRestoreSelection()
 		}
 	}
@@ -207,7 +207,7 @@ extension Notification.Name {
 			return
 		}
 
-		if isReadFiltered {
+		if isReadFiltered || treeControllerDelegate.isReadFoldersFiltered {
 			queueRebuildTreeAndRestoreSelection()
 		}
 	}
