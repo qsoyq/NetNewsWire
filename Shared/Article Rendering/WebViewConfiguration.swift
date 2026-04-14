@@ -32,6 +32,9 @@ import WebKit
 #if os(iOS)
 		configuration.allowsInlineMediaPlayback = true
 		configuration.allowsPictureInPictureMediaPlayback = true
+		if AppDefaults.shared.autoplayVideo {
+			configuration.mediaTypesRequiringUserActionForPlayback = []
+		}
 #endif
 
 		return configuration

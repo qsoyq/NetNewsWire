@@ -26,6 +26,7 @@ final class WebViewController: UIViewController {
 		static let imageWasClicked = "imageWasClicked"
 		static let imageWasShown = "imageWasShown"
 		static let showFeedInspector = "showFeedInspector"
+		static let videoEnded = "videoEnded"
 	}
 
 	private var topShowBarsView: UIView!
@@ -377,6 +378,12 @@ extension WebViewController: WKNavigationDelegate {
 			try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
 			webView.evaluateJavaScript("setupVideoAutoFullscreen();")
 		}
+		if AppDefaults.shared.autoplayVideo {
+			webView.evaluateJavaScript("setupVideoAutoplay();")
+		}
+		if AppDefaults.shared.autoGotoNextAfterVideo {
+			webView.evaluateJavaScript("setupVideoEndedHandler();")
+		}
 	}
 
 	func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
@@ -472,8 +479,20 @@ extension WebViewController: WKScriptMessageHandler {
 			if let feed = article?.feed {
 				coordinator.showFeedInspector(for: feed)
 			}
+		case MessageName.videoEnded:
+			handleVideoEnded()
 		default:
 			return
+		}
+	}
+
+	private func handleVideoEnded() {
+		if #available(iOS 16.0, *), let webView, webView.fullscreenState != .notInFullscreen {
+			webView.closeAllMediaPresentations {
+				self.coordinator.selectNextArticle()
+			}
+		} else {
+			coordinator.selectNextArticle()
 		}
 	}
 
@@ -570,11 +589,13 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.imageWasClicked)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.imageWasShown)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.showFeedInspector)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.videoEnded)
 
 				// Add handlers
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasClicked)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasShown)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.showFeedInspector)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.videoEnded)
 
 				self.renderPage(webView)
 			}

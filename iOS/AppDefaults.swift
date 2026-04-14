@@ -69,6 +69,8 @@ final class AppDefaults: Sendable {
 		static let refreshFeeds = "refreshFeeds"
 		static let cacheVideoContent = "cacheVideoContent"
 		static let autoFullscreenVideo = "autoFullscreenVideo"
+		static let autoplayVideo = "autoplayVideo"
+		static let autoGotoNextAfterVideo = "autoGotoNextAfterVideo"
 		static let hideReadFeeds = "hideReadFeeds"
 		static let isShowingExtractedArticle = "isShowingExtractedArticle"
 		static let articleWindowScrollY = "articleWindowScrollY"
@@ -188,6 +190,24 @@ final class AppDefaults: Sendable {
 		}
 		set {
 			AppDefaults.setBool(for: Key.autoFullscreenVideo, newValue)
+		}
+	}
+
+	var autoplayVideo: Bool {
+		get {
+			return AppDefaults.bool(for: Key.autoplayVideo)
+		}
+		set {
+			AppDefaults.setBool(for: Key.autoplayVideo, newValue)
+		}
+	}
+
+	var autoGotoNextAfterVideo: Bool {
+		get {
+			return AppDefaults.bool(for: Key.autoGotoNextAfterVideo)
+		}
+		set {
+			AppDefaults.setBool(for: Key.autoGotoNextAfterVideo, newValue)
 		}
 	}
 
@@ -422,6 +442,8 @@ final class AppDefaults: Sendable {
 										Key.refreshFeeds: true,
 										Key.cacheVideoContent: false,
 									Key.autoFullscreenVideo: false,
+									Key.autoplayVideo: false,
+									Key.autoGotoNextAfterVideo: false,
 										Key.timelineGroupByFeed: false,
 										Key.refreshClearsReadArticles: false,
 										Key.timelineNumberOfLines: 2,

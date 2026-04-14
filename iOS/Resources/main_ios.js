@@ -145,6 +145,21 @@ function setupVideoAutoFullscreen() {
 	});
 }
 
+function setupVideoAutoplay() {
+	var videos = document.querySelectorAll("video:not(.nnwAnimatedGIF)");
+	if (videos.length > 0) {
+		videos[0].play();
+	}
+}
+
+function setupVideoEndedHandler() {
+	var videos = document.querySelectorAll("video:not(.nnwAnimatedGIF)");
+	if (videos.length !== 1) return;
+	videos[0].addEventListener("ended", function() {
+		window.webkit.messageHandlers.videoEnded.postMessage("ended");
+	});
+}
+
 function postRenderProcessing() {
 	ImageViewer.init();
 	showFeedInspectorSetup();
