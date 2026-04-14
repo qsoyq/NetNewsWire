@@ -10,19 +10,17 @@ import Foundation
 
 enum VideoCacheHTMLRewriter {
 
-	/// Rewrites media/iframe src URLs to use the video cache scheme.
+	/// Rewrites media src URLs to use the video cache scheme.
 	///
-	/// - `<iframe>`: always rewritten — HTML content works reliably through the proxy.
 	/// - `<video>` / `<source>`: only rewritten when the URL is already cached.
 	///   Media players don't handle proxied custom-scheme URLs well (latency causes
 	///   stalls). Uncached URLs are left as-is so they load via normal HTTP; they are
 	///   returned in `uncachedVideoURLs` for background downloading.
+	/// - `<iframe>`: never rewritten — iframes load full web pages (YouTube, etc.)
+	///   that require their original origin for JS, CORS, and API requests.
 	static func rewriteForCaching(_ html: String) -> (html: String, uncachedVideoURLs: [String]) {
 		var result = html
 		var uncachedVideoURLs: [String] = []
-
-		// <iframe>: always rewrite (proxy HTML content works fine)
-		result = rewriteTag(in: result, tag: "iframe", onlyIfCached: false, uncachedURLs: &uncachedVideoURLs)
 
 		// <video>/<source>: only rewrite when cached
 		result = rewriteTag(in: result, tag: "video", onlyIfCached: true, uncachedURLs: &uncachedVideoURLs)
