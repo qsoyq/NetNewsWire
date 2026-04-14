@@ -449,6 +449,39 @@
                                             </constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="bNV-P3-qW2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="1109" width="374" height="52"/>
+                                        <autoresizingMask key="autoresizingMask"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="bNV-P3-qW2" id="cOW-Q4-rX3">
+                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
+                                            <autoresizingMask key="autoresizingMask"/>
+                                            <subviews>
+                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Native Video Player" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dPX-R5-sY4">
+                                                    <rect key="frame" x="20" y="15" width="160" height="21.5"/>
+                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
+                                                    <nil key="textColor"/>
+                                                    <nil key="highlightedColor"/>
+                                                </label>
+                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="eQY-S6-tZ5">
+                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
+                                                    <color key="onTintColor" name="primaryAccentColor"/>
+                                                    <connections>
+                                                        <action selector="switchUseNativeVideoPlayer:" destination="a0p-rk-skQ" eventType="valueChanged" id="fRZ-T7-uA6"/>
+                                                    </connections>
+                                                </switch>
+                                            </subviews>
+                                            <constraints>
+                                                <constraint firstItem="dPX-R5-sY4" firstAttribute="top" secondItem="cOW-Q4-rX3" secondAttribute="topMargin" id="gSA-U8-vB7"/>
+                                                <constraint firstItem="eQY-S6-tZ5" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="dPX-R5-sY4" secondAttribute="trailing" constant="8" id="hTB-V9-wC8"/>
+                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="eQY-S6-tZ5" secondAttribute="bottom" constant="6" id="iUC-W0-xD9"/>
+                                                <constraint firstItem="eQY-S6-tZ5" firstAttribute="centerY" secondItem="cOW-Q4-rX3" secondAttribute="centerY" id="jVD-X1-yE0"/>
+                                                <constraint firstAttribute="bottomMargin" secondItem="dPX-R5-sY4" secondAttribute="bottom" id="kWE-Y2-zF1"/>
+                                                <constraint firstAttribute="trailingMargin" secondItem="eQY-S6-tZ5" secondAttribute="trailing" constant="0" id="lXF-Z3-AG2"/>
+                                                <constraint firstItem="eQY-S6-tZ5" firstAttribute="top" relation="greaterThanOrEqual" secondItem="cOW-Q4-rX3" secondAttribute="top" constant="6" id="mYG-A4-BH3"/>
+                                                <constraint firstItem="dPX-R5-sY4" firstAttribute="leading" secondItem="cOW-Q4-rX3" secondAttribute="leadingMargin" id="nZH-B5-CI4"/>
+                                            </constraints>
+                                        </tableViewCellContentView>
+                                    </tableViewCell>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="nTJ-F9-uV2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
                                         <rect key="frame" x="20" y="1109" width="374" height="52"/>
                                         <autoresizingMask key="autoresizingMask"/>
@@ -489,7 +522,7 @@
                                             <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
                                             <autoresizingMask key="autoresizingMask"/>
                                             <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Auto Goto Next After Video" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="cIY-U4-JK7">
+                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Goto Next After Video Finish" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="cIY-U4-JK7">
                                                     <rect key="frame" x="20" y="15" width="230" height="21.5"/>
                                                     <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
                                                     <nil key="textColor"/>
@@ -512,6 +545,39 @@
                                                 <constraint firstAttribute="trailingMargin" secondItem="dJZ-V5-KL8" secondAttribute="trailing" constant="0" id="kQG-C2-RS5"/>
                                                 <constraint firstItem="dJZ-V5-KL8" firstAttribute="top" relation="greaterThanOrEqual" secondItem="bHX-T3-IJ6" secondAttribute="top" constant="6" id="lRH-D3-ST6"/>
                                                 <constraint firstItem="cIY-U4-JK7" firstAttribute="leading" secondItem="bHX-T3-IJ6" secondAttribute="leadingMargin" id="mSI-E4-TU7"/>
+                                            </constraints>
+                                        </tableViewCellContentView>
+                                    </tableViewCell>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="pAJ-D7-EK6" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="1213" width="374" height="52"/>
+                                        <autoresizingMask key="autoresizingMask"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="pAJ-D7-EK6" id="qBK-E8-FL7">
+                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
+                                            <autoresizingMask key="autoresizingMask"/>
+                                            <subviews>
+                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Auto Play Next Video In PiP" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="rCL-F9-GM8">
+                                                    <rect key="frame" x="20" y="15" width="200" height="21.5"/>
+                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
+                                                    <nil key="textColor"/>
+                                                    <nil key="highlightedColor"/>
+                                                </label>
+                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="sDM-G0-HN9">
+                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
+                                                    <color key="onTintColor" name="primaryAccentColor"/>
+                                                    <connections>
+                                                        <action selector="switchPipAutoPlayNextVideo:" destination="a0p-rk-skQ" eventType="valueChanged" id="tEN-H1-IO0"/>
+                                                    </connections>
+                                                </switch>
+                                            </subviews>
+                                            <constraints>
+                                                <constraint firstItem="rCL-F9-GM8" firstAttribute="top" secondItem="qBK-E8-FL7" secondAttribute="topMargin" id="uFO-I2-JP1"/>
+                                                <constraint firstItem="sDM-G0-HN9" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="rCL-F9-GM8" secondAttribute="trailing" constant="8" id="vGP-J3-KQ2"/>
+                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="sDM-G0-HN9" secondAttribute="bottom" constant="6" id="wHQ-K4-LR3"/>
+                                                <constraint firstItem="sDM-G0-HN9" firstAttribute="centerY" secondItem="qBK-E8-FL7" secondAttribute="centerY" id="xIR-L5-MS4"/>
+                                                <constraint firstAttribute="bottomMargin" secondItem="rCL-F9-GM8" secondAttribute="bottom" id="yJS-M6-NT5"/>
+                                                <constraint firstAttribute="trailingMargin" secondItem="sDM-G0-HN9" secondAttribute="trailing" constant="0" id="zKT-N7-OU6"/>
+                                                <constraint firstItem="sDM-G0-HN9" firstAttribute="top" relation="greaterThanOrEqual" secondItem="qBK-E8-FL7" secondAttribute="top" constant="6" id="ALU-O8-PV7"/>
+                                                <constraint firstItem="rCL-F9-GM8" firstAttribute="leading" secondItem="qBK-E8-FL7" secondAttribute="leadingMargin" id="BMV-P9-QW8"/>
                                             </constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
@@ -801,8 +867,10 @@
                         <outlet property="refreshFeedsSwitch" destination="bNx-R4-wS8" id="wY0-zA-bC1"/>
                         <outlet property="cacheVideoContentSwitch" destination="bNx-V4-wQ8" id="xA1-dE-fG2"/>
                         <outlet property="autoFullscreenVideoSwitch" destination="dIy-U8-sT4" id="nSI-E8-DC4"/>
+                        <outlet property="useNativeVideoPlayerSwitch" destination="eQY-S6-tZ5" id="oAI-C6-DJ5"/>
                         <outlet property="autoplayVideoSwitch" destination="qWM-I2-xY5" id="nTU-F9-UV8"/>
                         <outlet property="autoGotoNextAfterVideoSwitch" destination="dJZ-V5-KL8" id="oUV-G0-VW9"/>
+                        <outlet property="pipAutoPlayNextVideoSwitch" destination="sDM-G0-HN9" id="CNW-Q0-RX9"/>
                         <outlet property="showFullscreenArticlesSwitch" destination="2Md-2E-7Z4" id="lEN-VP-wEO"/>
                         <outlet property="timelineSortOrderSwitch" destination="Keq-Np-l9O" id="Zm7-HG-r5h"/>
                     </connections>

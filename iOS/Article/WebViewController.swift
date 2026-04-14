@@ -8,7 +8,6 @@
 
 import UIKit
 @preconcurrency import WebKit
-import AVFoundation
 import RSCore
 import RSWeb
 import Account
@@ -27,6 +26,7 @@ final class WebViewController: UIViewController {
 		static let imageWasShown = "imageWasShown"
 		static let showFeedInspector = "showFeedInspector"
 		static let videoEnded = "videoEnded"
+		static let nativeVideoPlay = "nativeVideoPlay"
 	}
 
 	private var topShowBarsView: UIView!
@@ -374,8 +374,9 @@ extension WebViewController: WKNavigationDelegate {
 			}
 		}
 
-		if AppDefaults.shared.autoFullscreenVideo {
-			try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+		if AppDefaults.shared.useNativeVideoPlayer {
+			webView.evaluateJavaScript("setupVideoAutoFullscreenNative();")
+		} else if AppDefaults.shared.autoFullscreenVideo {
 			webView.evaluateJavaScript("setupVideoAutoFullscreen();")
 		}
 		if AppDefaults.shared.autoplayVideo {
@@ -481,19 +482,45 @@ extension WebViewController: WKScriptMessageHandler {
 			}
 		case MessageName.videoEnded:
 			handleVideoEnded()
+		case MessageName.nativeVideoPlay:
+			handleNativeVideoPlay(body: message.body as? String)
 		default:
 			return
 		}
 	}
 
 	private func handleVideoEnded() {
-		if #available(iOS 16.0, *), let webView, webView.fullscreenState != .notInFullscreen {
-			webView.closeAllMediaPresentations {
-				self.coordinator.selectNextArticle()
-			}
-		} else {
-			coordinator.selectNextArticle()
+		coordinator.selectNextArticle()
+	}
+
+	private func startNativeVideoDirectly() {
+		guard let articleID = article?.articleID,
+			  let body = article?.body,
+			  let url = VideoPlayerManager.extractFirstVideoURL(from: body) else {
+			return
 		}
+		VideoPlayerManager.shared.play(url: url, articleID: articleID, from: self)
+	}
+
+	private func handleNativeVideoPlay(body: String?) {
+		guard var urlString = body else {
+			return
+		}
+
+		// Resolve nnwVideoCache:// URL to original HTTP URL (scheme is lowercased by WebKit)
+		if urlString.lowercased().hasPrefix("\(VideoCacheSchemeHandler.scheme.lowercased())://"),
+		   let range = urlString.range(of: "?url=") {
+			let extracted = String(urlString[range.upperBound...])
+			urlString = extracted.removingPercentEncoding ?? extracted
+		}
+
+		guard let url = URL(string: urlString) else {
+			return
+		}
+		guard let articleID = article?.articleID else {
+			return
+		}
+		VideoPlayerManager.shared.play(url: url, articleID: articleID, from: self)
 	}
 
 }
@@ -590,12 +617,14 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.imageWasShown)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.showFeedInspector)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.videoEnded)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.nativeVideoPlay)
 
 				// Add handlers
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasClicked)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasShown)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.showFeedInspector)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.videoEnded)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.nativeVideoPlay)
 
 				self.renderPage(webView)
 			}

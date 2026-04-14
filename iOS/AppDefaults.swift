@@ -69,8 +69,10 @@ final class AppDefaults: Sendable {
 		static let refreshFeeds = "refreshFeeds"
 		static let cacheVideoContent = "cacheVideoContent"
 		static let autoFullscreenVideo = "autoFullscreenVideo"
+		static let useNativeVideoPlayer = "useNativeVideoPlayer"
 		static let autoplayVideo = "autoplayVideo"
 		static let autoGotoNextAfterVideo = "autoGotoNextAfterVideo"
+		static let pipAutoPlayNextVideo = "pipAutoPlayNextVideo"
 		static let hideReadFeeds = "hideReadFeeds"
 		static let isShowingExtractedArticle = "isShowingExtractedArticle"
 		static let articleWindowScrollY = "articleWindowScrollY"
@@ -193,6 +195,15 @@ final class AppDefaults: Sendable {
 		}
 	}
 
+	var useNativeVideoPlayer: Bool {
+		get {
+			return AppDefaults.bool(for: Key.useNativeVideoPlayer)
+		}
+		set {
+			AppDefaults.setBool(for: Key.useNativeVideoPlayer, newValue)
+		}
+	}
+
 	var autoplayVideo: Bool {
 		get {
 			return AppDefaults.bool(for: Key.autoplayVideo)
@@ -208,6 +219,15 @@ final class AppDefaults: Sendable {
 		}
 		set {
 			AppDefaults.setBool(for: Key.autoGotoNextAfterVideo, newValue)
+		}
+	}
+
+	var pipAutoPlayNextVideo: Bool {
+		get {
+			return AppDefaults.bool(for: Key.pipAutoPlayNextVideo)
+		}
+		set {
+			AppDefaults.setBool(for: Key.pipAutoPlayNextVideo, newValue)
 		}
 	}
 
@@ -442,8 +462,10 @@ final class AppDefaults: Sendable {
 										Key.refreshFeeds: true,
 										Key.cacheVideoContent: false,
 									Key.autoFullscreenVideo: false,
+									Key.useNativeVideoPlayer: false,
 									Key.autoplayVideo: false,
 									Key.autoGotoNextAfterVideo: false,
+									Key.pipAutoPlayNextVideo: false,
 										Key.timelineGroupByFeed: false,
 										Key.refreshClearsReadArticles: false,
 										Key.timelineNumberOfLines: 2,

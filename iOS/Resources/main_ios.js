@@ -134,12 +134,40 @@ function showFeedInspectorSetup() {
 	}
 }
 
+function resolveVideoURL(src) {
+	if (src && src.toLowerCase().startsWith("nnwvideocache://")) {
+		try {
+			var url = new URL(src);
+			return url.searchParams.get("url") || src;
+		} catch (e) {
+			return src;
+		}
+	}
+	return src;
+}
+
 function setupVideoAutoFullscreen() {
 	document.querySelectorAll("video").forEach(element => {
 		if (element.classList.contains("nnwAnimatedGIF")) return;
 		element.addEventListener("playing", function() {
 			if (element.webkitEnterFullscreen && (!element.webkitPresentationMode || element.webkitPresentationMode === "inline")) {
 				element.webkitEnterFullscreen();
+			}
+		});
+	});
+}
+
+function setupVideoAutoFullscreenNative() {
+	document.querySelectorAll("video").forEach(element => {
+		if (element.classList.contains("nnwAnimatedGIF")) return;
+		element.addEventListener("playing", function() {
+			if (!element.webkitPresentationMode || element.webkitPresentationMode === "inline") {
+				var rawSrc = element.currentSrc || element.src || (element.querySelector("source") ? element.querySelector("source").src : null);
+				var videoURL = resolveVideoURL(rawSrc);
+				if (videoURL) {
+					element.pause();
+					window.webkit.messageHandlers.nativeVideoPlay.postMessage(videoURL);
+				}
 			}
 		});
 	});

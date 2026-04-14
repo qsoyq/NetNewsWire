@@ -45,8 +45,10 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var openLinksInNetNewsWire: UISwitch!
 	@IBOutlet var cacheVideoContentSwitch: UISwitch!
 	@IBOutlet var autoFullscreenVideoSwitch: UISwitch!
+	@IBOutlet var useNativeVideoPlayerSwitch: UISwitch!
 	@IBOutlet var autoplayVideoSwitch: UISwitch!
 	@IBOutlet var autoGotoNextAfterVideoSwitch: UISwitch!
+	@IBOutlet var pipAutoPlayNextVideoSwitch: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
 
 	var scrollToArticlesSection = false
@@ -113,8 +115,10 @@ final class SettingsViewController: UITableViewController {
 
 		cacheVideoContentSwitch.isOn = AppDefaults.shared.cacheVideoContent
 		autoFullscreenVideoSwitch.isOn = AppDefaults.shared.autoFullscreenVideo
+		useNativeVideoPlayerSwitch.isOn = AppDefaults.shared.useNativeVideoPlayer
 		autoplayVideoSwitch.isOn = AppDefaults.shared.autoplayVideo
 		autoGotoNextAfterVideoSwitch.isOn = AppDefaults.shared.autoGotoNextAfterVideo
+		pipAutoPlayNextVideoSwitch.isOn = AppDefaults.shared.pipAutoPlayNextVideo
 
 		colorPaletteDetailLabel.text = String(describing: AppDefaults.userInterfaceColorPalette)
 
@@ -159,7 +163,7 @@ final class SettingsViewController: UITableViewController {
 			}
 			return defaultNumberOfRows
 		case .articles:
-			return traitCollection.userInterfaceIdiom == .phone ? 10 : 9
+			return traitCollection.userInterfaceIdiom == .phone ? 12 : 11
 		case .troubleshooting:
 			let defaultNumberOfRows = super.tableView(tableView, numberOfRowsInSection: section)
 			if !AccountManager.shared.hasiCloudAccount {
@@ -246,7 +250,7 @@ final class SettingsViewController: UITableViewController {
 			case 0:
 				let articleThemes = UIStoryboard.settings.instantiateController(ofType: ArticleThemesTableViewController.self)
 				self.navigationController?.pushViewController(articleThemes, animated: true)
-			case 8:
+			case 10:
 				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
 				clearVideoCache()
 			default:
@@ -380,12 +384,20 @@ final class SettingsViewController: UITableViewController {
 		AppDefaults.shared.autoFullscreenVideo = autoFullscreenVideoSwitch.isOn
 	}
 
+	@IBAction func switchUseNativeVideoPlayer(_ sender: Any) {
+		AppDefaults.shared.useNativeVideoPlayer = useNativeVideoPlayerSwitch.isOn
+	}
+
 	@IBAction func switchAutoplayVideo(_ sender: Any) {
 		AppDefaults.shared.autoplayVideo = autoplayVideoSwitch.isOn
 	}
 
 	@IBAction func switchAutoGotoNextAfterVideo(_ sender: Any) {
 		AppDefaults.shared.autoGotoNextAfterVideo = autoGotoNextAfterVideoSwitch.isOn
+	}
+
+	@IBAction func switchPipAutoPlayNextVideo(_ sender: Any) {
+		AppDefaults.shared.pipAutoPlayNextVideo = pipAutoPlayNextVideoSwitch.isOn
 	}
 
 	@IBAction func switchJavaScriptPreference(_ sender: Any) {
