@@ -18,6 +18,15 @@ enum VideoCacheHTMLRewriter {
 	///   returned in `uncachedVideoURLs` for background downloading.
 	/// - `<iframe>`: never rewritten — iframes load full web pages (YouTube, etc.)
 	///   that require their original origin for JS, CORS, and API requests.
+	/// Rewrites `<img>` src URLs to use the video cache scheme when cached.
+	/// Uncached image URLs are returned for background downloading.
+	static func rewriteImagesForCaching(_ html: String) -> (html: String, uncachedImageURLs: [String]) {
+		var result = html
+		var uncachedImageURLs: [String] = []
+		result = rewriteTag(in: result, tag: "img", onlyIfCached: true, uncachedURLs: &uncachedImageURLs)
+		return (result, uncachedImageURLs)
+	}
+
 	static func rewriteForCaching(_ html: String) -> (html: String, uncachedVideoURLs: [String]) {
 		var result = html
 		var uncachedVideoURLs: [String] = []

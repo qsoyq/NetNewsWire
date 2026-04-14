@@ -49,6 +49,7 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var autoplayVideoSwitch: UISwitch!
 	@IBOutlet var autoGotoNextAfterVideoSwitch: UISwitch!
 	@IBOutlet var pipAutoPlayNextVideoSwitch: UISwitch!
+	@IBOutlet var prefetchNextArticleSwitch: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
 
 	var scrollToArticlesSection = false
@@ -119,6 +120,7 @@ final class SettingsViewController: UITableViewController {
 		autoplayVideoSwitch.isOn = AppDefaults.shared.autoplayVideo
 		autoGotoNextAfterVideoSwitch.isOn = AppDefaults.shared.autoGotoNextAfterVideo
 		pipAutoPlayNextVideoSwitch.isOn = AppDefaults.shared.pipAutoPlayNextVideo
+		prefetchNextArticleSwitch.isOn = AppDefaults.shared.prefetchNextArticleContent
 
 		colorPaletteDetailLabel.text = String(describing: AppDefaults.userInterfaceColorPalette)
 
@@ -163,7 +165,7 @@ final class SettingsViewController: UITableViewController {
 			}
 			return defaultNumberOfRows
 		case .articles:
-			return traitCollection.userInterfaceIdiom == .phone ? 12 : 11
+			return traitCollection.userInterfaceIdiom == .phone ? 13 : 12
 		case .troubleshooting:
 			let defaultNumberOfRows = super.tableView(tableView, numberOfRowsInSection: section)
 			if !AccountManager.shared.hasiCloudAccount {
@@ -250,7 +252,7 @@ final class SettingsViewController: UITableViewController {
 			case 0:
 				let articleThemes = UIStoryboard.settings.instantiateController(ofType: ArticleThemesTableViewController.self)
 				self.navigationController?.pushViewController(articleThemes, animated: true)
-			case 10:
+			case 11:
 				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
 				clearVideoCache()
 			default:
@@ -398,6 +400,10 @@ final class SettingsViewController: UITableViewController {
 
 	@IBAction func switchPipAutoPlayNextVideo(_ sender: Any) {
 		AppDefaults.shared.pipAutoPlayNextVideo = pipAutoPlayNextVideoSwitch.isOn
+	}
+
+	@IBAction func switchPrefetchNextArticle(_ sender: Any) {
+		AppDefaults.shared.prefetchNextArticleContent = prefetchNextArticleSwitch.isOn
 	}
 
 	@IBAction func switchJavaScriptPreference(_ sender: Any) {

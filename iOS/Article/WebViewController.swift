@@ -385,6 +385,8 @@ extension WebViewController: WKNavigationDelegate {
 		if AppDefaults.shared.autoGotoNextAfterVideo {
 			webView.evaluateJavaScript("setupVideoEndedHandler();")
 		}
+
+		ArticlePrefetcher.shared.prefetchNextArticle(after: article, coordinator: coordinator)
 	}
 
 	func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
@@ -676,6 +678,14 @@ private extension WebViewController {
 			html = rewrittenHTML
 			if !uncachedVideoURLs.isEmpty {
 				VideoCacheSchemeHandler.cacheURLsInBackground(uncachedVideoURLs)
+			}
+		}
+
+		if AppDefaults.shared.prefetchNextArticleContent {
+			let (rewrittenHTML, uncachedImageURLs) = VideoCacheHTMLRewriter.rewriteImagesForCaching(html)
+			html = rewrittenHTML
+			if !uncachedImageURLs.isEmpty {
+				VideoCacheSchemeHandler.cacheURLsInBackground(uncachedImageURLs)
 			}
 		}
 
