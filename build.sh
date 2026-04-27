@@ -72,7 +72,7 @@ build_ios_unsigned_ipa() {
   rm -rf "${IOS_BUILD_DIR}"
   mkdir -p "${PAYLOAD_DIR}"
 
-  log "Building iOS app (unsigned)..."
+  log "Building iOS app (unsigned; will ad-hoc sign post-build)..."
   xcodebuild \
     -project "${PROJECT_PATH}" \
     -scheme "${SCHEME_IOS}" \
@@ -92,7 +92,17 @@ build_ios_unsigned_ipa() {
     exit 1
   fi
 
-  log "Packaging unsigned IPA..."
+  log "Stripping PlugIns (LiveContainer cannot run app extensions)..."
+  rm -rf "${APP_PATH}/PlugIns"
+
+  log "Ad-hoc signing frameworks and app bundle..."
+  if [[ -d "${APP_PATH}/Frameworks" ]]; then
+    find "${APP_PATH}/Frameworks" -maxdepth 1 -name "*.framework" -print0 \
+      | xargs -0 -I{} codesign --force --sign - --timestamp=none "{}"
+  fi
+  codesign --force --sign - --timestamp=none "${APP_PATH}"
+
+  log "Packaging IPA..."
   cp -R "${APP_PATH}" "${PAYLOAD_DIR}/"
   (
     cd "${IOS_BUILD_DIR}"
