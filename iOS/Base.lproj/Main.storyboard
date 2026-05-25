@@ -690,6 +690,14 @@
                                 <action selector="settings:" destination="6Bn-mF-MPS" id="hbg-Ot-ImT"/>
                             </connections>
                         </barButtonItem>
+                        <barButtonItem title="Collapse All Folders" image="chevron.up.square" catalog="system" id="cAF-01-cAF">
+                            <userDefinedRuntimeAttributes>
+                                <userDefinedRuntimeAttribute type="string" keyPath="accLabelText" value="Collapse All Folders"/>
+                            </userDefinedRuntimeAttributes>
+                            <connections>
+                                <action selector="collapseAllExceptForGroupItems:" destination="6Bn-mF-MPS" id="cAF-02-cAF"/>
+                            </connections>
+                        </barButtonItem>
                         <barButtonItem style="plain" systemItem="flexibleSpace" id="xNq-ig-7IX"/>
                         <barButtonItem title="Add" image="plus" catalog="system" id="iTI-PO-3e6"/>
                     </toolbarItems>
@@ -899,6 +907,7 @@
         <image name="chevron.down" catalog="system" width="128" height="70"/>
         <image name="chevron.down.circle" catalog="system" width="128" height="123"/>
         <image name="chevron.up" catalog="system" width="128" height="70"/>
+        <image name="chevron.up.square" catalog="system" width="119" height="128"/>
         <image name="circle" catalog="system" width="128" height="123"/>
         <image name="gear" catalog="system" width="128" height="122"/>
         <image name="line.3.horizontal.decrease" catalog="system" width="128" height="73"/>
