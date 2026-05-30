@@ -410,6 +410,9 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 
 	@objc func collapseAllExceptForGroupItems(_ sender: Any?) {
 		coordinator.collapseAllFolders()
+		for case let folderCell as MainFeedCollectionViewFolderCell in collectionView.visibleCells {
+			folderCell.disclosureExpanded = false
+		}
 	}
 
 	@objc func collapseSelectedRows(_ sender: Any?) {
