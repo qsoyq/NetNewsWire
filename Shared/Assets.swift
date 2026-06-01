@@ -127,6 +127,8 @@ struct Assets {
 		static var circleClosed: RSImage { RSImage(symbol: "largecircle.fill.circle")! }
 		static var markBelowAsRead: RSImage { RSImage(symbol: "arrowtriangle.down.circle")! }
 		static var markAboveAsRead: RSImage { RSImage(symbol: "arrowtriangle.up.circle")! }
+		static var markBelowAsUnread: RSImage { RSImage(symbol: "arrowtriangle.down.circle.fill")! }
+		static var markAboveAsUnread: RSImage { RSImage(symbol: "arrowtriangle.up.circle.fill")! }
 		static var more: RSImage { RSImage(symbol: "ellipsis.circle")! }
 		static var nextArticle: RSImage { RSImage(symbol: "chevron.down")! }
 		static var circleOpen: RSImage { RSImage(symbol: "circle")! }

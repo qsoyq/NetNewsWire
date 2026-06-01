@@ -528,6 +528,12 @@ extension MainTimelineModernViewController: UICollectionViewDelegate {
 			if let action = self.markBelowAsReadAction(article, indexPath: firstIndex) {
 				markActions.append(action)
 			}
+			if let action = self.markAboveAsUnreadAction(article) {
+				markActions.append(action)
+			}
+			if let action = self.markBelowAsUnreadAction(article) {
+				markActions.append(action)
+			}
 			menuElements.append(UIMenu(title: "", options: .displayInline, children: markActions))
 
 			var secondaryActions = [UIAction]()
@@ -1203,6 +1209,52 @@ extension MainTimelineModernViewController {
 			MarkAsReadAlertController.confirm(self, coordinator: self?.coordinator, confirmTitle: title, sourceType: contentView) { [weak self] in
 				self?.markBelowAsRead(article)
 			}
+		}
+		return action
+	}
+
+	func markAboveAsUnread(_ article: Article) {
+		assert(coordinator != nil)
+		coordinator?.markAboveAsUnread(article)
+	}
+
+	func canMarkAboveAsUnread(for article: Article) -> Bool {
+		assert(coordinator != nil)
+		return coordinator?.canMarkAboveAsUnread(for: article) ?? false
+	}
+
+	func markAboveAsUnreadAction(_ article: Article) -> UIAction? {
+		guard canMarkAboveAsUnread(for: article) else {
+			return nil
+		}
+
+		let title = NSLocalizedString("Mark Above as Unread", comment: "Mark Above as Unread")
+		let image = Assets.Images.markAboveAsUnread
+		let action = UIAction(title: title, image: image) { [weak self] _ in
+			self?.markAboveAsUnread(article)
+		}
+		return action
+	}
+
+	func markBelowAsUnread(_ article: Article) {
+		assert(coordinator != nil)
+		coordinator?.markBelowAsUnread(article)
+	}
+
+	func canMarkBelowAsUnread(for article: Article) -> Bool {
+		assert(coordinator != nil)
+		return coordinator?.canMarkBelowAsUnread(for: article) ?? false
+	}
+
+	func markBelowAsUnreadAction(_ article: Article) -> UIAction? {
+		guard canMarkBelowAsUnread(for: article) else {
+			return nil
+		}
+
+		let title = NSLocalizedString("Mark Below as Unread", comment: "Mark Below as Unread")
+		let image = Assets.Images.markBelowAsUnread
+		let action = UIAction(title: title, image: image) { [weak self] _ in
+			self?.markBelowAsUnread(article)
 		}
 		return action
 	}
