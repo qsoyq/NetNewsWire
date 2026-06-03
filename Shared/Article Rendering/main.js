@@ -87,6 +87,28 @@ function enableIframePiP() {
 	});
 }
 
+function setupWebViewPiPHandler() {
+	if (!window.webkit || !window.webkit.messageHandlers)
+		return;
+
+	var handlers = window.webkit.messageHandlers;
+	if (!handlers.webViewPiPStarted || !handlers.webViewPiPStopped)
+		return;
+
+	document.querySelectorAll("video").forEach(element => {
+		if (element.classList.contains("nnwAnimatedGIF"))
+			return;
+
+		element.addEventListener("webkitpresentationmodechanged", function() {
+			if (element.webkitPresentationMode === "picture-in-picture") {
+				handlers.webViewPiPStarted.postMessage("started");
+			} else {
+				handlers.webViewPiPStopped.postMessage("stopped");
+			}
+		});
+	});
+}
+
 // Remove some children (currently just spans) from pre elements to work around a strange clipping issue
 var ElementUnwrapper = {
 	unwrapSelector: "span",
@@ -171,6 +193,7 @@ function processPage() {
 	wrapTables();
 	inlineVideos();
 	enableIframePiP();
+	setupWebViewPiPHandler();
 	stripStyles();
 	constrainBodyRelativeIframes();
 	convertImgSrc();

@@ -27,6 +27,8 @@ final class WebViewController: UIViewController {
 		static let showFeedInspector = "showFeedInspector"
 		static let videoEnded = "videoEnded"
 		static let nativeVideoPlay = "nativeVideoPlay"
+		static let webViewPiPStarted = "webViewPiPStarted"
+		static let webViewPiPStopped = "webViewPiPStopped"
 	}
 
 	private var topShowBarsView: UIView!
@@ -272,7 +274,9 @@ final class WebViewController: UIViewController {
 
 	func stopWebViewActivity() {
 		if let webView = webView {
-			stopMediaPlayback(webView)
+			if !VideoPlayerManager.shared.isPiPActive && !WebViewPiPManager.shared.isPiPActive {
+				stopMediaPlayback(webView)
+			}
 			cancelImageLoad(webView)
 		}
 	}
@@ -486,6 +490,10 @@ extension WebViewController: WKScriptMessageHandler {
 			handleVideoEnded()
 		case MessageName.nativeVideoPlay:
 			handleNativeVideoPlay(body: message.body as? String)
+		case MessageName.webViewPiPStarted:
+			WebViewPiPManager.shared.pipDidStart()
+		case MessageName.webViewPiPStopped:
+			WebViewPiPManager.shared.pipDidStop()
 		default:
 			return
 		}
@@ -620,6 +628,8 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.showFeedInspector)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.videoEnded)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.nativeVideoPlay)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.webViewPiPStarted)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.webViewPiPStopped)
 
 				// Add handlers
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasClicked)
@@ -627,6 +637,8 @@ private extension WebViewController {
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.showFeedInspector)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.videoEnded)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.nativeVideoPlay)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.webViewPiPStarted)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.webViewPiPStopped)
 
 				self.renderPage(webView)
 			}

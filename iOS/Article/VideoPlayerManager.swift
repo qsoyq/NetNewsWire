@@ -9,6 +9,7 @@
 import UIKit
 import AVKit
 import os
+import Articles
 
 @MainActor
 final class VideoPlayerManager: NSObject {
@@ -23,6 +24,7 @@ final class VideoPlayerManager: NSObject {
 	private var playerViewController: AVPlayerViewController?
 	private var currentArticleID: String?
 	private(set) var isPiPActive = false
+	private var isRestoringUserInterface = false
 
 	private var endObserver: NSObjectProtocol?
 
@@ -35,32 +37,21 @@ final class VideoPlayerManager: NSObject {
 
 	func play(url: URL, articleID: String, from presenter: UIViewController) {
 		let item = AVPlayerItem(url: url)
-
-		if let player {
-			player.replaceCurrentItem(with: item)
-		} else {
-			player = AVPlayer(playerItem: item)
-		}
+		let player = player ?? AVPlayer()
+		self.player = player
+		player.replaceCurrentItem(with: item)
 
 		currentArticleID = articleID
 		observePlayerItemEnd()
 
-		if let playerViewController, playerViewController.presentingViewController != nil {
-			// Already presenting — just swap the item (handles PiP continuation too)
-			player?.play()
+		let playerViewController = configuredPlayerViewController()
+		guard playerViewController.presentingViewController == nil, !isPiPActive else {
+			player.play()
 			return
 		}
 
-		let vc = AVPlayerViewController()
-		vc.player = player
-		if #available(iOS 14.2, *) {
-			vc.canStartPictureInPictureAutomaticallyFromInline = true
-		}
-		vc.delegate = self
-		playerViewController = vc
-
-		presenter.present(vc, animated: true) {
-			self.player?.play()
+		presenter.present(playerViewController, animated: true) {
+			player.play()
 		}
 	}
 
@@ -72,6 +63,7 @@ final class VideoPlayerManager: NSObject {
 		removeEndObserver()
 		currentArticleID = nil
 		isPiPActive = false
+		isRestoringUserInterface = false
 	}
 
 	// MARK: - Video URL Extraction
@@ -120,6 +112,23 @@ final class VideoPlayerManager: NSObject {
 
 	// MARK: - Private
 
+	private func configuredPlayerViewController() -> AVPlayerViewController {
+		if let playerViewController {
+			playerViewController.player = player
+			return playerViewController
+		}
+
+		let playerViewController = AVPlayerViewController()
+		playerViewController.player = player
+		playerViewController.allowsPictureInPicturePlayback = true
+		playerViewController.delegate = self
+		if #available(iOS 14.2, *) {
+			playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
+		}
+		self.playerViewController = playerViewController
+		return playerViewController
+	}
+
 	private func observePlayerItemEnd() {
 		removeEndObserver()
 		endObserver = NotificationCenter.default.addObserver(
@@ -141,11 +150,14 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private func handleVideoEnded() {
-		guard let coordinator else { return }
+		guard let coordinator else {
+			finishPlaybackSession()
+			return
+		}
 
 		// PiP active: try seamless continuation if enabled
 		if isPiPActive && AppDefaults.shared.pipAutoPlayNextVideo {
-			if let nextArticle = coordinator.nextArticle,
+			if let nextArticle = nextArticleForPlayback(coordinator),
 			   let nextVideoURL = Self.extractFirstVideoURL(from: nextArticle.body) {
 				Self.logger.info("Swapping to next article video in PiP")
 
@@ -156,7 +168,7 @@ final class VideoPlayerManager: NSObject {
 				currentArticleID = nextArticle.articleID
 				observePlayerItemEnd()
 
-				coordinator.selectNextArticle()
+				coordinator.selectArticle(nextArticle, animations: [.navigation, .scroll])
 				return
 			}
 		}
@@ -164,6 +176,64 @@ final class VideoPlayerManager: NSObject {
 		// Not in PiP or PiP auto-next disabled: use regular auto-next
 		if AppDefaults.shared.autoGotoNextAfterVideo {
 			coordinator.selectNextArticle()
+		}
+
+		finishPlaybackSession()
+	}
+
+	private func nextArticleForPlayback(_ coordinator: SceneCoordinator) -> Article? {
+		if let currentArticleID, coordinator.currentArticle?.articleID != currentArticleID, let article = coordinator.articleFor(currentArticleID) {
+			return coordinator.findNextArticle(article)
+		}
+		return coordinator.nextArticle
+	}
+
+	private func finishPlaybackSession() {
+		player?.pause()
+		player?.replaceCurrentItem(with: nil)
+		removeEndObserver()
+		currentArticleID = nil
+
+		if !isPiPActive {
+			playerViewController?.dismiss(animated: true)
+			playerViewController = nil
+		}
+	}
+
+	private func restoreUserInterface(completionHandler: @escaping @Sendable (Bool) -> Void) {
+		guard !isRestoringUserInterface else {
+			completionHandler(false)
+			return
+		}
+
+		guard let playerViewController, playerViewController.presentingViewController == nil else {
+			completionHandler(true)
+			return
+		}
+
+		isRestoringUserInterface = true
+
+		let finish: (Bool) -> Void = { restored in
+			self.isRestoringUserInterface = false
+			completionHandler(restored)
+		}
+
+		guard let coordinator else {
+			finish(false)
+			return
+		}
+
+		if let currentArticleID, let article = coordinator.articleFor(currentArticleID) {
+			coordinator.selectArticle(article, animations: [.navigation, .scroll])
+		}
+
+		guard let presenter = coordinator.videoPlayerPresenter else {
+			finish(false)
+			return
+		}
+
+		presenter.present(playerViewController, animated: true) {
+			finish(true)
 		}
 	}
 }
@@ -186,18 +256,28 @@ extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 		}
 	}
 
+	nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, failedToStartPictureInPictureWithError error: any Error) {
+		Task { @MainActor in
+			isPiPActive = false
+			Self.logger.error("PiP failed to start: \(error.localizedDescription)")
+		}
+	}
+
+	nonisolated func playerViewControllerShouldAutomaticallyDismissAtPictureInPictureStart(_ playerViewController: AVPlayerViewController) -> Bool {
+		return true
+	}
+
 	nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping @Sendable (Bool) -> Void) {
 		Task { @MainActor in
 			Self.logger.info("PiP restore requested")
-			completionHandler(true)
+			restoreUserInterface(completionHandler: completionHandler)
 		}
 	}
 
 	nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {
 		Task { @MainActor in
-			if !isPiPActive {
-				player?.pause()
-				removeEndObserver()
+			if !isPiPActive, !isRestoringUserInterface {
+				finishPlaybackSession()
 			}
 		}
 	}

@@ -60,11 +60,15 @@ final class ArticleViewController: UIViewController {
 			Self.logger.debug("ArticleViewController: article didSet: \(self.article?.accountID ?? "nil") \(self.article?.articleID ?? "nil") \(self.article?.title ?? "nil")")
 
 			if let controller = currentWebViewController, controller.article != article {
-				controller.setArticle(article)
-				DispatchQueue.main.async {
-					// You have to set the view controller to clear out the UIPageViewController child controller cache.
-					// You also have to do it in an async call or you will get a strange assertion error.
-					self.pageViewController.setViewControllers([controller], direction: .forward, animated: false, completion: nil)
+				if article == nil && WebViewPiPManager.shared.isPiPActive {
+					WebViewPiPManager.shared.protect(controller)
+				} else {
+					controller.setArticle(article)
+					DispatchQueue.main.async {
+						// You have to set the view controller to clear out the UIPageViewController child controller cache.
+						// You also have to do it in an async call or you will get a strange assertion error.
+						self.pageViewController.setViewControllers([controller], direction: .forward, animated: false, completion: nil)
+					}
 				}
 			}
 			updateUI()

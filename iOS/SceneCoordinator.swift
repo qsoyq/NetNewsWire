@@ -1017,8 +1017,19 @@ struct SidebarItemNode: Hashable, Sendable {
 		}
 	}
 
+	var videoPlayerPresenter: UIViewController? {
+		var presenter: UIViewController = rootSplitViewController
+		while let presentedViewController = presenter.presentedViewController {
+			presenter = presentedViewController
+		}
+		return presenter
+	}
+
 	func selectArticle(_ article: Article?, animations: Animations = [], isShowingExtractedArticle: Bool? = nil, articleWindowScrollY: Int? = nil) {
-		guard article != currentArticle else {
+		if article == currentArticle {
+			if article != nil {
+				rootSplitViewController.show(.secondary)
+			}
 			return
 		}
 
