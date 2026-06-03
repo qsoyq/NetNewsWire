@@ -60,8 +60,15 @@ final class ArticleViewController: UIViewController {
 			Self.logger.debug("ArticleViewController: article didSet: \(self.article?.accountID ?? "nil") \(self.article?.articleID ?? "nil") \(self.article?.title ?? "nil")")
 
 			if let controller = currentWebViewController, controller.article != article {
-				if article == nil && WebViewPiPManager.shared.isPiPActive {
+				if WebViewPiPManager.shared.isPiPActive(in: controller) {
 					WebViewPiPManager.shared.protect(controller)
+
+					if let article {
+						let newController = createWebViewController(article)
+						DispatchQueue.main.async {
+							self.pageViewController.setViewControllers([newController], direction: .forward, animated: false, completion: nil)
+						}
+					}
 				} else {
 					controller.setArticle(article)
 					DispatchQueue.main.async {

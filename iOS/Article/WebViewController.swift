@@ -491,9 +491,9 @@ extension WebViewController: WKScriptMessageHandler {
 		case MessageName.nativeVideoPlay:
 			handleNativeVideoPlay(body: message.body as? String)
 		case MessageName.webViewPiPStarted:
-			WebViewPiPManager.shared.pipDidStart()
+			WebViewPiPManager.shared.pipDidStart(from: self)
 		case MessageName.webViewPiPStopped:
-			WebViewPiPManager.shared.pipDidStop()
+			WebViewPiPManager.shared.pipDidStop(from: self)
 		default:
 			return
 		}
