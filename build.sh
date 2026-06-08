@@ -22,8 +22,9 @@ log() { printf "\n[%s] %s\n" "$(date +'%H:%M:%S')" "$*"; }
 
 build_mac() {
   local DMG_PATH="${OUT_DIR}/NetNewsWire-macOS.dmg"
+  local DMG_STAGING_DIR="${OUT_DIR}/mac-dmg"
 
-  log "Building macOS app (unsigned)..."
+  log "Building macOS app..."
   set +e
   xcodebuild \
     -project "${PROJECT_PATH}" \
@@ -31,11 +32,9 @@ build_mac() {
     -configuration "${CONFIGURATION}" \
     -destination "generic/platform=macOS" \
     -derivedDataPath "${DERIVED_DATA}" \
-    CODE_SIGNING_ALLOWED=YES \
+    CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_IDENTITY="-" \
-    CODE_SIGN_ENTITLEMENTS="" \
-    ENABLE_HARDENED_RUNTIME=NO \
+    CODE_SIGN_IDENTITY="" \
     clean build
   local BUILD_EXIT=$?
   set -e
@@ -52,11 +51,20 @@ build_mac() {
     log "Warning: xcodebuild exited with ${BUILD_EXIT} (script phase errors), but .app was built successfully"
   fi
 
+  log "Ad-hoc signing app bundle..."
+  codesign --force --deep --sign - --timestamp=none "${APP_PATH}"
+  codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+
   log "Packaging DMG..."
+  rm -rf "${DMG_STAGING_DIR}"
+  mkdir -p "${DMG_STAGING_DIR}"
+  cp -R "${APP_PATH}" "${DMG_STAGING_DIR}/"
+  ln -s /Applications "${DMG_STAGING_DIR}/Applications"
+
   rm -f "${DMG_PATH}"
   hdiutil create \
     -volname "NetNewsWire" \
-    -srcfolder "${APP_PATH}" \
+    -srcfolder "${DMG_STAGING_DIR}" \
     -ov \
     -format UDZO \
     "${DMG_PATH}"
