@@ -853,13 +853,7 @@ nonisolated private extension ArticlesTable {
 	}
 
 	func fetchArticlesMatching(_ searchString: String, _ database: FMDatabase) -> Set<Article> {
-		let sql = "select rowid from search where search match ?;"
-		let sqlSearchString = sqliteSearchString(with: searchString)
-		let searchStringParameters = [sqlSearchString]
-		guard let resultSet = database.executeQuery(sql, withArgumentsIn: searchStringParameters) else {
-			return Set<Article>()
-		}
-		let searchRowIDs = resultSet.mapToSet { $0.longLongInt(forColumnIndex: 0) }
+		let searchRowIDs = searchString.containsCJKCharacters ? fetchSearchRowIDsMatchingCJKSearchString(searchString, database) : fetchSearchRowIDsMatchingFTSSearchString(searchString, database)
 		if searchRowIDs.isEmpty {
 			return Set<Article>()
 		}
@@ -868,6 +862,26 @@ nonisolated private extension ArticlesTable {
 		let whereClause = "searchRowID in \(placeholders)"
 		let parameters: [AnyObject] = Array(searchRowIDs) as [AnyObject]
 		return fetchArticlesWithWhereClause(database, whereClause: whereClause, parameters: parameters)
+	}
+
+	func fetchSearchRowIDsMatchingFTSSearchString(_ searchString: String, _ database: FMDatabase) -> Set<Int64> {
+		let sql = "select rowid from search where search match ?;"
+		let sqlSearchString = sqliteSearchString(with: searchString)
+		let searchStringParameters = [sqlSearchString]
+		guard let resultSet = database.executeQuery(sql, withArgumentsIn: searchStringParameters) else {
+			return Set<Int64>()
+		}
+		return resultSet.mapToSet { $0.longLongInt(forColumnIndex: 0) }
+	}
+
+	func fetchSearchRowIDsMatchingCJKSearchString(_ searchString: String, _ database: FMDatabase) -> Set<Int64> {
+		let sql = "select rowid from search where title like ? escape '\\' or body like ? escape '\\';"
+		let likeSearchString = sqliteLikeSearchString(with: searchString)
+		let searchStringParameters = [likeSearchString, likeSearchString]
+		guard let resultSet = database.executeQuery(sql, withArgumentsIn: searchStringParameters) else {
+			return Set<Int64>()
+		}
+		return resultSet.mapToSet { $0.longLongInt(forColumnIndex: 0) }
 	}
 
 	func sqliteSearchString(with searchString: String) -> String {
@@ -883,6 +897,14 @@ nonisolated private extension ArticlesTable {
 			s += " "
 		}
 		return s
+	}
+
+	func sqliteLikeSearchString(with searchString: String) -> String {
+		let escapedSearchString = searchString.trimmingWhitespace
+			.replacingOccurrences(of: "\\", with: "\\\\")
+			.replacingOccurrences(of: "%", with: "\\%")
+			.replacingOccurrences(of: "_", with: "\\_")
+		return "%\(escapedSearchString)%"
 	}
 
 	func articlesWithSQL(_ sql: String, _ parameters: [AnyObject], _ database: FMDatabase) -> Set<Article> {

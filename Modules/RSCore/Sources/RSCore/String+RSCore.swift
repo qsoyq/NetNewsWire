@@ -54,6 +54,11 @@ public extension String {
 		self.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 	}
 
+	/// Returns `true` if the string contains any CJK character.
+	var containsCJKCharacters: Bool {
+		self.range(of: #"\p{Han}|[぀-ヿ]|[가-힯]"#, options: .regularExpression) != nil
+	}
+
 	/// Returns `true` if the string contains any character from a set.
 	private func containsAnyCharacter(from charset: CharacterSet) -> Bool {
 		return self.rangeOfCharacter(from: charset) != nil

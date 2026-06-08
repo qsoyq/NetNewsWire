@@ -1091,7 +1091,7 @@ struct SidebarItemNode: Hashable, Sendable {
 			return
 		}
 
-		if searchString.count < 3 {
+		if !searchString.containsCJKCharacters && searchString.count < 3 {
 			setTimelineFeed(nil, animated: true)
 			return
 		}
