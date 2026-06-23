@@ -4,7 +4,7 @@ set -euo pipefail
 # ========= Config =========
 PROJECT_PATH="NetNewsWire.xcodeproj"
 SCHEME_MAC="NetNewsWire"
-SCHEME_IOS="NetNewsWire-iOS"
+TARGET_IOS="NetNewsWire-iOS"
 
 CONFIGURATION="Release"
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -83,10 +83,10 @@ build_ios_unsigned_ipa() {
   log "Building iOS app (unsigned; will ad-hoc sign post-build)..."
   xcodebuild \
     -project "${PROJECT_PATH}" \
-    -scheme "${SCHEME_IOS}" \
+    -target "${TARGET_IOS}" \
     -configuration "${CONFIGURATION}" \
-    -destination "generic/platform=iOS" \
-    -derivedDataPath "${DERIVED_DATA}" \
+    SYMROOT="${DERIVED_DATA}/Build/Products" \
+    OBJROOT="${DERIVED_DATA}/Build/Intermediates.noindex" \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" \

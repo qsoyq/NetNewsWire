@@ -638,9 +638,9 @@ extension MainTimelineModernViewController {
 }
 
 // MARK: Private API
-private extension MainTimelineModernViewController {
+extension MainTimelineModernViewController {
 
-	func addNotificationObservers() {
+	private func addNotificationObservers() {
 		NotificationCenter.default.addObserver(self, selector: #selector(unreadCountDidChange(_:)), name: .UnreadCountDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(statusesDidChange(_:)), name: .StatusesDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(feedIconDidBecomeAvailable(_:)), name: .feedIconDidBecomeAvailable, object: nil)
@@ -889,12 +889,12 @@ private extension MainTimelineModernViewController {
 		return article.iconImage()
 	}
 
-	func searchArticles(_ searchString: String, _ searchScope: SearchScope) {
+	private func searchArticles(_ searchString: String, _ searchScope: SearchScope) {
 		assert(coordinator != nil)
 		coordinator?.searchArticles(searchString, searchScope)
 	}
 
-	func configureToolbar() {
+	private func configureToolbar() {
 		if traitCollection.userInterfaceIdiom == .phone {
 			if #available(iOS 26, *) {
 				if let markAllAsRead = toolbarItems?.first {
@@ -972,7 +972,7 @@ private extension MainTimelineModernViewController {
 		return UIImage(systemName: "arrow.down")
 	}
 
-	func updateToolbar() {
+	private func updateToolbar() {
 		markAllAsReadButton?.isEnabled = isTimelineUnreadAvailable
 		firstUnreadButton.isEnabled = coordinator?.isAnyUnreadAvailable ?? false
 		if #unavailable(iOS 26) {
@@ -1000,7 +1000,7 @@ private extension MainTimelineModernViewController {
 		setToolbarItems(items, animated: false)
 	}
 
-	func applyChanges(animated: Bool, completion: (() -> Void)? = nil) {
+	private func applyChanges(animated: Bool, completion: (() -> Void)? = nil) {
 		Self.logger.debug("MainTimelineModernViewController: applyChanges")
 		guard let dataSource else {
 			return
