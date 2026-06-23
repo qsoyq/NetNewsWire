@@ -81,6 +81,7 @@ final class AppDefaults: Sendable {
 		static let smartFeedsHidingReadArticles = "smartFeedsHidingReadArticles"
 		static let feedsHidingReadArticles = "feedsHidingReadArticles"
 		static let foldersShowingReadArticles = "foldersShowingReadArticles"
+		static let sidebarItemTimelineSortDirections = "sidebarItemTimelineSortDirections"
 		static let selectedSidebarItem = "selectedSidebarItem"
 		static let selectedArticle = "selectedArticle"
 		static let didMigrateLegacyStateRestorationInfo = "didMigrateLegacyStateRestorationInfo"
@@ -426,6 +427,33 @@ final class AppDefaults: Sendable {
 		}
 	}
 
+	var sidebarItemTimelineSortDirections: [SidebarItemIdentifier: ComparisonResult] {
+		get {
+			guard let array = UserDefaults.standard.array(forKey: Key.sidebarItemTimelineSortDirections) as? [[String: Any]] else {
+				return [SidebarItemIdentifier: ComparisonResult]()
+			}
+			var sortDirections = [SidebarItemIdentifier: ComparisonResult]()
+			for d in array {
+				guard let sidebarItemUserInfo = d["sidebarItem"] as? [String: String],
+					  let sidebarItemID = SidebarItemIdentifier(userInfo: sidebarItemUserInfo),
+					  let sortDirectionRawValue = d["sortDirection"] as? Int else {
+					continue
+				}
+				sortDirections[sidebarItemID] = sortDirectionRawValue == ComparisonResult.orderedAscending.rawValue ? .orderedAscending : .orderedDescending
+			}
+			return sortDirections
+		}
+		set {
+			let array = newValue.map { sidebarItemID, sortDirection in
+				[
+					"sidebarItem": sidebarItemID.userInfo,
+					"sortDirection": sortDirection.rawValue
+				] as [String: Any]
+			}
+			UserDefaults.standard.set(array, forKey: Key.sidebarItemTimelineSortDirections)
+		}
+	}
+
 	var selectedSidebarItem: SidebarItemIdentifier? {
 		get {
 			guard let userInfo = UserDefaults.standard.dictionary(forKey: Key.selectedSidebarItem) as? [String: String] else {
@@ -559,6 +587,7 @@ struct StateRestorationInfo {
 	let smartFeedsHidingReadArticles: Set<String>
 	let feedsHidingReadArticles: [String: Set<String>]
 	let foldersShowingReadArticles: [String: Set<String>]
+	let sidebarItemTimelineSortDirections: [SidebarItemIdentifier: ComparisonResult]
 	let selectedArticle: ArticleSpecifier?
 	let articleWindowScrollY: Int
 	let isShowingExtractedArticle: Bool
@@ -569,6 +598,7 @@ struct StateRestorationInfo {
 	     smartFeedsHidingReadArticles: Set<String>,
 	     feedsHidingReadArticles: [String: Set<String>],
 	     foldersShowingReadArticles: [String: Set<String>],
+	     sidebarItemTimelineSortDirections: [SidebarItemIdentifier: ComparisonResult],
 	     selectedArticle: ArticleSpecifier?,
 	     articleWindowScrollY: Int,
 	     isShowingExtractedArticle: Bool) {
@@ -578,11 +608,12 @@ struct StateRestorationInfo {
 		self.smartFeedsHidingReadArticles = smartFeedsHidingReadArticles
 		self.feedsHidingReadArticles = feedsHidingReadArticles
 		self.foldersShowingReadArticles = foldersShowingReadArticles
+		self.sidebarItemTimelineSortDirections = sidebarItemTimelineSortDirections
 		self.selectedArticle = selectedArticle
 		self.articleWindowScrollY = articleWindowScrollY
 		self.isShowingExtractedArticle = isShowingExtractedArticle
 
-		AppDefaults.logger.debug("AppDefaults: StateRestorationInfo:\nexpandedContainers: \(expandedContainers)\nselectedSidebarItem: \(selectedSidebarItem?.userInfo ?? [String: String]())\nsmartFeedsHidingReadArticles: \(smartFeedsHidingReadArticles)\nfeedsHidingReadArticles: \(feedsHidingReadArticles)\nfoldersShowingReadArticles: \(foldersShowingReadArticles)\nselectedArticle: \(selectedArticle?.dictionary ?? [String: String]())\narticleWindowScrollY: \(articleWindowScrollY)\nisShowingExtractedArticle: \(isShowingExtractedArticle ? "true" : "false")")
+		AppDefaults.logger.debug("AppDefaults: StateRestorationInfo:\nexpandedContainers: \(expandedContainers)\nselectedSidebarItem: \(selectedSidebarItem?.userInfo ?? [String: String]())\nsmartFeedsHidingReadArticles: \(smartFeedsHidingReadArticles)\nfeedsHidingReadArticles: \(feedsHidingReadArticles)\nfoldersShowingReadArticles: \(foldersShowingReadArticles)\nsidebarItemTimelineSortDirections: \(sidebarItemTimelineSortDirections)\nselectedArticle: \(selectedArticle?.dictionary ?? [String: String]())\narticleWindowScrollY: \(articleWindowScrollY)\nisShowingExtractedArticle: \(isShowingExtractedArticle ? "true" : "false")")
 	}
 
 	init() {
@@ -592,6 +623,7 @@ struct StateRestorationInfo {
 				  smartFeedsHidingReadArticles: AppDefaults.shared.smartFeedsHidingReadArticles,
 				  feedsHidingReadArticles: AppDefaults.shared.feedsHidingReadArticles,
 				  foldersShowingReadArticles: AppDefaults.shared.foldersShowingReadArticles,
+				  sidebarItemTimelineSortDirections: AppDefaults.shared.sidebarItemTimelineSortDirections,
 				  selectedArticle: AppDefaults.shared.selectedArticle,
 				  articleWindowScrollY: AppDefaults.shared.articleWindowScrollY,
 				  isShowingExtractedArticle: AppDefaults.shared.isShowingExtractedArticle)
@@ -683,6 +715,7 @@ struct StateRestorationInfo {
 				  smartFeedsHidingReadArticles: smartFeedsHidingReadArticles,
 				  feedsHidingReadArticles: feedsHidingReadArticles,
 				  foldersShowingReadArticles: AppDefaults.shared.foldersShowingReadArticles,
+				  sidebarItemTimelineSortDirections: AppDefaults.shared.sidebarItemTimelineSortDirections,
 				  selectedArticle: AppDefaults.shared.selectedArticle,
 				  articleWindowScrollY: AppDefaults.shared.articleWindowScrollY,
 				  isShowingExtractedArticle: AppDefaults.shared.isShowingExtractedArticle)

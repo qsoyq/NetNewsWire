@@ -28,6 +28,7 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	private var iconSize = IconSize.medium
 	private lazy var feedTapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(showFeedInspector(_:)))
 	private lazy var filterButton = UIBarButtonItem(image: Assets.Images.filter, style: .plain, target: self, action: #selector(toggleFilter(_:)))
+	private lazy var sortDirectionButton = UIBarButtonItem(image: sortDirectionButtonImage(), style: .plain, target: self, action: #selector(toggleSortDirection(_:)))
 	private lazy var firstUnreadButton = UIBarButtonItem(image: Assets.Images.nextUnread, style: .plain, target: self, action: #selector(firstUnread(_:)))
 	private let refreshProgressView = RefreshProgressView(frame: .zero)
 	private lazy var refreshBarItem = UIBarButtonItem(customView: refreshProgressView)
@@ -450,6 +451,11 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	@IBAction func toggleFilter(_ sender: Any) {
 		assert(coordinator != nil)
 		coordinator?.toggleReadArticlesFilter()
+	}
+
+	@IBAction func toggleSortDirection(_ sender: Any) {
+		assert(coordinator != nil)
+		coordinator?.toggleTimelineSortDirection()
 	}
 
 	private func markAllAsReadInTimeline() {
@@ -912,8 +918,10 @@ private extension MainTimelineModernViewController {
 
 	func resetUI(resetScroll: Bool) {
 		let shouldShowFilterButton = coordinator?.shouldShowFilterButton() ?? false
-		navigationItem.rightBarButtonItem = shouldShowFilterButton ? filterButton : nil
+		let shouldShowSortDirectionButton = coordinator?.shouldShowSortDirectionButton() ?? false
+		navigationItem.rightBarButtonItems = rightBarButtonItems(shouldShowSortDirectionButton: shouldShowSortDirectionButton, shouldShowFilterButton: shouldShowFilterButton)
 
+		updateSortDirectionButton()
 		if isReadArticlesFiltered {
 			filterButton.tintColor = Assets.Colors.primaryAccent
 			filterButton.accLabelText = NSLocalizedString("Selected - Filter Read Articles", comment: "Selected - Filter Read Articles")
@@ -934,6 +942,34 @@ private extension MainTimelineModernViewController {
 		}
 
 		updateToolbar()
+	}
+
+	private func rightBarButtonItems(shouldShowSortDirectionButton: Bool, shouldShowFilterButton: Bool) -> [UIBarButtonItem]? {
+		var items = [UIBarButtonItem]()
+		if shouldShowFilterButton {
+			items.append(filterButton)
+		}
+		if shouldShowSortDirectionButton {
+			items.append(sortDirectionButton)
+		}
+		return items.isEmpty ? nil : items
+	}
+
+	private func updateSortDirectionButton() {
+		sortDirectionButton.image = sortDirectionButtonImage()
+		sortDirectionButton.tintColor = .label
+		if coordinator?.sortDirection == .orderedAscending {
+			sortDirectionButton.accLabelText = NSLocalizedString("Sort Newest to Oldest", comment: "Sort Newest to Oldest")
+		} else {
+			sortDirectionButton.accLabelText = NSLocalizedString("Sort Oldest to Newest", comment: "Sort Oldest to Newest")
+		}
+	}
+
+	private func sortDirectionButtonImage() -> UIImage? {
+		if coordinator?.sortDirection == .orderedAscending {
+			return UIImage(systemName: "arrow.up")
+		}
+		return UIImage(systemName: "arrow.down")
 	}
 
 	func updateToolbar() {

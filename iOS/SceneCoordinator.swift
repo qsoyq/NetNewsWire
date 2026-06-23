@@ -74,6 +74,7 @@ struct SidebarItemNode: Hashable, Sendable {
 	private var lastExpandedContainers = Set<ContainerIdentifier>()
 
 	private let hidingReadArticlesState = HidingReadArticlesState()
+	private let timelineSortDirectionState = TimelineSortDirectionState()
 
 	private(set) var preSearchTimelineFeed: SidebarItem?
 	private var lastSearchString = ""
@@ -154,6 +155,8 @@ struct SidebarItemNode: Hashable, Sendable {
 		didSet {
 			mainTimelineViewController?.updateNavigationBarTitle(timelineFeed?.nameForDisplay ?? "")
 			updateNavigationBarSubtitles(nil)
+			updateTimelineSortDirection()
+			mainTimelineViewController?.resetUI(resetScroll: false)
 		}
 	}
 
@@ -369,6 +372,7 @@ struct SidebarItemNode: Hashable, Sendable {
 		}
 
 		hidingReadArticlesState.copy(from: stateInfo)
+		timelineSortDirectionState.copy(from: stateInfo)
 
 		// Ensure the view is loaded so dataSource is initialized before rebuilding
 		_ = mainFeedCollectionViewController.view
@@ -580,8 +584,9 @@ struct SidebarItemNode: Hashable, Sendable {
 	}
 
 	func userDefaultsDidChange() {
-		sortDirection = AppDefaults.shared.timelineSortDirection
+		updateTimelineSortDirection()
 		groupByFeed = AppDefaults.shared.timelineGroupByFeed
+		mainTimelineViewController?.resetUI(resetScroll: false)
 	}
 
 	@objc func accountDidDownloadArticles(_ note: Notification) {
@@ -735,6 +740,7 @@ struct SidebarItemNode: Hashable, Sendable {
 
 	func didEnterBackground() {
 		hidingReadArticlesState.save()
+		timelineSortDirectionState.save()
 		saveExpandedContainers()
 	}
 
@@ -773,6 +779,19 @@ struct SidebarItemNode: Hashable, Sendable {
 			return false
 		}
 		return hidingReadArticlesState.canToggleHidingReadArticles(for: sidebarItemID)
+	}
+
+	func shouldShowSortDirectionButton() -> Bool {
+		timelineFeed?.sidebarItemID != nil
+	}
+
+	func toggleTimelineSortDirection() {
+		guard let sidebarItemID = timelineFeed?.sidebarItemID else {
+			return
+		}
+		timelineSortDirectionState.toggleSortDirection(for: sidebarItemID, defaultSortDirection: AppDefaults.shared.timelineSortDirection)
+		updateTimelineSortDirection()
+		mainTimelineViewController?.resetUI(resetScroll: false)
 	}
 
 	func toggleReadArticlesFilter() {
@@ -2137,6 +2156,14 @@ private extension SceneCoordinator {
 
 	func sortParametersDidChange() {
 		replaceArticles(with: Set(articles), animated: true)
+	}
+
+	func updateTimelineSortDirection() {
+		guard let sidebarItemID = timelineFeed?.sidebarItemID else {
+			sortDirection = AppDefaults.shared.timelineSortDirection
+			return
+		}
+		sortDirection = timelineSortDirectionState.sortDirection(for: sidebarItemID, defaultSortDirection: AppDefaults.shared.timelineSortDirection)
 	}
 
 	func replaceArticles(with unsortedArticles: Set<Article>, animated: Bool) {
