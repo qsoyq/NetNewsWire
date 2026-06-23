@@ -31,6 +31,7 @@ final class ArticleViewController: UIViewController {
 	@IBOutlet private var searchBar: ArticleSearchBar!
 	@IBOutlet private var searchBarBottomConstraint: NSLayoutConstraint!
 	private var defaultControls: [UIBarButtonItem]?
+	private var shouldApplyInitialArticleFullscreen = true
 
 	private var pageViewController: UIPageViewController!
 
@@ -186,9 +187,6 @@ final class ArticleViewController: UIViewController {
 		articleExtractorButton.buttonState = controller.articleExtractorButtonState
 
 		self.pageViewController.setViewControllers([controller], direction: .forward, animated: false, completion: nil)
-		if AppDefaults.shared.logicalArticleFullscreenEnabled {
-			controller.hideBars()
-		}
 
 		// Search bar
 		searchBar.translatesAutoresizingMaskIntoConstraints = false
@@ -202,8 +200,10 @@ final class ArticleViewController: UIViewController {
 	}
 
 	override func viewWillAppear(_ animated: Bool) {
-		let hideToolbars = AppDefaults.shared.logicalArticleFullscreenEnabled
-		if hideToolbars {
+		if shouldApplyInitialArticleFullscreen && AppDefaults.shared.articleFullscreenAvailable {
+			currentWebViewController?.hideBars()
+			shouldApplyInitialArticleFullscreen = false
+		} else if AppDefaults.shared.logicalArticleFullscreenEnabled {
 			currentWebViewController?.hideBars()
 		} else {
 			currentWebViewController?.showBars()
