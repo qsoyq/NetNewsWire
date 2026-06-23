@@ -118,6 +118,16 @@ typealias ArticleArray = [Article]
 		return Array(articlesAbove)
 	}
 
+	func articlesAboveAndIncluding(article: Article) -> [Article] {
+		guard let position = firstIndex(of: article) else { return [] }
+		return articlesAboveAndIncluding(position: position)
+	}
+
+	func articlesAboveAndIncluding(position: Int) -> [Article] {
+		guard position < count else { return [] }
+		return Array(self[...position])
+	}
+
 	func articlesBelow(article: Article) -> [Article] {
 		guard let position = firstIndex(of: article) else {	return [] }
 		return articlesBelow(position: position)

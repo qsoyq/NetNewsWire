@@ -786,7 +786,7 @@ extension MainTimelineModernViewController {
 			// Set up the read action
 			let readTitle = article.status.read ?
 				NSLocalizedString("Mark as Unread", comment: "Mark as Unread") :
-				NSLocalizedString("Mark as Read", comment: "Mark as Read")
+				NSLocalizedString("Mark Above as Read", comment: "Mark Above as Read")
 
 			let readAction = UIContextualAction(style: .normal, title: readTitle) { [weak self] _, _, completion in
 
@@ -797,17 +797,21 @@ extension MainTimelineModernViewController {
 					NSLocalizedString("Marked as Read", comment: "Accessibility announcement")
 				UIAccessibility.post(notification: .announcement, argument: announcement)
 
-				/// The call to `toggleRead` is delayed in order to allow
-				/// the swipe animation to complete. Calling `toggleRead` with no
+				/// The call is delayed in order to allow
+				/// the swipe animation to complete. Changing article read status with no
 				/// delay results UICollectionView internal inconsistency: unexpected
 				/// removal of the current swipe occurrence's mask view error.
 				DispatchQueue.main.asyncAfter(wallDeadline: .now() + 0.85) {
-					self?.toggleRead(article)
+					if article.status.read {
+						self?.toggleRead(article)
+					} else {
+						self?.markAboveAndIncludingAsRead(article)
+					}
 				}
 				completion(true)
 			}
 
-			readAction.image = article.status.read ? Assets.Images.circleClosed : Assets.Images.circleOpen
+			readAction.image = article.status.read ? Assets.Images.circleClosed : Assets.Images.markAboveAsRead
 			readAction.backgroundColor = Assets.Colors.primaryAccent
 			actions.append(readAction)
 
@@ -1202,6 +1206,13 @@ extension MainTimelineModernViewController {
 	func markAboveAsRead(_ article: Article) {
 		assert(coordinator != nil)
 		coordinator?.markAboveAsRead(article)
+	}
+
+	func markAboveAndIncludingAsRead(_ article: Article) {
+		assert(coordinator != nil)
+		guard let articles else { return }
+		let articlesToMark = articles.articlesAboveAndIncluding(article: article)
+		coordinator?.markAllAsRead(articlesToMark)
 	}
 
 	func canMarkAboveAsRead(for article: Article) -> Bool {
