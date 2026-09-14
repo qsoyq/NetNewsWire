@@ -1468,10 +1468,11 @@ struct SidebarItemNode: Hashable, Sendable {
 		mainFeedCollectionViewController.present(addNavViewController, animated: true)
 	}
 
-	func showFullScreenImage(image: UIImage, imageTitle: String?, transitioningDelegate: UIViewControllerTransitioningDelegate) {
+	func showFullScreenImage(image: UIImage, imageTitle: String?, transitioningDelegate: UIViewControllerTransitioningDelegate, saveAllImagesHandler: (() -> Void)? = nil) {
 		let imageVC = UIStoryboard.main.instantiateController(ofType: ImageViewController.self)
 		imageVC.image = image
 		imageVC.imageTitle = imageTitle
+		imageVC.saveAllImagesHandler = saveAllImagesHandler
 		imageVC.modalPresentationStyle = .currentContext
 		imageVC.transitioningDelegate = transitioningDelegate
 		rootSplitViewController.present(imageVC, animated: true)

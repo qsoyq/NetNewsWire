@@ -16,6 +16,22 @@ APP_NAME_IOS="NetNewsWire.app"
 
 MODE="${1:-all}" # mac | ios | all
 
+if [[ "${2:-}" == "--bundle-id" ]]; then
+	IOS_BUNDLE_ID_OVERRIDE="${3:-}"
+else
+	IOS_BUNDLE_ID_OVERRIDE="${IOS_BUNDLE_ID_OVERRIDE:-}"
+fi
+
+if [[ -n "${IOS_BUNDLE_ID_OVERRIDE}" && ! "${IOS_BUNDLE_ID_OVERRIDE}" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+	echo "Invalid iOS bundle identifier: ${IOS_BUNDLE_ID_OVERRIDE}"
+	exit 1
+fi
+
+IOS_BUNDLE_ID_ARGS=()
+if [[ -n "${IOS_BUNDLE_ID_OVERRIDE}" ]]; then
+	IOS_BUNDLE_ID_ARGS+=("PRODUCT_BUNDLE_IDENTIFIER=${IOS_BUNDLE_ID_OVERRIDE}")
+fi
+
 mkdir -p "${OUT_DIR}"
 
 log() { printf "\n[%s] %s\n" "$(date +'%H:%M:%S')" "$*"; }
@@ -34,8 +50,8 @@ build_mac() {
     -derivedDataPath "${DERIVED_DATA}" \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_IDENTITY="" \
-    clean build
+		CODE_SIGN_IDENTITY="" \
+		clean build
   local BUILD_EXIT=$?
   set -e
 
@@ -88,9 +104,10 @@ build_ios_unsigned_ipa() {
     SYMROOT="${DERIVED_DATA}/Build/Products" \
     OBJROOT="${DERIVED_DATA}/Build/Intermediates.noindex" \
     CODE_SIGNING_ALLOWED=NO \
-    CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_IDENTITY="" \
-    clean build
+		CODE_SIGNING_REQUIRED=NO \
+		CODE_SIGN_IDENTITY="" \
+		"${IOS_BUNDLE_ID_ARGS[@]}" \
+		clean build
 
   local APP_PATH
   APP_PATH="$(find "${DERIVED_DATA}/Build/Products" -type d -name "${APP_NAME_IOS}" | grep "Release-iphoneos" | head -n 1 || true)"

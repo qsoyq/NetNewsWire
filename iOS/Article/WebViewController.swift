@@ -12,6 +12,7 @@ import RSCore
 import RSWeb
 import Account
 import Articles
+import ErrorLog
 import SafariServices
 import MessageUI
 
@@ -29,6 +30,24 @@ final class WebViewController: UIViewController {
 		static let nativeVideoPlay = "nativeVideoPlay"
 		static let webViewPiPStarted = "webViewPiPStarted"
 		static let webViewPiPStopped = "webViewPiPStopped"
+		static let mediaContextTarget = "mediaContextTarget"
+		static let mediaLongPress = "mediaLongPress"
+	}
+
+	private enum MediaContextTarget: String {
+		case image
+		case video
+	}
+
+	private struct MediaContextTargetState {
+		let target: MediaContextTarget
+		let press: Int
+		let detectedAt: Date
+	}
+
+	private struct MediaSnapshot: Decodable {
+		let urls: [String]
+		let skipped: Int
 	}
 
 	private var topShowBarsView: UIView!
@@ -47,6 +66,9 @@ final class WebViewController: UIViewController {
 	private lazy var articleIconSchemeHandler = ArticleIconSchemeHandler(coordinator: coordinator)
 	private lazy var transition = ImageTransition(controller: self)
 	private var clickedImageCompletion: (() -> Void)?
+	private var mediaContextTargetState: MediaContextTargetState?
+	private var didConfigureContextMenuForCurrentPress = false
+	private var mediaSaveProgressAlert: UIAlertController?
 
 	private var articleExtractor: ArticleExtractor?
 	var extractedArticle: ExtractedArticle? {
@@ -367,6 +389,42 @@ extension WebViewController: UIContextMenuInteractionDelegate {
 
 }
 
+// MARK: WKUIDelegate
+
+extension WebViewController: WKUIDelegate {
+
+	func webView(_ webView: WKWebView, contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo, completionHandler: @escaping @MainActor @Sendable (UIContextMenuConfiguration?) -> Void) {
+		// Links keep WebKit's own menu and preview. Returning nil restores exactly the behavior this
+		// app had before batch saving existed, so the only thing this callback adds is the extra
+		// action for a link-wrapped image.
+		let mediaContextTarget = currentMediaContextTarget
+		if mediaContextTarget != nil {
+			didConfigureContextMenuForCurrentPress = true
+		}
+		logMediaEvent(.debug, operation: "Context menu", message: "Public callback began for \(mediaContextTarget?.rawValue ?? "non-media") target")
+		completionHandler(mediaContextMenuConfiguration(appending: mediaContextTarget))
+	}
+
+	/// WebKit routes link elements through the public callback above, but long-pressing a plain image
+	/// element goes through this private callback instead. WebKit's own header keeps it private "to
+	/// continue to do callbacks for image element context menus"; without it WebKit builds the image
+	/// menu by itself and the Save All action can never be appended.
+	@objc(_webView:contextMenuConfigurationForElement:completionHandler:)
+	func webView(_ webView: WKWebView, _privateContextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo, completionHandler: @escaping @MainActor @Sendable (UIContextMenuConfiguration?) -> Void) {
+		guard let mediaContextTarget = currentMediaContextTarget else {
+			// Not one of ours: keep hands off so WebKit's own menu and preview stay untouched.
+			logMediaEvent(.debug, operation: "Context menu", message: "Private callback found no media target; leaving the system menu alone")
+			completionHandler(nil)
+			return
+		}
+
+		didConfigureContextMenuForCurrentPress = true
+		logMediaEvent(.debug, operation: "Context menu", message: "Private callback began for \(mediaContextTarget.rawValue) target")
+		completionHandler(mediaContextMenuConfiguration(appending: mediaContextTarget))
+	}
+
+}
+
 // MARK: WKNavigationDelegate
 
 extension WebViewController: WKNavigationDelegate {
@@ -450,15 +508,18 @@ extension WebViewController: WKNavigationDelegate {
 
 }
 
-// MARK: WKUIDelegate
 
-extension WebViewController: WKUIDelegate {
+extension WebViewController {
 
 	func webView(_ webView: WKWebView, contextMenuForElement elementInfo: WKContextMenuElementInfo, willCommitWithAnimator animator: UIContextMenuInteractionCommitAnimating) {
 		// We need to have at least an unimplemented WKUIDelegate assigned to the WKWebView.  This makes the
 		// link preview launch Safari when the link preview is tapped.  In theory, you should be able to get
 		// the link from the elementInfo above and transition to SFSafariViewController instead of launching
 		// Safari.  As the time of this writing, the link in elementInfo is always nil.  ¯\_(ツ)_/¯
+	}
+
+	func webView(_ webView: WKWebView, contextMenuDidEndForElement elementInfo: WKContextMenuElementInfo) {
+		mediaContextTargetState = nil
 	}
 
 	func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -494,6 +555,41 @@ extension WebViewController: WKScriptMessageHandler {
 			WebViewPiPManager.shared.pipDidStart(from: self)
 		case MessageName.webViewPiPStopped:
 			WebViewPiPManager.shared.pipDidStop(from: self)
+		case MessageName.mediaLongPress:
+			handleMediaLongPressMessage(message.body as? String)
+		case MessageName.mediaContextTarget:
+			// Reports carry "<type>:<press>" so a straggler from an earlier press can never overwrite
+			// the media element the current press is about to build a menu for.
+			let components = (message.body as? String ?? "").split(separator: ":", maxSplits: 1)
+			let reportedType = components.first.map(String.init) ?? ""
+			let reportedPress = components.count > 1 ? Int(components[1]) : nil
+
+			// A straggler from an earlier press must never change the target of the press in progress.
+			let isFromEarlierPress = reportedPress != nil && mediaContextTargetState != nil && reportedPress! < mediaContextTargetState!.press
+
+			guard let aTarget = MediaContextTarget(rawValue: reportedType) else {
+				guard !isFromEarlierPress else {
+					logMediaEvent(.debug, operation: "Long press", message: "Ignored a non-media report from an earlier press")
+					return
+				}
+				// A press that did not start on media clears the target, matching what WebKit will do.
+				mediaContextTargetState = nil
+				didConfigureContextMenuForCurrentPress = false
+				logMediaEvent(.debug, operation: "Long press", message: "Cleared the media target for a non-media press")
+				return
+			}
+
+			guard !isFromEarlierPress else {
+				logMediaEvent(.debug, operation: "Long press", message: "Ignored \(aTarget.rawValue) report from an earlier press")
+				return
+			}
+
+			let isNewPress = mediaContextTargetState?.press != reportedPress
+			if isNewPress {
+				didConfigureContextMenuForCurrentPress = false
+			}
+			mediaContextTargetState = MediaContextTargetState(target: aTarget, press: reportedPress ?? 0, detectedAt: Date())
+			logMediaEvent(.debug, operation: "Long press", message: "Detected \(aTarget.rawValue) target")
 		default:
 			return
 		}
@@ -584,6 +680,205 @@ private struct ImageClickMessage: Codable {
 
 private extension WebViewController {
 
+	private var currentMediaContextTarget: MediaContextTarget? {
+		guard let mediaContextTargetState,
+			Date().timeIntervalSince(mediaContextTargetState.detectedAt) < 2 else {
+			return nil
+		}
+		return mediaContextTargetState.target
+	}
+
+	/// Builds the menu WebKit shows, with the batch save action appended after the actions the system
+	/// provides. Passing nil for the target keeps the original menu exactly as it was.
+	private func mediaContextMenuConfiguration(appending mediaContextTarget: MediaContextTarget?) -> UIContextMenuConfiguration {
+		UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] suggestedActions in
+			guard let self, let mediaContextTarget else {
+				return UIMenu(title: "", children: suggestedActions)
+			}
+
+			var menuElements = suggestedActions
+			menuElements.append(UIMenu(title: "", options: .displayInline, children: [self.saveAllMediaAction(for: mediaContextTarget)]))
+			return UIMenu(title: "", children: menuElements)
+		}
+	}
+
+	/// WebKit exposes no hook to extend the media-controls menu, so a video gets an app-provided menu.
+	/// The page reports the long press from JavaScript instead of this class adding its own gesture
+	/// recognizer: an extra recognizer on the web view risks interfering with the image and link
+	/// menus WebKit owns, and those must stay untouched.
+	///
+	/// Images are deliberately excluded here. WebKit owns their menu, and the context menu callback
+	/// above extends it with Save All Images.
+	func handleMediaLongPressMessage(_ body: String?) {
+		let components = (body ?? "").split(separator: ":", maxSplits: 1)
+		guard components.first.map(String.init) == MediaContextTarget.video.rawValue else {
+			return
+		}
+		if components.count > 1, let press = Int(components[1]), let mediaContextTargetState, press != mediaContextTargetState.press {
+			logMediaEvent(.debug, operation: "Long press", message: "Ignored a video report from an earlier press")
+			return
+		}
+		guard !didConfigureContextMenuForCurrentPress else {
+			logMediaEvent(.debug, operation: "Long press", message: "WebKit already provided the menu for this press")
+			return
+		}
+		guard presentedViewController == nil else {
+			logMediaEvent(.debug, operation: "Long press", message: "Another menu is already on screen")
+			return
+		}
+
+		logMediaEvent(.info, operation: "Long press", message: "Showing the app video menu")
+		presentVideoActions()
+	}
+
+	private func presentVideoActions() {
+		let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+		alert.addAction(UIAlertAction(title: NSLocalizedString("Save All Videos", comment: "Save all article videos"), style: .default) { [weak self] _ in
+			self?.logMediaEvent(.info, operation: "Save all", message: "Selected video batch save")
+			self?.confirmSaveAllMedia(for: .video)
+		})
+		alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel))
+		if let webView {
+			alert.popoverPresentationController?.sourceView = webView
+			alert.popoverPresentationController?.sourceRect = CGRect(x: webView.bounds.midX, y: webView.bounds.midY, width: 0, height: 0)
+		}
+		present(alert, animated: true)
+	}
+
+	private func saveAllMediaAction(for mediaContextTarget: MediaContextTarget) -> UIAction {
+		let title = mediaContextTarget == .image ? NSLocalizedString("Save All Images", comment: "Save all article images") : NSLocalizedString("Save All Videos", comment: "Save all article videos")
+		let image = mediaContextTarget == .image ? UIImage(systemName: "photo.on.rectangle") : UIImage(systemName: "video")
+		return UIAction(title: title, image: image) { [weak self] _ in
+			self?.logMediaEvent(.info, operation: "Save all", message: "Selected \(mediaContextTarget.rawValue) batch save")
+			self?.confirmSaveAllMedia(for: mediaContextTarget)
+		}
+	}
+
+	private func confirmSaveAllMedia(for mediaContextTarget: MediaContextTarget) {
+		guard let webView else {
+			return
+		}
+
+		webView.evaluateJavaScript("collectMediaForSaving('\(mediaContextTarget.rawValue)')") { [weak self] result, error in
+			guard let self,
+				error == nil,
+				let result = result as? String,
+				let data = result.data(using: .utf8),
+				let snapshot = try? JSONDecoder().decode(MediaSnapshot.self, from: data) else {
+				self?.logMediaEvent(.warning, operation: "Save all", message: "Could not read the media list from the article (error: \(error?.localizedDescription ?? "none"))")
+				self?.presentMediaSaveResult(title: NSLocalizedString("Unable to Save Media", comment: "Unable to save media title"), message: NSLocalizedString("The article media could not be read.", comment: "Unable to read article media"))
+				return
+			}
+
+			guard !snapshot.urls.isEmpty else {
+				self.logMediaEvent(.warning, operation: "Save all", message: "No supported \(mediaContextTarget.rawValue) media found; skipped \(snapshot.skipped) items")
+				self.presentMediaSaveResult(title: NSLocalizedString("No Media to Save", comment: "No media to save title"), message: NSLocalizedString("No supported media was found on this page.", comment: "No supported article media"))
+				return
+			}
+
+			let mediaName = mediaContextTarget == .image ? NSLocalizedString("images", comment: "Article image count") : NSLocalizedString("videos", comment: "Article video count")
+			let title = mediaContextTarget == .image ? NSLocalizedString("Save All Images", comment: "Save all article images") : NSLocalizedString("Save All Videos", comment: "Save all article videos")
+			let message = String.localizedStringWithFormat(NSLocalizedString("Save %ld %@ to your photo library?", comment: "Confirm saving all article media"), snapshot.urls.count, mediaName)
+			let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+			alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel))
+			alert.addAction(UIAlertAction(title: NSLocalizedString("Save", comment: "Save"), style: .default) { [weak self] _ in
+				self?.saveMedia(snapshot: snapshot, type: mediaContextTarget)
+			})
+			self.present(alert, animated: true)
+		}
+	}
+
+	private func saveMedia(snapshot: MediaSnapshot, type: MediaContextTarget) {
+		Task { @MainActor [weak self] in
+			guard let self else {
+				return
+			}
+			await performMediaSave(snapshot: snapshot, type: type)
+		}
+	}
+
+	/// Performs a batch save, reporting every step it reaches.
+	///
+	/// This runs inside a single method with one top-level catch so an unexpected failure is logged
+	/// rather than silently swallowed. The stage marker is also kept up to date, because the error
+	/// log is written asynchronously and its last messages are lost if the process terminates during
+	/// the save.
+	private func performMediaSave(snapshot: MediaSnapshot, type: MediaContextTarget) async {
+		ArticleMediaSaveStage.begin(type: type.rawValue, requestedCount: snapshot.urls.count)
+		logMediaEvent(.debug, operation: "Save all", message: "Saving \(snapshot.urls.count) \(type.rawValue) media; \(snapshot.skipped) skipped; sources: \(snapshot.urls.map { ArticleMediaLog.urlDescription($0, level: .debug) })")
+
+		let saver = ArticleMediaSaver()
+		ArticleMediaSaveStage.update("authorizing")
+		guard await saver.authorize() else {
+			ArticleMediaSaveStage.finish()
+			logMediaEvent(.warning, operation: "Photo Library", message: "Add-only Photos permission was not granted")
+			presentMediaSaveResult(title: NSLocalizedString("Photo Library Access Required", comment: "Photo library access required title"), message: NSLocalizedString("Allow NetNewsWire to add media to your photo library and try again.", comment: "Photo library access required message"))
+			return
+		}
+		logMediaEvent(.debug, operation: "Save all", message: "Add-only Photos permission is granted")
+
+		let iconData = type == .image ? renderedArticleIconData() : nil
+		if type == .image {
+			logMediaEvent(.debug, operation: "Save all", message: iconData == nil ? "No feed icon data available for an nnwImageIcon source" : "Feed icon data is \(iconData?.count ?? 0) bytes")
+		}
+
+		let mediaName = type == .image ? NSLocalizedString("Images", comment: "Saving images title") : NSLocalizedString("Videos", comment: "Saving videos title")
+		let progressAlert = UIAlertController(title: String.localizedStringWithFormat(NSLocalizedString("Saving %@", comment: "Saving article media title"), mediaName), message: nil, preferredStyle: .alert)
+		mediaSaveProgressAlert = progressAlert
+		ArticleMediaSaveStage.update("presenting progress")
+		present(progressAlert, animated: true)
+
+		let progress: @MainActor (Int, Int) -> Void = { [weak self] current, total in
+			self?.mediaSaveProgressAlert?.message = String.localizedStringWithFormat(NSLocalizedString("Saving %ld of %ld", comment: "Article media saving progress"), current, total)
+		}
+
+		let result: ArticleMediaSaver.Result
+		if type == .image {
+			result = await saver.saveImages(sources: snapshot.urls, iconData: iconData, skippedCount: snapshot.skipped, progress: progress)
+		} else {
+			result = await saver.saveVideos(sources: snapshot.urls, skippedCount: snapshot.skipped, progress: progress)
+		}
+
+		ArticleMediaSaveStage.update("finalizing")
+		progressAlert.dismiss(animated: true) { [weak self] in
+			ArticleMediaSaveStage.finish()
+			self?.logMediaEvent(result.failedCount > 0 ? .warning : .info, operation: "Save all", message: "Saved \(result.savedCount) of \(result.requestedCount); failed \(result.failedCount); skipped \(result.skippedCount)")
+			self?.mediaSaveProgressAlert = nil
+			self?.presentMediaSaveResult(title: NSLocalizedString("Media Saved", comment: "Article media saved title"), message: self?.mediaSaveResultMessage(result) ?? "")
+		}
+	}
+
+	func renderedArticleIconData() -> Data? {
+		guard let iconImage = article?.iconImage() else {
+			return nil
+		}
+
+		let iconView = IconView(frame: CGRect(x: 0, y: 0, width: 48, height: 48))
+		iconView.iconImage = iconImage
+		return iconView.asImage().dataRepresentation()
+	}
+
+	func mediaSaveResultMessage(_ result: ArticleMediaSaver.Result) -> String {
+		var components = [String.localizedStringWithFormat(NSLocalizedString("Saved %ld of %ld.", comment: "Article media save result"), result.savedCount, result.requestedCount)]
+		if result.failedCount > 0 {
+			components.append(String.localizedStringWithFormat(NSLocalizedString("%ld failed.", comment: "Article media failed count"), result.failedCount))
+		}
+		if result.skippedCount > 0 {
+			components.append(String.localizedStringWithFormat(NSLocalizedString("%ld skipped.", comment: "Article media skipped count"), result.skippedCount))
+		}
+		return components.joined(separator: " ")
+	}
+
+	func presentMediaSaveResult(title: String, message: String) {
+		let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+		alert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: "OK"), style: .default))
+		present(alert, animated: true)
+	}
+
+	func logMediaEvent(_ level: ErrorLogLevel, operation: String, message: String) {
+		ArticleMediaLog.log(level, operation: operation, message: message)
+	}
+
 	func loadWebView(replaceExistingWebView: Bool = false) {
 		guard isViewLoaded else { return }
 
@@ -630,6 +925,8 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.nativeVideoPlay)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.webViewPiPStarted)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.webViewPiPStopped)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.mediaContextTarget)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.mediaLongPress)
 
 				// Add handlers
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasClicked)
@@ -639,6 +936,8 @@ private extension WebViewController {
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.nativeVideoPlay)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.webViewPiPStarted)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.webViewPiPStopped)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.mediaContextTarget)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.mediaLongPress)
 
 				self.renderPage(webView)
 			}
@@ -776,7 +1075,9 @@ private extension WebViewController {
 
 		transition.originImage = image
 
-		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, transitioningDelegate: self)
+		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, transitioningDelegate: self, saveAllImagesHandler: { [weak self] in
+			self?.confirmSaveAllMedia(for: .image)
+		})
 	}
 
 	func stopMediaPlayback(_ webView: WKWebView) {

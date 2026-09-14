@@ -188,9 +188,162 @@ function setupVideoEndedHandler() {
 	});
 }
 
+function isVisibleMedia(element) {
+	return element.getClientRects().length > 0 && !element.classList.contains("activityIndicator");
+}
+
+function originalURLForCachedSource(source) {
+	// When video or image caching is on, the article renderer rewrites src attributes to
+	// nnwVideoCache://cache?url=<original>. That URL only exists inside the app, so it has to be
+	// turned back into the original HTTP URL before the media can be downloaded and saved.
+	if (!source || !source.toLowerCase().startsWith("nnwvideocache://")) {
+		return source;
+	}
+	var start = source.indexOf("?url=");
+	if (start === -1) return source;
+	var value = source.substring(start + 5);
+	try {
+		return decodeURIComponent(value);
+	} catch (e) {
+		return value;
+	}
+}
+
+function mediaSourceForSaving(element, mediaType) {
+	var source;
+	if (mediaType === "image") {
+		source = element.currentSrc || element.src;
+	} else {
+		source = element.currentSrc || element.src || (element.querySelector("source") ? element.querySelector("source").src : "");
+	}
+	return originalURLForCachedSource(source);
+}
+
+function isSaveableMediaSource(source, mediaType) {
+	if (!source) return false;
+	if (mediaType === "image") {
+		return /^(https?|data|nnwimageicon):/i.test(source);
+	}
+
+	return /^https?:/i.test(source) && !/\.m3u8(?:$|[?#])/i.test(source);
+}
+
+function collectMediaForSaving(mediaType) {
+	var selector = mediaType === "image" ? "img" : "video";
+	var urls = [];
+	var seen = new Set();
+	var skipped = 0;
+
+	document.querySelectorAll(selector).forEach(element => {
+		if (!isVisibleMedia(element)) return;
+		if (mediaType === "video" && isAnimatedGIFVideo(element)) return;
+
+		var source = mediaSourceForSaving(element, mediaType);
+		if (!isSaveableMediaSource(source, mediaType)) {
+			skipped++;
+			return;
+		}
+		if (!seen.has(source)) {
+			seen.add(source);
+			urls.push(source);
+		}
+	});
+
+	return JSON.stringify({ urls: urls, skipped: skipped });
+}
+
+// Every press gets a sequence number so the app can tell reports of the current press apart from
+// stragglers belonging to an earlier one. Without it, a later report for the surrounding page could
+// erase the media element WebKit is about to build a menu for.
+var mediaPressSequence = 0;
+
+function isAnimatedGIFVideo(element) {
+	return element.tagName.toLowerCase() === "video" && element.classList.contains("nnwAnimatedGIF");
+}
+
+function mediaContextTargetType(event) {
+	var target = event.target.closest ? event.target.closest("img, video") : null;
+	if (!target || !isVisibleMedia(target)) return null;
+	// Animated GIFs are rendered as videos by the article renderer, but they are images to the
+	// reader, so they must never be offered as videos.
+	if (isAnimatedGIFVideo(target)) return null;
+	return target.tagName.toLowerCase() === "video" ? "video" : "image";
+}
+
+function postMediaContextTarget(type, press) {
+	window.webkit.messageHandlers.mediaContextTarget.postMessage(type + ":" + press);
+}
+
+function reportMediaContextTargetForTouchStart(event) {
+	// A touch start begins a new press and therefore owns the target, so it may report "none".
+	mediaPressSequence += 1;
+	postMediaContextTarget(mediaContextTargetType(event) || "none", mediaPressSequence);
+}
+
+function reportMediaContextTargetForContextMenu(event) {
+	// Context menu events fire later in the same press. Only a real media target is reported, and it
+	// keeps the current press number so it can only ever refresh that press.
+	var type = mediaContextTargetType(event);
+	if (type) {
+		postMediaContextTarget(type, mediaPressSequence);
+	}
+}
+
+var mediaLongPressTimer = null;
+var mediaLongPressMoveHandler = null;
+
+function beginMediaLongPress(event) {
+	cancelMediaLongPress();
+	var type = mediaContextTargetType(event);
+	if (type !== "video") return;
+
+	// WebKit exposes no way to add an item to a video's controls menu, so the app shows its own.
+	// Detecting the press here keeps the native gesture handling — and therefore WebKit's image and
+	// link menus — completely untouched.
+	var touch = event.touches && event.touches[0];
+	if (!touch) return;
+	var startX = touch.clientX;
+	var startY = touch.clientY;
+
+	var press = mediaPressSequence;
+	mediaLongPressTimer = setTimeout(function() {
+		mediaLongPressTimer = null;
+		window.webkit.messageHandlers.mediaLongPress.postMessage("video:" + press);
+	}, 600);
+
+	mediaLongPressMoveHandler = function(moveEvent) {
+		var current = moveEvent.touches && moveEvent.touches[0];
+		if (!current) return;
+		if (Math.abs(current.clientX - startX) > 10 || Math.abs(current.clientY - startY) > 10) {
+			cancelMediaLongPress();
+		}
+	};
+	document.addEventListener("touchmove", mediaLongPressMoveHandler, { capture: true, passive: true });
+}
+
+function cancelMediaLongPress() {
+	if (mediaLongPressTimer !== null) {
+		clearTimeout(mediaLongPressTimer);
+		mediaLongPressTimer = null;
+	}
+	if (mediaLongPressMoveHandler) {
+		document.removeEventListener("touchmove", mediaLongPressMoveHandler, { capture: true });
+		mediaLongPressMoveHandler = null;
+	}
+}
+
+function setupMediaContextTargetHandler() {
+	document.addEventListener("touchstart", reportMediaContextTargetForTouchStart, { capture: true, passive: true });
+	document.addEventListener("contextmenu", reportMediaContextTargetForContextMenu, { capture: true });
+	document.addEventListener("touchstart", beginMediaLongPress, { capture: true, passive: true });
+	document.addEventListener("touchend", cancelMediaLongPress, { capture: true, passive: true });
+	document.addEventListener("touchcancel", cancelMediaLongPress, { capture: true, passive: true });
+}
+
 function postRenderProcessing() {
 	ImageViewer.init();
 	showFeedInspectorSetup();
+	setupMediaContextTargetHandler();
 }
 
 function onResize() {

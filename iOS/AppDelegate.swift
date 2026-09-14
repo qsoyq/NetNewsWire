@@ -59,6 +59,17 @@ import ErrorLog
 		NotificationCenter.default.addObserver(self, selector: #selector(accountRefreshDidFinish(_:)), name: .AccountRefreshDidFinish, object: nil)
 	}
 
+	/// Reports a batch media save that never finished, which is how we find out where a save that
+	/// terminated the process stopped. The error log is written asynchronously, so its last messages
+	/// do not survive an abrupt termination; this marker does.
+	private func reportAbandonedMediaSaveIfNeeded() {
+		guard let stage = ArticleMediaSaveStage.abandonedStage() else {
+			return
+		}
+		ArticleMediaSaveStage.finish()
+		ArticleMediaLog.log(.warning, operation: "Save all", message: "A previous batch media save did not finish; last step was: \(stage)")
+	}
+
 	func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
 		Task {
 			await WebViewConfiguration.compileContentBlockingRules()
@@ -75,6 +86,8 @@ import ErrorLog
 			let localAccount = AccountManager.shared.defaultAccount
 			DefaultFeedsImporter.importDefaultFeeds(account: localAccount)
 		}
+
+		reportAbandonedMediaSaveIfNeeded()
 
 		registerBackgroundTasks()
 		CacheCleaner.purgeIfNecessary()

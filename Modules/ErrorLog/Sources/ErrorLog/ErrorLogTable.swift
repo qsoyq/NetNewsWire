@@ -13,7 +13,7 @@ struct ErrorLogTable {
 
 	static let name = "errors"
 
-	static func insertEntry(sourceName: String, sourceID: Int, operation: String, fileName: String, functionName: String, lineNumber: Int, errorMessage: String, database: FMDatabase) {
+	static func insertEntry(sourceName: String, sourceID: Int, operation: String, fileName: String, functionName: String, lineNumber: Int, errorMessage: String, level: ErrorLogLevel, database: FMDatabase) {
 		let dictionary: DatabaseDictionary = [
 			ErrorLogEntry.DatabaseKey.date: Date().timeIntervalSince1970,
 			ErrorLogEntry.DatabaseKey.sourceName: sourceName,
@@ -22,7 +22,8 @@ struct ErrorLogTable {
 			ErrorLogEntry.DatabaseKey.fileName: fileName,
 			ErrorLogEntry.DatabaseKey.functionName: functionName,
 			ErrorLogEntry.DatabaseKey.lineNumber: lineNumber,
-			ErrorLogEntry.DatabaseKey.errorMessage: errorMessage
+			ErrorLogEntry.DatabaseKey.errorMessage: errorMessage,
+			ErrorLogEntry.DatabaseKey.level: level.rawValue
 		]
 		database.insertRow(dictionary, insertType: .normal, tableName: name)
 	}
@@ -57,6 +58,7 @@ private extension ErrorLogTable {
 		let functionName = row.string(forColumn: ErrorLogEntry.DatabaseKey.functionName) ?? ""
 		let lineNumber = Int(row.int(forColumn: ErrorLogEntry.DatabaseKey.lineNumber))
 
-		return ErrorLogEntry(id: id, date: date, sourceName: sourceName, sourceID: sourceID, operation: operation, fileName: fileName, functionName: functionName, lineNumber: lineNumber, errorMessage: errorMessage)
+		let level = ErrorLogLevel(rawValue: Int(row.int(forColumn: ErrorLogEntry.DatabaseKey.level))) ?? .error
+		return ErrorLogEntry(id: id, date: date, sourceName: sourceName, sourceID: sourceID, operation: operation, fileName: fileName, functionName: functionName, lineNumber: lineNumber, errorMessage: errorMessage, level: level)
 	}
 }

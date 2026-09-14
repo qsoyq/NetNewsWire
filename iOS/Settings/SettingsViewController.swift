@@ -29,7 +29,8 @@ final class SettingsViewController: UITableViewController {
 
 	private enum TroubleshootingRow: Int {
 		case errorLog = 0
-		case cloudKitZoneStats = 1
+		case logLevel = 1
+		case cloudKitZoneStats = 2
 	}
 
 	private weak var opmlAccount: Account?
@@ -41,6 +42,7 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var articleThemeDetailLabel: UILabel!
 	@IBOutlet var confirmMarkAllAsReadSwitch: UISwitch!
 	@IBOutlet var showFullscreenArticlesSwitch: UISwitch!
+	@IBOutlet var doubleTapToGoBackSwitch: UISwitch!
 	@IBOutlet var colorPaletteDetailLabel: UILabel!
 	@IBOutlet var openLinksInNetNewsWire: UISwitch!
 	@IBOutlet var cacheVideoContentSwitch: UISwitch!
@@ -51,6 +53,7 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var pipAutoPlayNextVideoSwitch: UISwitch!
 	@IBOutlet var prefetchNextArticleSwitch: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
+	@IBOutlet var logLevelDetailLabel: UILabel!
 
 	var scrollToArticlesSection = false
 	weak var presentingParentController: UIViewController?
@@ -108,6 +111,8 @@ final class SettingsViewController: UITableViewController {
 			showFullscreenArticlesSwitch.isOn = false
 		}
 
+		doubleTapToGoBackSwitch.isOn = AppDefaults.shared.doubleTapToGoBack
+
 		if AppDefaults.shared.isArticleContentJavascriptEnabled {
 			enableJavaScriptSwitch.isOn = true
 		} else {
@@ -121,6 +126,7 @@ final class SettingsViewController: UITableViewController {
 		autoGotoNextAfterVideoSwitch.isOn = AppDefaults.shared.autoGotoNextAfterVideo
 		pipAutoPlayNextVideoSwitch.isOn = AppDefaults.shared.pipAutoPlayNextVideo
 		prefetchNextArticleSwitch.isOn = AppDefaults.shared.prefetchNextArticleContent
+		logLevelDetailLabel.text = AppDefaults.shared.errorLogLevel.name
 
 		colorPaletteDetailLabel.text = String(describing: AppDefaults.userInterfaceColorPalette)
 
@@ -249,10 +255,10 @@ final class SettingsViewController: UITableViewController {
 			}
 		case .articles:
 			switch indexPath.row {
-			case 0:
+			case 1:
 				let articleThemes = UIStoryboard.settings.instantiateController(ofType: ArticleThemesTableViewController.self)
 				self.navigationController?.pushViewController(articleThemes, animated: true)
-			case 11:
+			case 12:
 				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
 				clearVideoCache()
 			default:
@@ -266,6 +272,8 @@ final class SettingsViewController: UITableViewController {
 				switch TroubleshootingRow(rawValue: indexPath.row) {
 				case .errorLog:
 					return UIHostingController(rootView: ErrorLogView())
+				case .logLevel:
+					return UIHostingController(rootView: LogLevelView())
 				case .cloudKitZoneStats:
 					return UIHostingController(rootView: CloudKitStatsView())
 				default:
@@ -368,6 +376,10 @@ final class SettingsViewController: UITableViewController {
 		} else {
 			AppDefaults.shared.articleFullscreenAvailable = false
 		}
+	}
+
+	@IBAction func switchDoubleTapToGoBack(_ sender: Any) {
+		AppDefaults.shared.doubleTapToGoBack = doubleTapToGoBackSwitch.isOn
 	}
 
 	@IBAction func switchBrowserPreference(_ sender: Any) {

@@ -41,7 +41,19 @@ import Foundation
 		#expect(entry.functionName == "testFunction()")
 		#expect(entry.lineNumber == 42)
 		#expect(entry.errorMessage == "Something went wrong")
+		#expect(entry.level == .error)
 		#expect(entry.id > 0)
+	}
+
+	@Test func storesLogLevel() async {
+		let path = temporaryDatabasePath()
+		defer { deleteDatabaseFiles(at: path) }
+
+		let database = ErrorLogDatabase(databasePath: path)
+		await database.addEntry(sourceName: "Article Media", sourceID: 100, operation: "Long press", fileName: "WebViewController.swift", functionName: "logMediaEvent", lineNumber: 1, errorMessage: "Detected image target", level: .debug)
+
+		let entries = await database.allEntries()
+		#expect(entries.first?.level == .debug)
 	}
 
 	@Test func entriesReturnedInInsertionOrder() async {

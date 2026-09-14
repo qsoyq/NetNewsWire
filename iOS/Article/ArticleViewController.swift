@@ -13,6 +13,7 @@ import WebKit
 import RSCore
 import Account
 import Articles
+import ErrorLog
 
 final class ArticleViewController: UIViewController {
 
@@ -55,6 +56,7 @@ final class ArticleViewController: UIViewController {
 
 	private let poppableDelegate = PoppableGestureRecognizerDelegate()
 	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "ArticleViewController")
+	private static let doubleTapLogSourceID = 101
 
 	var article: Article? {
 		didSet {
@@ -102,6 +104,15 @@ final class ArticleViewController: UIViewController {
 	var restoreState: State?
 
 	private let keyboardManager = KeyboardManager(type: .detail)
+	private lazy var doubleTapToGoBackGestureRecognizer: UITapGestureRecognizer = {
+		let recognizer = UITapGestureRecognizer(target: self, action: #selector(doubleTapToGoBack))
+		recognizer.numberOfTapsRequired = 2
+		recognizer.cancelsTouchesInView = false
+		recognizer.delaysTouchesEnded = false
+		recognizer.delegate = self
+		return recognizer
+	}()
+
 	override var keyCommands: [UIKeyCommand]? {
 		return keyboardManager.keyCommands
 	}
@@ -113,6 +124,7 @@ final class ArticleViewController: UIViewController {
 		NotificationCenter.default.addObserver(self, selector: #selector(statusesDidChange(_:)), name: .StatusesDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(contentSizeCategoryDidChange(_:)), name: UIContentSizeCategory.didChangeNotification, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(willEnterForeground(_:)), name: UIApplication.willEnterForegroundNotification, object: nil)
+		view.addGestureRecognizer(doubleTapToGoBackGestureRecognizer)
 
 		let appearance = UINavigationBarAppearance()
 		appearance.configureWithDefaultBackground()
@@ -200,6 +212,9 @@ final class ArticleViewController: UIViewController {
 	}
 
 	override func viewWillAppear(_ animated: Bool) {
+		// Enable purely from the setting: the navigation stack may not be resolved yet, so the
+		// gesture action decides whether there is actually a previous page to go back to.
+		doubleTapToGoBackGestureRecognizer.isEnabled = AppDefaults.shared.doubleTapToGoBack
 		if shouldApplyInitialArticleFullscreen && AppDefaults.shared.articleFullscreenAvailable {
 			currentWebViewController?.hideBars()
 			shouldApplyInitialArticleFullscreen = false
@@ -321,6 +336,21 @@ final class ArticleViewController: UIViewController {
 
 	@objc func didTapNavigationBar() {
 		currentWebViewController?.hideBars()
+	}
+
+	@objc func doubleTapToGoBack() {
+		guard AppDefaults.shared.doubleTapToGoBack else {
+			logDoubleTapEvent(.debug, message: "Ignored: the setting is off")
+			return
+		}
+
+		guard let backNavigationController = backNavigationController else {
+			logDoubleTapEvent(.debug, message: "Ignored: there is nothing to go back to")
+			return
+		}
+
+		logDoubleTapEvent(.info, message: "Going back to the previous page")
+		backNavigationController.popViewController(animated: true)
 	}
 
 	@objc func showBars(_ sender: Any) {
@@ -536,6 +566,11 @@ extension ArticleViewController: UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+		// The double-tap recognizer must be able to run alongside the WebView's own
+		// recognizers, otherwise double-tapping article content can be swallowed.
+		if gestureRecognizer === doubleTapToGoBackGestureRecognizer || otherGestureRecognizer === doubleTapToGoBackGestureRecognizer {
+			return true
+		}
 		let point = gestureRecognizer.location(in: nil)
 		if point.x > 40 {
 			return true
@@ -548,6 +583,39 @@ extension ArticleViewController: UIGestureRecognizerDelegate {
 // MARK: Private
 
 private extension ArticleViewController {
+
+	/// The navigation controller that actually owns the previous page.
+	///
+	/// On iPhone the collapsed split view stacks the timeline and the article in an outer navigation
+	/// controller — the same stack the right-swipe-back gesture pops. The article's own navigation
+	/// controller may hold only the article, in which case popping it silently does nothing, which is
+	/// why this looks for the controller that really has a page to go back to. On iPad the article is
+	/// shown beside the timeline rather than pushed on top of it, so this returns nil.
+	var backNavigationController: UINavigationController? {
+		guard let ownNavigationController = navigationController else {
+			return nil
+		}
+
+		let candidates = [ownNavigationController.parent as? UINavigationController, ownNavigationController].compactMap { $0 }
+		return candidates.first { candidate in
+			guard candidate.viewControllers.count > 1 else {
+				return false
+			}
+			return candidate.viewControllers.contains { viewController in
+				viewController === self
+					|| viewController === ownNavigationController
+					|| viewController.children.contains { $0 === self }
+			}
+		}
+	}
+
+	func logDoubleTapEvent(_ level: ErrorLogLevel, message: String) {
+		guard level.rawValue >= AppDefaults.shared.errorLogLevel.rawValue else {
+			return
+		}
+		let userInfo = ErrorLogUserInfoKey.userInfo(sourceName: "Article Navigation", sourceID: Self.doubleTapLogSourceID, operation: "Double tap", errorMessage: message, level: level)
+		NotificationCenter.default.post(name: .appDidEncounterError, object: self, userInfo: userInfo)
+	}
 
 	func createWebViewController(_ article: Article?, updateView: Bool = true) -> WebViewController {
 		let controller = WebViewController()

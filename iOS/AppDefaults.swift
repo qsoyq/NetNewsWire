@@ -10,6 +10,7 @@ import UIKit
 import os
 import Account
 import Articles
+import ErrorLog
 
 enum UserInterfaceColorPalette: Int, CustomStringConvertible, CaseIterable {
 	case automatic = 0
@@ -58,6 +59,7 @@ final class AppDefaults: Sendable {
 		static let timelineSortDirection = "timelineSortDirection"
 		static let articleFullscreenAvailable = "articleFullscreenAvailable"
 		static let articleFullscreenEnabled = "articleFullscreenEnabled"
+		static let doubleTapToGoBack = "doubleTapToGoBack"
 		static let confirmMarkAllAsRead = "confirmMarkAllAsRead"
 		static let lastRefresh = "lastRefresh"
 		static let addFeedAccountID = "addFeedAccountID"
@@ -86,6 +88,7 @@ final class AppDefaults: Sendable {
 		static let selectedArticle = "selectedArticle"
 		static let didMigrateLegacyStateRestorationInfo = "didMigrateLegacyStateRestorationInfo"
 		static let splitViewPreferredDisplayMode = "splitViewPreferredDisplayMode"
+		static let errorLogLevel = "errorLogLevel"
 	}
 
 	let isDeveloperBuild: Bool = {
@@ -280,6 +283,24 @@ final class AppDefaults: Sendable {
 
 	var logicalArticleFullscreenEnabled: Bool {
 		articleFullscreenAvailable && articleFullscreenEnabled
+	}
+
+	var doubleTapToGoBack: Bool {
+		get {
+			return AppDefaults.bool(for: Key.doubleTapToGoBack)
+		}
+		set {
+			AppDefaults.setBool(for: Key.doubleTapToGoBack, newValue)
+		}
+	}
+
+	var errorLogLevel: ErrorLogLevel {
+		get {
+			return ErrorLogLevel(rawValue: AppDefaults.int(for: Key.errorLogLevel)) ?? .warning
+		}
+		set {
+			AppDefaults.setInt(for: Key.errorLogLevel, newValue.rawValue)
+		}
 	}
 
 	var confirmMarkAllAsRead: Bool {
@@ -512,6 +533,8 @@ final class AppDefaults: Sendable {
 										Key.timelineSortDirection: ComparisonResult.orderedDescending.rawValue,
 										Key.articleFullscreenAvailable: false,
 										Key.articleFullscreenEnabled: false,
+										Key.doubleTapToGoBack: false,
+										Key.errorLogLevel: ErrorLogLevel.warning.rawValue,
 										Key.confirmMarkAllAsRead: true,
 										Key.articleContentJavascriptEnabled: true,
 										Key.currentThemeName: Self.defaultThemeName,

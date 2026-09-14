@@ -14,7 +14,7 @@ public actor ErrorLogDatabase {
 
 	private let database: FMDatabase
 
-	private static let tableCreationStatements = "CREATE TABLE if not EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, date REAL NOT NULL, sourceName TEXT NOT NULL, sourceID INTEGER NOT NULL, operation TEXT NOT NULL DEFAULT '', fileName TEXT NOT NULL DEFAULT '', functionName TEXT NOT NULL DEFAULT '', lineNumber INTEGER NOT NULL DEFAULT 0, errorMessage TEXT NOT NULL);"
+	private static let tableCreationStatements = "CREATE TABLE if not EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, date REAL NOT NULL, sourceName TEXT NOT NULL, sourceID INTEGER NOT NULL, operation TEXT NOT NULL DEFAULT '', fileName TEXT NOT NULL DEFAULT '', functionName TEXT NOT NULL DEFAULT '', lineNumber INTEGER NOT NULL DEFAULT 0, errorMessage TEXT NOT NULL, level INTEGER NOT NULL DEFAULT 3);"
 
 	private static let pruneLimit = 200
 
@@ -22,6 +22,7 @@ public actor ErrorLogDatabase {
 		let database = FMDatabase.openAndSetUpDatabase(path: databasePath)
 		database.executeStatements("PRAGMA journal_mode = WAL;")
 		database.runCreateStatements(Self.tableCreationStatements)
+		Self.migrateLevelColumnIfNeeded(database)
 		ErrorLogTable.pruneEntries(limit: Self.pruneLimit, database: database)
 		database.vacuum()
 
@@ -32,8 +33,8 @@ public actor ErrorLogDatabase {
 		}
 	}
 
-	public func addEntry(sourceName: String, sourceID: Int, operation: String, fileName: String, functionName: String, lineNumber: Int, errorMessage: String) {
-		ErrorLogTable.insertEntry(sourceName: sourceName, sourceID: sourceID, operation: operation, fileName: fileName, functionName: functionName, lineNumber: lineNumber, errorMessage: errorMessage, database: database)
+	public func addEntry(sourceName: String, sourceID: Int, operation: String, fileName: String, functionName: String, lineNumber: Int, errorMessage: String, level: ErrorLogLevel = .error) {
+		ErrorLogTable.insertEntry(sourceName: sourceName, sourceID: sourceID, operation: operation, fileName: fileName, functionName: functionName, lineNumber: lineNumber, errorMessage: errorMessage, level: level, database: database)
 	}
 
 	public func vacuum() {
@@ -57,9 +58,25 @@ public actor ErrorLogDatabase {
 		let fileName = notification.userInfo?[ErrorLogUserInfoKey.fileName] as? String ?? ""
 		let functionName = notification.userInfo?[ErrorLogUserInfoKey.functionName] as? String ?? ""
 		let lineNumber = notification.userInfo?[ErrorLogUserInfoKey.lineNumber] as? Int ?? 0
+		let levelRawValue = notification.userInfo?[ErrorLogUserInfoKey.level] as? Int ?? ErrorLogLevel.error.rawValue
+		let level = ErrorLogLevel(rawValue: levelRawValue) ?? .error
 
 		Task {
-			await addEntry(sourceName: sourceName, sourceID: sourceID, operation: operation, fileName: fileName, functionName: functionName, lineNumber: lineNumber, errorMessage: errorMessage)
+			await addEntry(sourceName: sourceName, sourceID: sourceID, operation: operation, fileName: fileName, functionName: functionName, lineNumber: lineNumber, errorMessage: errorMessage, level: level)
 		}
+	}
+
+	private static func migrateLevelColumnIfNeeded(_ database: FMDatabase) {
+		guard let resultSet = database.executeQuery("PRAGMA table_info(errors)", withArgumentsIn: nil) else {
+			return
+		}
+		defer { resultSet.close() }
+
+		while resultSet.next() {
+			if resultSet.string(forColumn: "name") == ErrorLogEntry.DatabaseKey.level {
+				return
+			}
+		}
+		database.executeUpdateInTransaction("ALTER TABLE errors ADD COLUMN level INTEGER NOT NULL DEFAULT 3")
 	}
 }

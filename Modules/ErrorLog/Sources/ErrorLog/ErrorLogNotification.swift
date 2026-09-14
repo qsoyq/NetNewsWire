@@ -23,8 +23,9 @@ public struct ErrorLogUserInfoKey {
 	public static let functionName = "functionName"
 	public static let lineNumber = "lineNumber"
 	public static let errorMessage = "errorMessage"
+	public static let level = "level"
 
-	public static func userInfo(sourceName: String, sourceID: Int, operation: String, errorMessage: String, fileName: String = #fileID, functionName: String = #function, lineNumber: Int = #line) -> [String: Any] {
+	public static func userInfo(sourceName: String, sourceID: Int, operation: String, errorMessage: String, level: ErrorLogLevel = .error, fileName: String = #fileID, functionName: String = #function, lineNumber: Int = #line) -> [String: Any] {
 		[
 			Self.sourceName: sourceName,
 			Self.sourceID: sourceID,
@@ -32,7 +33,8 @@ public struct ErrorLogUserInfoKey {
 			Self.fileName: fileName,
 			Self.functionName: functionName,
 			Self.lineNumber: lineNumber,
-			Self.errorMessage: errorMessage
+			Self.errorMessage: errorMessage,
+			Self.level: level.rawValue
 		]
 	}
 }

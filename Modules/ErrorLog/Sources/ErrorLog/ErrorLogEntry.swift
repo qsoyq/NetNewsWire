@@ -8,6 +8,22 @@
 import Foundation
 import RSDatabase
 
+public enum ErrorLogLevel: Int, CaseIterable, Sendable {
+	case debug = 0
+	case info = 1
+	case warning = 2
+	case error = 3
+
+	public var name: String {
+		switch self {
+		case .debug: "Debug"
+		case .info: "Info"
+		case .warning: "Warning"
+		case .error: "Error"
+		}
+	}
+}
+
 public struct ErrorLogEntry: Sendable {
 
 	public let id: Int
@@ -19,8 +35,9 @@ public struct ErrorLogEntry: Sendable {
 	public let functionName: String
 	public let lineNumber: Int
 	public let errorMessage: String
+	public let level: ErrorLogLevel
 
-	public init(id: Int, date: Date, sourceName: String, sourceID: Int, operation: String, fileName: String, functionName: String, lineNumber: Int, errorMessage: String) {
+	public init(id: Int, date: Date, sourceName: String, sourceID: Int, operation: String, fileName: String, functionName: String, lineNumber: Int, errorMessage: String, level: ErrorLogLevel = .error) {
 		self.id = id
 		self.date = date
 		self.sourceName = sourceName
@@ -30,6 +47,7 @@ public struct ErrorLogEntry: Sendable {
 		self.functionName = functionName
 		self.lineNumber = lineNumber
 		self.errorMessage = errorMessage
+		self.level = level
 	}
 
 	struct DatabaseKey {
@@ -42,6 +60,7 @@ public struct ErrorLogEntry: Sendable {
 		static let functionName = "functionName"
 		static let lineNumber = "lineNumber"
 		static let errorMessage = "errorMessage"
+		static let level = "level"
 	}
 
 	func databaseDictionary() -> DatabaseDictionary {

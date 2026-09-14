@@ -87,7 +87,7 @@ private extension ErrorLogView {
 	}
 
 	func attributedString(for entry: ErrorLogEntry) -> AttributedString {
-		var timestamp = AttributedString("[\(Self.dateFormatter.string(from: entry.date))] ")
+		var timestamp = AttributedString("[\(Self.dateFormatter.string(from: entry.date))] [\(entry.level.name)] ")
 		timestamp.foregroundColor = .secondary
 
 		let sourceString: String
@@ -120,7 +120,7 @@ private extension ErrorLogView {
 	func buildPlainText(_ entries: [ErrorLogEntry]) -> String {
 		var result = ""
 		for entry in entries {
-			result += "[\(Self.dateFormatter.string(from: entry.date))] "
+			result += "[\(Self.dateFormatter.string(from: entry.date))] [\(entry.level.name)] "
 			if entry.operation.isEmpty {
 				result += "\(entry.sourceName): "
 			} else {
