@@ -19,7 +19,7 @@ MODE="${1:-all}" # mac | ios | all
 if [[ "${2:-}" == "--bundle-id" ]]; then
 	IOS_BUNDLE_ID_OVERRIDE="${3:-}"
 else
-	IOS_BUNDLE_ID_OVERRIDE="${IOS_BUNDLE_ID_OVERRIDE:-}"
+	IOS_BUNDLE_ID_OVERRIDE="${IOS_BUNDLE_ID_OVERRIDE:-com.dev.NetNewsWire.iOS}"
 fi
 
 if [[ -n "${IOS_BUNDLE_ID_OVERRIDE}" && ! "${IOS_BUNDLE_ID_OVERRIDE}" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
@@ -106,7 +106,7 @@ build_ios_unsigned_ipa() {
     CODE_SIGNING_ALLOWED=NO \
 		CODE_SIGNING_REQUIRED=NO \
 		CODE_SIGN_IDENTITY="" \
-		"${IOS_BUNDLE_ID_ARGS[@]}" \
+		${IOS_BUNDLE_ID_ARGS[@]+"${IOS_BUNDLE_ID_ARGS[@]}"} \
 		clean build
 
   local APP_PATH

@@ -109,10 +109,10 @@ private extension UserNotificationManager {
 		let openAction = UNNotificationAction(identifier: ActionIdentifier.openArticle, title: NSLocalizedString("Open", comment: "Open"), options: [.foreground])
 
 		let newArticleCategory = UNNotificationCategory(identifier: Self.notificationCategory,
-														actions: [openAction, readAction, starredAction],
-														intentIdentifiers: [],
-														hiddenPreviewsBodyPlaceholder: "",
-														options: [])
+															actions: [openAction, readAction, starredAction],
+															intentIdentifiers: [],
+															hiddenPreviewsBodyPlaceholder: "",
+															options: [.customDismissAction])
 
 		UNUserNotificationCenter.current().setNotificationCategories([newArticleCategory])
 	}

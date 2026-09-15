@@ -240,6 +240,10 @@ import ErrorLog
 				handleMarkAsRead(userInfo: userInfo)
 			case UserNotificationManager.ActionIdentifier.markAsStarred:
 				handleMarkAsStarred(userInfo: userInfo)
+			case UNNotificationDismissActionIdentifier:
+				// Only mark the article represented by this notification. The feed's
+				// threadIdentifier is for grouping and must not be used for status changes.
+				handleMarkAsRead(userInfo: userInfo)
 			default:
 				if let sceneDelegate = response.targetScene?.delegate as? SceneDelegate {
 					sceneDelegate.handle(response)

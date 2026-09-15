@@ -1,4 +1,5 @@
 var activeImageViewer = null;
+var pendingImageClickTimer = null;
 
 class ImageViewer {
 	constructor(img) {
@@ -97,10 +98,17 @@ class ImageViewer {
 			if (event.target.matches("img") && !event.target.classList.contains("nnw-nozoom")) {
 				if (activeImageViewer && activeImageViewer.img === event.target) {
 					cancelImageLoad();
+				} else if (pendingImageClickTimer) {
+					// A second click within the double-tap window belongs to the navigation gesture.
+					clearTimeout(pendingImageClickTimer);
+					pendingImageClickTimer = null;
 				} else {
-					cancelImageLoad();
-					activeImageViewer = new ImageViewer(event.target);
-					activeImageViewer.clicked();
+					pendingImageClickTimer = setTimeout(function() {
+						pendingImageClickTimer = null;
+						cancelImageLoad();
+						activeImageViewer = new ImageViewer(event.target);
+						activeImageViewer.clicked();
+					}, 280);
 				}
 			}
 		}
@@ -108,6 +116,10 @@ class ImageViewer {
 }
 
 function cancelImageLoad() {
+	if (pendingImageClickTimer) {
+		clearTimeout(pendingImageClickTimer);
+		pendingImageClickTimer = null;
+	}
 	if (activeImageViewer) {
 		activeImageViewer.cancel();
 		activeImageViewer = null;
