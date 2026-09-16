@@ -19,6 +19,7 @@ import UserNotifications
 	struct ActionIdentifier {
 		static let markAsRead = "MARK_AS_READ"
 		static let markAsStarred = "MARK_AS_STARRED"
+		static let markGroupAsRead = "MARK_GROUP_AS_READ"
 		static let openArticle = "OPEN_ARTICLE"
 	}
 
@@ -107,9 +108,14 @@ private extension UserNotificationManager {
 		let readAction = UNNotificationAction(identifier: ActionIdentifier.markAsRead, title: NSLocalizedString("Mark as Read", comment: "Mark as Read"), options: [])
 		let starredAction = UNNotificationAction(identifier: ActionIdentifier.markAsStarred, title: NSLocalizedString("Mark as Starred", comment: "Mark as Starred"), options: [])
 		let openAction = UNNotificationAction(identifier: ActionIdentifier.openArticle, title: NSLocalizedString("Open", comment: "Open"), options: [.foreground])
+		var actions = [openAction, readAction, starredAction]
+#if os(iOS)
+		let groupReadAction = UNNotificationAction(identifier: ActionIdentifier.markGroupAsRead, title: NSLocalizedString("Mark Group as Read", comment: "Mark all notifications in this group as read"), options: [])
+		actions.append(groupReadAction)
+#endif
 
 		let newArticleCategory = UNNotificationCategory(identifier: Self.notificationCategory,
-															actions: [openAction, readAction, starredAction],
+																	actions: actions,
 															intentIdentifiers: [],
 															hiddenPreviewsBodyPlaceholder: "",
 															options: [.customDismissAction])
