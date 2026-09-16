@@ -19,6 +19,20 @@ import ErrorLog
 
 @MainActor var appDelegate: AppDelegate!
 
+private struct NotificationArticleReference: Hashable, Sendable {
+	let accountID: String
+	let articleID: String
+}
+
+private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> NotificationArticleReference? {
+	guard let articlePathUserInfo = userInfo[UserInfoKey.articlePath] as? [AnyHashable: Any],
+		  let accountID = articlePathUserInfo[ArticlePathKey.accountID] as? String,
+		  let articleID = articlePathUserInfo[ArticlePathKey.articleID] as? String else {
+		return nil
+	}
+	return NotificationArticleReference(accountID: accountID, articleID: articleID)
+}
+
 @main
 @MainActor final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate, UnreadCountProvider {
 
@@ -234,12 +248,18 @@ import ErrorLog
 		Task { @MainActor in
 			let response = wrappedResponse.value
 			let userInfo = response.notification.request.content.userInfo
+			var completesImmediately = true
 
 			switch response.actionIdentifier {
 			case UserNotificationManager.ActionIdentifier.markAsRead:
 				handleMarkAsRead(userInfo: userInfo)
 			case UserNotificationManager.ActionIdentifier.markAsStarred:
 				handleMarkAsStarred(userInfo: userInfo)
+			case UserNotificationManager.ActionIdentifier.markGroupAsRead:
+				completesImmediately = false
+				handleMarkAsReadForNotificationGroup(response: response) {
+					wrappedCompletionHandler.value()
+				}
 			case UNNotificationDismissActionIdentifier:
 				// Only mark the article represented by this notification. The feed's
 				// threadIdentifier is for grouping and must not be used for status changes.
@@ -252,7 +272,9 @@ import ErrorLog
 					})
 				}
 			}
-			wrappedCompletionHandler.value()
+			if completesImmediately {
+				wrappedCompletionHandler.value()
+			}
 		}
     }
 }
@@ -452,6 +474,64 @@ private extension AppDelegate {
 
 	func handleMarkAsStarred(userInfo: [AnyHashable: Any]) {
 		handleStatusNotification(userInfo: userInfo, statusKey: .starred)
+	}
+
+	func handleMarkAsReadForNotificationGroup(response: UNNotificationResponse, completion: @escaping @Sendable () -> Void) {
+		let selectedNotification = response.notification
+		let threadIdentifier = selectedNotification.request.content.threadIdentifier
+		let selectedReference = notificationArticleReference(from: selectedNotification.request.content.userInfo)
+
+		UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+			// The selected notification may be removed before this callback runs,
+			// so it is added below separately.
+			let groupReferences = notifications
+				.filter { $0.request.content.threadIdentifier == threadIdentifier }
+				.compactMap { notificationArticleReference(from: $0.request.content.userInfo) }
+
+			Task { @MainActor [weak self] in
+				guard let self else {
+					completion()
+					return
+				}
+
+				var references = Set(groupReferences)
+				if let selectedReference {
+					references.insert(selectedReference)
+				}
+				self.markAsRead(articleReferences: references, completion: completion)
+			}
+		}
+	}
+
+	private func markAsRead(articleReferences: Set<NotificationArticleReference>, completion: @escaping @Sendable () -> Void) {
+		guard !articleReferences.isEmpty else {
+			completion()
+			return
+		}
+		resumeDatabaseProcessingIfNecessary()
+
+		var articles = Set<Article>()
+		let referencesByAccount = Dictionary(grouping: articleReferences, by: \.accountID)
+		for (accountID, references) in referencesByAccount {
+			guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
+				Self.logger.error("No account with accountID \(accountID) found from group status notification")
+				continue
+			}
+
+			let articleIDs = Set(references.map(\.articleID))
+			guard let accountArticles = try? account.fetchArticles(.articleIDs(articleIDs)) else {
+				Self.logger.error("Unable to fetch articles for group status notification")
+				continue
+			}
+			articles.formUnion(accountArticles)
+		}
+
+		markArticles(articles, statusKey: .read, flag: true) { [weak self] in
+			AccountManager.shared.syncArticleStatusAllWithoutWaiting()
+			self?.prepareAccountsForBackground()
+			self?.suspendApplication()
+			completion()
+		}
 	}
 
 	private func handleStatusNotification(userInfo: [AnyHashable: Any], statusKey: ArticleStatus.Key) {
