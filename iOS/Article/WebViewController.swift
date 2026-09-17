@@ -37,6 +37,7 @@ final class WebViewController: UIViewController {
 	private enum MediaContextTarget: String {
 		case image
 		case video
+		case header
 	}
 
 	private struct MediaContextTargetState {
@@ -394,6 +395,14 @@ extension WebViewController: UIContextMenuInteractionDelegate {
 extension WebViewController: WKUIDelegate {
 
 	func webView(_ webView: WKWebView, contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo, completionHandler: @escaping @MainActor @Sendable (UIContextMenuConfiguration?) -> Void) {
+		if currentMediaContextTarget == .header || isFeedHomePageLink(elementInfo.linkURL),
+			let headerMenu = goToFeedMenuConfiguration() {
+			didConfigureContextMenuForCurrentPress = true
+			logMediaEvent(.debug, operation: "Context menu", message: "Public callback began for article header")
+			completionHandler(headerMenu)
+			return
+		}
+
 		// Links keep WebKit's own menu and preview. Returning nil restores exactly the behavior this
 		// app had before batch saving existed, so the only thing this callback adds is the extra
 		// action for a link-wrapped image.
@@ -411,6 +420,13 @@ extension WebViewController: WKUIDelegate {
 	/// menu by itself and the Save All action can never be appended.
 	@objc(_webView:contextMenuConfigurationForElement:completionHandler:)
 	func webView(_ webView: WKWebView, _privateContextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo, completionHandler: @escaping @MainActor @Sendable (UIContextMenuConfiguration?) -> Void) {
+		if currentMediaContextTarget == .header, let headerMenu = goToFeedMenuConfiguration() {
+			didConfigureContextMenuForCurrentPress = true
+			logMediaEvent(.debug, operation: "Context menu", message: "Private callback began for article header")
+			completionHandler(headerMenu)
+			return
+		}
+
 		guard let mediaContextTarget = currentMediaContextTarget else {
 			// Not one of ours: keep hands off so WebKit's own menu and preview stay untouched.
 			logMediaEvent(.debug, operation: "Context menu", message: "Private callback found no media target; leaving the system menu alone")
@@ -596,6 +612,7 @@ extension WebViewController: WKScriptMessageHandler {
 	}
 
 	private func handleVideoEnded() {
+		appDelegate.resumeDatabaseProcessingIfNecessary()
 		coordinator.selectNextArticle()
 	}
 
@@ -692,7 +709,7 @@ private extension WebViewController {
 	/// provides. Passing nil for the target keeps the original menu exactly as it was.
 	private func mediaContextMenuConfiguration(appending mediaContextTarget: MediaContextTarget?) -> UIContextMenuConfiguration {
 		UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] suggestedActions in
-			guard let self, let mediaContextTarget else {
+			guard let self, let mediaContextTarget, mediaContextTarget != .header else {
 				return UIMenu(title: "", children: suggestedActions)
 			}
 
@@ -700,6 +717,56 @@ private extension WebViewController {
 			menuElements.append(UIMenu(title: "", options: .displayInline, children: [self.saveAllMediaAction(for: mediaContextTarget)]))
 			return UIMenu(title: "", children: menuElements)
 		}
+	}
+
+	private func isFeedHomePageLink(_ url: URL?) -> Bool {
+		guard let url, let homePageURL = article?.feed?.homePageURL, !homePageURL.isEmpty else {
+			return false
+		}
+		func normalize(_ value: String) -> String {
+			var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+			while trimmed.hasSuffix("/") {
+				trimmed.removeLast()
+			}
+			return trimmed.lowercased()
+		}
+		return normalize(url.absoluteString) == normalize(homePageURL)
+	}
+
+	private func goToFeedAction() -> UIAction? {
+		guard let feed = article?.feed, !coordinator.timelineFeedIsEqualTo(feed) else {
+			return nil
+		}
+		let title = NSLocalizedString("Go to Feed", comment: "Go to Feed")
+		return UIAction(title: title, image: Assets.Images.openInSidebar) { [weak self] _ in
+			self?.coordinator.discloseFeed(feed, animations: [.scroll, .navigation])
+		}
+	}
+
+	private func goToFeedMenuConfiguration() -> UIContextMenuConfiguration? {
+		guard let action = goToFeedAction() else {
+			return nil
+		}
+		return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+			UIMenu(title: "", children: [action])
+		}
+	}
+
+	private func presentGoToFeedActions() {
+		guard let feed = article?.feed, !coordinator.timelineFeedIsEqualTo(feed) else {
+			return
+		}
+		let title = NSLocalizedString("Go to Feed", comment: "Go to Feed")
+		let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+		alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+			self?.coordinator.discloseFeed(feed, animations: [.scroll, .navigation])
+		})
+		alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel))
+		if let webView {
+			alert.popoverPresentationController?.sourceView = webView
+			alert.popoverPresentationController?.sourceRect = CGRect(x: webView.bounds.midX, y: webView.bounds.minY + 40, width: 0, height: 0)
+		}
+		present(alert, animated: true)
 	}
 
 	/// WebKit exposes no hook to extend the media-controls menu, so a video gets an app-provided menu.
@@ -711,7 +778,24 @@ private extension WebViewController {
 	/// above extends it with Save All Images.
 	func handleMediaLongPressMessage(_ body: String?) {
 		let components = (body ?? "").split(separator: ":", maxSplits: 1)
-		guard components.first.map(String.init) == MediaContextTarget.video.rawValue else {
+		let reportedType = components.first.map(String.init)
+		if reportedType == MediaContextTarget.header.rawValue {
+			if components.count > 1, let press = Int(components[1]), let mediaContextTargetState, press != mediaContextTargetState.press {
+				logMediaEvent(.debug, operation: "Long press", message: "Ignored a header report from an earlier press")
+				return
+			}
+			if didConfigureContextMenuForCurrentPress {
+				logMediaEvent(.debug, operation: "Long press", message: "WebKit already provided the header menu for this press")
+				return
+			}
+			guard presentedViewController == nil else {
+				logMediaEvent(.debug, operation: "Long press", message: "Another menu is already on screen")
+				return
+			}
+			presentGoToFeedActions()
+			return
+		}
+		guard reportedType == MediaContextTarget.video.rawValue else {
 			return
 		}
 		if components.count > 1, let press = Int(components[1]), let mediaContextTargetState, press != mediaContextTargetState.press {

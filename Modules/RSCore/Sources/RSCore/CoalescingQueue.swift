@@ -61,6 +61,11 @@ struct QueueCall: Equatable {
 		}
 	}
 
+	public func cancelPendingCalls() {
+		invalidateTimer()
+		resetCalls()
+	}
+
 	@objc func timerDidFire(_ sender: Any?) {
 		lastCallTime = Date()
 		performCallsImmediately()

@@ -10,6 +10,7 @@ import UIKit
 import AVKit
 import os
 import Articles
+import Account
 
 @MainActor
 final class VideoPlayerManager: NSObject {
@@ -23,8 +24,16 @@ final class VideoPlayerManager: NSObject {
 	private var player: AVPlayer?
 	private var playerViewController: AVPlayerViewController?
 	private var currentArticleID: String?
-	private(set) var isPiPActive = false
+	nonisolated private let pictureInPictureState = OSAllocatedUnfairLock(initialState: false)
 	private var isRestoringUserInterface = false
+
+	nonisolated var isPiPActive: Bool {
+		pictureInPictureState.withLock { $0 }
+	}
+
+	nonisolated private func setPictureInPictureActive(_ active: Bool) {
+		pictureInPictureState.withLock { $0 = active }
+	}
 
 	private var endObserver: NSObjectProtocol?
 
@@ -62,7 +71,7 @@ final class VideoPlayerManager: NSObject {
 		playerViewController = nil
 		removeEndObserver()
 		currentArticleID = nil
-		isPiPActive = false
+		setPictureInPictureActive(false)
 		isRestoringUserInterface = false
 	}
 
@@ -160,6 +169,8 @@ final class VideoPlayerManager: NSObject {
 			if let nextArticle = nextArticleForPlayback(coordinator),
 			   let nextVideoURL = Self.extractFirstVideoURL(from: nextArticle.body) {
 				Self.logger.info("Swapping to next article video in PiP")
+				appDelegate.resumeDatabaseProcessingIfNecessary()
+				NotificationActionLog.log(.info, operation: "PiP auto-next", message: "Selecting next article \(nextArticle.articleID); isSuspended=\(AccountManager.shared.isSuspended); appState=\(UIApplication.shared.applicationState.rawValue)")
 
 				let nextItem = AVPlayerItem(url: nextVideoURL)
 				player?.replaceCurrentItem(with: nextItem)
@@ -175,6 +186,7 @@ final class VideoPlayerManager: NSObject {
 
 		// Not in PiP or PiP auto-next disabled: use regular auto-next
 		if AppDefaults.shared.autoGotoNextAfterVideo {
+			appDelegate.resumeDatabaseProcessingIfNecessary()
 			coordinator.selectNextArticle()
 		}
 
@@ -243,22 +255,23 @@ final class VideoPlayerManager: NSObject {
 extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 
 	nonisolated func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+		setPictureInPictureActive(true)
 		Task { @MainActor in
-			isPiPActive = true
 			Self.logger.info("PiP started")
 		}
 	}
 
 	nonisolated func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+		setPictureInPictureActive(false)
 		Task { @MainActor in
-			isPiPActive = false
 			Self.logger.info("PiP stopped")
+			appDelegate.suspendApplicationIfNeededAfterPlayback()
 		}
 	}
 
 	nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, failedToStartPictureInPictureWithError error: any Error) {
+		setPictureInPictureActive(false)
 		Task { @MainActor in
-			isPiPActive = false
 			Self.logger.error("PiP failed to start: \(error.localizedDescription)")
 		}
 	}

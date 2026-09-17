@@ -10,6 +10,7 @@ import Foundation
 import Account
 import Articles
 import UserNotifications
+import os
 
 @MainActor final class UserNotificationManager {
 	static let shared = UserNotificationManager()
@@ -24,6 +25,7 @@ import UserNotifications
 	}
 
 	@MainActor private var isActive = false
+	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "UserNotificationManager")
 
 	@MainActor func start() {
 		guard !isActive else {
@@ -53,6 +55,7 @@ import UserNotifications
 	@objc func statusesDidChange(_ note: Notification) {
 		if let statuses = note.userInfo?[Account.UserInfoKey.statuses] as? Set<ArticleStatus>, !statuses.isEmpty {
 			let identifiers = statuses.filter({ $0.read }).map { "articleID:\($0.articleID)" }
+			Self.logger.debug("UserNotificationManager: removing \(identifiers.count) delivered notifications from statuses")
 			UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
 			return
 		}
@@ -63,6 +66,7 @@ import UserNotifications
 		   statusKey == .read,
 		   flag == true {
 			let identifiers = articleIDs.map { "articleID:\($0)" }
+			Self.logger.debug("UserNotificationManager: removing \(identifiers.count) delivered notifications from articleIDs")
 			UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
 		}
 	}

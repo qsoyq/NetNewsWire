@@ -60,8 +60,13 @@ private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> 
 		}
 	}
 
-	var isSyncArticleStatusRunning = false
+	private var articleStatusSyncCount = 0
+	private var isPrepareBackgroundStatusSyncActive = false
 	var isWaitingForSyncTasks = false
+
+	var isSyncArticleStatusRunning: Bool {
+		articleStatusSyncCount > 0
+	}
 
 	override init() {
 		super.init()
@@ -190,11 +195,28 @@ private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> 
 		AccountManager.shared.refreshAllWithoutWaiting(errorHandler: errorHandler)
 	}
 
+	var isPictureInPictureActive: Bool {
+		VideoPlayerManager.shared.isPiPActive || WebViewPiPManager.shared.isPiPActive
+	}
+
 	func resumeDatabaseProcessingIfNecessary() {
 		if AccountManager.shared.isSuspended {
+			NotificationActionLog.log(.info, operation: "Lifecycle", message: "Resuming databases; refreshInProgress=\(AccountManager.shared.refreshInProgress); isWaitingForSyncTasks=\(isWaitingForSyncTasks)")
 			AccountManager.shared.resumeAll()
 			Self.logger.info("Application processing resumed.")
 		}
+	}
+
+	func suspendApplicationIfNeededAfterPlayback() {
+		guard UIApplication.shared.applicationState == .background else {
+			NotificationActionLog.log(.debug, operation: "Lifecycle", message: "suspend after playback skipped; appState=\(UIApplication.shared.applicationState.rawValue)")
+			return
+		}
+		guard !isPictureInPictureActive else {
+			NotificationActionLog.log(.debug, operation: "Lifecycle", message: "suspend after playback skipped; picture in picture is still active")
+			return
+		}
+		suspendApplication()
 	}
 
 	func prepareAccountsForBackground() {
@@ -207,7 +229,7 @@ private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> 
 		ArticleStatusSyncTimer.shared.invalidate()
 		scheduleBackgroundFeedRefresh()
 		syncArticleStatus()
-		WidgetDataEncoder.shared?.encode()
+		encodeWidgetDataIfPossible()
 		waitForSyncTasksToFinish()
 	}
 
@@ -257,6 +279,7 @@ private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> 
 				handleMarkAsStarred(userInfo: userInfo)
 			case UserNotificationManager.ActionIdentifier.markGroupAsRead:
 				completesImmediately = false
+				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Received group action")
 				handleMarkAsReadForNotificationGroup(response: response) {
 					wrappedCompletionHandler.value()
 				}
@@ -312,8 +335,16 @@ private extension AppDelegate {
 private extension AppDelegate {
 
 	func waitForSyncTasksToFinish() {
-		guard !isWaitingForSyncTasks && UIApplication.shared.applicationState == .background else { return }
+		guard UIApplication.shared.applicationState == .background else {
+			NotificationActionLog.log(.debug, operation: "Lifecycle", message: "waitForSyncTasks skipped; app is not in background")
+			return
+		}
+		guard !isWaitingForSyncTasks else {
+			NotificationActionLog.log(.debug, operation: "Lifecycle", message: "waitForSyncTasks skipped; already waiting")
+			return
+		}
 
+		NotificationActionLog.log(.info, operation: "Lifecycle", message: "Waiting for sync tasks; refreshInProgress=\(AccountManager.shared.refreshInProgress); isSyncArticleStatusRunning=\(isSyncArticleStatusRunning); widgetRunning=\(WidgetDataEncoder.shared?.isRunning ?? false)")
 		isWaitingForSyncTasks = true
 
 		self.waitBackgroundUpdateTask = UIApplication.shared.beginBackgroundTask { [weak self] in
@@ -350,6 +381,7 @@ private extension AppDelegate {
 	}
 
 	func completeProcessing(_ suspend: Bool) {
+		NotificationActionLog.log(.info, operation: "Lifecycle", message: "completeProcessing suspend=\(suspend); refreshInProgress=\(AccountManager.shared.refreshInProgress); isSuspended=\(AccountManager.shared.isSuspended); isSyncArticleStatusRunning=\(isSyncArticleStatusRunning); statusSyncCount=\(articleStatusSyncCount)")
 		if suspend {
 			suspendApplication()
 		}
@@ -358,38 +390,81 @@ private extension AppDelegate {
 		isWaitingForSyncTasks = false
 	}
 
-	func syncArticleStatus() {
-		guard !isSyncArticleStatusRunning else { return }
+	func beginArticleStatusSync(reason: String) {
+		articleStatusSyncCount += 1
+		NotificationActionLog.log(.debug, operation: "Lifecycle", message: "beginArticleStatusSync reason=\(reason); count=\(articleStatusSyncCount)")
+	}
 
-		isSyncArticleStatusRunning = true
-
-		let completeProcessing = { [unowned self] in
-			self.isSyncArticleStatusRunning = false
-			UIApplication.shared.endBackgroundTask(self.syncBackgroundUpdateTask)
-			self.syncBackgroundUpdateTask = UIBackgroundTaskIdentifier.invalid
+	func endArticleStatusSync(reason: String) {
+		if articleStatusSyncCount > 0 {
+			articleStatusSyncCount -= 1
 		}
+		NotificationActionLog.log(.debug, operation: "Lifecycle", message: "endArticleStatusSync reason=\(reason); count=\(articleStatusSyncCount)")
+	}
+
+	func encodeWidgetDataIfPossible() {
+		guard !AccountManager.shared.isSuspended else {
+			NotificationActionLog.log(.info, operation: "Lifecycle", message: "Skipped widget encode; databases are suspended")
+			return
+		}
+		WidgetDataEncoder.shared?.encode()
+	}
+
+	func finishPrepareBackgroundStatusSync(reason: String) {
+		guard isPrepareBackgroundStatusSyncActive else {
+			return
+		}
+		isPrepareBackgroundStatusSyncActive = false
+		let task = syncBackgroundUpdateTask
+		syncBackgroundUpdateTask = .invalid
+		endArticleStatusSync(reason: reason)
+		if task != .invalid {
+			UIApplication.shared.endBackgroundTask(task)
+		}
+	}
+
+	func syncArticleStatus() {
+		guard !isSyncArticleStatusRunning else {
+			NotificationActionLog.log(.debug, operation: "Lifecycle", message: "syncArticleStatus skipped; already running count=\(articleStatusSyncCount)")
+			return
+		}
+
+		beginArticleStatusSync(reason: "prepare-background")
+		isPrepareBackgroundStatusSyncActive = true
 
 		self.syncBackgroundUpdateTask = UIApplication.shared.beginBackgroundTask { [weak self] in
 			Task { @MainActor in
 				guard let self = self else { return }
-				self.isSyncArticleStatusRunning = false
-				UIApplication.shared.endBackgroundTask(self.syncBackgroundUpdateTask)
-				self.syncBackgroundUpdateTask = UIBackgroundTaskIdentifier.invalid
+				self.finishPrepareBackgroundStatusSync(reason: "prepare-background-expired")
 				Self.logger.info("Accounts sync processing terminated for running too long.")
 			}
 		}
 
 		Task { @MainActor in
 			await AccountManager.shared.syncArticleStatusAll()
-			completeProcessing()
+			self.finishPrepareBackgroundStatusSync(reason: "prepare-background")
 		}
 	}
 
 	func suspendApplication() {
 		guard UIApplication.shared.applicationState == .background else {
+			NotificationActionLog.log(.debug, operation: "Lifecycle", message: "suspendApplication skipped; appState=\(UIApplication.shared.applicationState.rawValue)")
+			return
+		}
+		guard !AccountManager.shared.isSuspended else {
+			NotificationActionLog.log(.info, operation: "Lifecycle", message: "suspendApplication skipped; already suspended")
+			return
+		}
+		guard !isSyncArticleStatusRunning else {
+			NotificationActionLog.log(.info, operation: "Lifecycle", message: "suspendApplication skipped; status sync still running count=\(articleStatusSyncCount)")
+			return
+		}
+		guard !isPictureInPictureActive else {
+			NotificationActionLog.log(.info, operation: "Lifecycle", message: "suspendApplication skipped; picture in picture is active")
 			return
 		}
 
+		NotificationActionLog.log(.info, operation: "Lifecycle", message: "Suspending application; refreshInProgress=\(AccountManager.shared.refreshInProgress); isSyncArticleStatusRunning=\(isSyncArticleStatusRunning)")
 		AccountManager.shared.suspendNetworkAll()
 		AccountManager.shared.suspendDatabaseAll()
 		ArticleThemeDownloader.shared.cleanUp()
@@ -481,12 +556,14 @@ private extension AppDelegate {
 		let threadIdentifier = selectedNotification.request.content.threadIdentifier
 		let selectedReference = notificationArticleReference(from: selectedNotification.request.content.userInfo)
 
+		NotificationActionLog.log(.info, operation: "Mark group as read", message: "Action received; threadIdentifier=\(threadIdentifier); selectedArticleID=\(selectedReference?.articleID ?? "nil"); appState=\(UIApplication.shared.applicationState.rawValue); refreshInProgress=\(AccountManager.shared.refreshInProgress); isSuspended=\(AccountManager.shared.isSuspended); isWaitingForSyncTasks=\(isWaitingForSyncTasks)")
+
 		UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
-			// The selected notification may be removed before this callback runs,
-			// so it is added below separately.
-			let groupReferences = notifications
-				.filter { $0.request.content.threadIdentifier == threadIdentifier }
-				.compactMap { notificationArticleReference(from: $0.request.content.userInfo) }
+			let matchingNotifications = notifications.filter { $0.request.content.threadIdentifier == threadIdentifier }
+			let groupReferences = matchingNotifications.compactMap { notificationArticleReference(from: $0.request.content.userInfo) }
+			let snapshotCount = notifications.count
+			let matchingCount = matchingNotifications.count
+			let parsedCount = groupReferences.count
 
 			Task { @MainActor [weak self] in
 				guard let self else {
@@ -494,17 +571,52 @@ private extension AppDelegate {
 					return
 				}
 
+				NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Delivered snapshot count=\(snapshotCount); matchingThread=\(matchingCount); parsedReferences=\(parsedCount)")
+
 				var references = Set(groupReferences)
 				if let selectedReference {
 					references.insert(selectedReference)
 				}
-				self.markAsRead(articleReferences: references, completion: completion)
+
+				let feedReferences = self.unreadArticleReferences(accountID: selectedReference?.accountID, feedID: threadIdentifier)
+				if !feedReferences.isEmpty {
+					references.formUnion(feedReferences)
+				}
+
+				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Resolved \(references.count) article references (snapshot=\(groupReferences.count), selected=\(selectedReference == nil ? 0 : 1), feedUnread=\(feedReferences.count))")
+				self.markAsRead(articleReferences: references, threadIdentifier: threadIdentifier, completion: completion)
 			}
 		}
 	}
 
-	private func markAsRead(articleReferences: Set<NotificationArticleReference>, completion: @escaping @Sendable () -> Void) {
+	private func unreadArticleReferences(accountID: String?, feedID: String) -> Set<NotificationArticleReference> {
+		guard !feedID.isEmpty, let accountID, let account = AccountManager.shared.existingAccount(accountID: accountID) else {
+			NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Skipped feed unread lookup; accountID=\(accountID ?? "nil"); feedID=\(feedID)")
+			return []
+		}
+
+		resumeDatabaseProcessingIfNecessary()
+
+		guard let feed = account.existingFeed(withFeedID: feedID) else {
+			NotificationActionLog.log(.warning, operation: "Mark group as read", message: "No feed with feedID \(feedID) in account \(accountID)")
+			return []
+		}
+
+		do {
+			let articles = try account.fetchArticles(.feed(feed))
+			let unread = articles.filter { !$0.status.read }
+			NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Feed lookup returned articles=\(articles.count); unread=\(unread.count)")
+			return Set(unread.map { NotificationArticleReference(accountID: accountID, articleID: $0.articleID) })
+		} catch {
+			NotificationActionLog.log(.warning, operation: "Mark group as read", message: "Feed unread lookup failed: \(error.localizedDescription)")
+			return []
+		}
+	}
+
+	private func markAsRead(articleReferences: Set<NotificationArticleReference>, threadIdentifier: String, completion: @escaping @Sendable () -> Void) {
 		guard !articleReferences.isEmpty else {
+			NotificationActionLog.log(.info, operation: "Mark group as read", message: "No article references to mark")
+			removeDeliveredNotifications(forThreadIdentifier: threadIdentifier)
 			completion()
 			return
 		}
@@ -515,22 +627,56 @@ private extension AppDelegate {
 		for (accountID, references) in referencesByAccount {
 			guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
 				Self.logger.error("No account with accountID \(accountID) found from group status notification")
+				NotificationActionLog.log(.warning, operation: "Mark group as read", message: "No account with accountID \(accountID)")
 				continue
 			}
 
 			let articleIDs = Set(references.map(\.articleID))
-			guard let accountArticles = try? account.fetchArticles(.articleIDs(articleIDs)) else {
+			do {
+				let accountArticles = try account.fetchArticles(.articleIDs(articleIDs))
+				NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Fetched \(accountArticles.count) of \(articleIDs.count) articles from account \(accountID)")
+				articles.formUnion(accountArticles)
+			} catch {
 				Self.logger.error("Unable to fetch articles for group status notification")
-				continue
+				NotificationActionLog.log(.warning, operation: "Mark group as read", message: "Unable to fetch articles for account \(accountID): \(error.localizedDescription)")
 			}
-			articles.formUnion(accountArticles)
 		}
 
+		NotificationActionLog.log(.info, operation: "Mark group as read", message: "Marking \(articles.count) articles read")
+
 		markArticles(articles, statusKey: .read, flag: true) { [weak self] in
-			AccountManager.shared.syncArticleStatusAllWithoutWaiting()
-			self?.prepareAccountsForBackground()
-			self?.suspendApplication()
-			completion()
+			Task { @MainActor in
+				guard let self else {
+					completion()
+					return
+				}
+				self.removeDeliveredNotifications(forThreadIdentifier: threadIdentifier)
+				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Local mark completed; releasing notification callback before background wait")
+				completion()
+				self.beginArticleStatusSync(reason: "mark-group-as-read")
+				await AccountManager.shared.syncArticleStatusAll()
+				self.endArticleStatusSync(reason: "mark-group-as-read")
+				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Status sync finished; preparing accounts for background")
+				self.prepareAccountsForBackground()
+			}
+		}
+	}
+
+	private func removeDeliveredNotifications(forThreadIdentifier threadIdentifier: String) {
+		guard !threadIdentifier.isEmpty else {
+			return
+		}
+		UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+			let identifiers = notifications
+				.filter { $0.request.content.threadIdentifier == threadIdentifier }
+				.map(\.request.identifier)
+			guard !identifiers.isEmpty else {
+				return
+			}
+			UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+			Task { @MainActor in
+				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Removed \(identifiers.count) delivered notifications for thread")
+			}
 		}
 	}
 
@@ -559,7 +705,9 @@ private extension AppDelegate {
 		account.markArticles(singleArticleSet, statusKey: statusKey, flag: true) { _ in }
 
 		Task { @MainActor in
+			self.beginArticleStatusSync(reason: "status-notification")
 			try? await account.syncArticleStatus()
+			self.endArticleStatusSync(reason: "status-notification")
 			prepareAccountsForBackground()
 			suspendApplication()
 		}

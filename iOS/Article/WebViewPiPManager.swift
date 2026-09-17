@@ -33,6 +33,7 @@ final class WebViewPiPManager {
 		protectedWebViewController?.stopWebViewActivity()
 		protectedWebViewController?.setArticle(nil)
 		protectedWebViewController = nil
+		appDelegate.suspendApplicationIfNeededAfterPlayback()
 	}
 
 	func isPiPActive(in webViewController: WebViewController) -> Bool {

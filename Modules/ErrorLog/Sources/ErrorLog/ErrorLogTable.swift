@@ -36,9 +36,8 @@ struct ErrorLogTable {
 		return resultSet.compactMap(entryWithRow)
 	}
 
-	static func pruneEntries(limit: Int, database: FMDatabase) {
-		let sql = "delete from \(name) where id not in (select id from \(name) order by id desc limit \(limit))"
-		database.executeUpdateInTransaction(sql)
+	static func deleteAllEntries(database: FMDatabase) {
+		database.executeUpdateInTransaction("delete from \(name)")
 	}
 }
 

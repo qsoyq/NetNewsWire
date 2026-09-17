@@ -14,8 +14,6 @@ struct ErrorLogView: View {
 	@State private var entries = [ErrorLogEntry]()
 	@State private var plainText = ""
 
-	private static let maxEntries = 200
-
 	var body: some View {
 		Group {
 			if entries.isEmpty {
@@ -37,6 +35,19 @@ struct ErrorLogView: View {
 		.navigationTitle("Error Log")
 		.toolbar {
 			ToolbarItem(placement: .topBarTrailing) {
+				Button("Clear", role: .destructive) {
+					Task {
+						await AccountManager.shared.errorLogDatabase.clearEntries()
+						entries = []
+						plainText = ""
+					}
+				}
+				.disabled(entries.isEmpty)
+			}
+			if #available(iOS 26.0, *) {
+				ToolbarSpacer(.fixed, placement: .topBarTrailing)
+			}
+			ToolbarItem(placement: .topBarTrailing) {
 				Button("Copy Contents") {
 					UIPasteboard.general.string = plainText
 				}
@@ -45,7 +56,7 @@ struct ErrorLogView: View {
 		}
 		.task {
 			let allEntries = await AccountManager.shared.errorLogDatabase.allEntries()
-			entries = Array(allEntries.suffix(Self.maxEntries))
+			entries = allEntries
 			plainText = buildPlainText(entries)
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .appDidEncounterError)) { notification in
@@ -53,9 +64,6 @@ struct ErrorLogView: View {
 				return
 			}
 			entries.append(entry)
-			if entries.count > Self.maxEntries {
-				entries.removeFirst(entries.count - Self.maxEntries)
-			}
 			plainText = buildPlainText(entries)
 		}
 	}

@@ -62,6 +62,7 @@ struct SidebarItemNode: Hashable, Sendable {
 
 	private let fetchAndMergeArticlesQueue = CoalescingQueue(name: "Fetch and Merge Articles", interval: 0.5)
 	private let rebuildBackingStoresQueue = CoalescingQueue(name: "Rebuild The Backing Stores", interval: 0.5)
+	private let refreshTimelineAfterStatusChangeQueue = CoalescingQueue(name: "Refresh Timeline After Status Change", interval: 0.5)
 	private var fetchSerialNumber = 0
 	private let fetchRequestQueue = FetchRequestQueue()
 
@@ -282,7 +283,7 @@ struct SidebarItemNode: Hashable, Sendable {
 		guard let article = currentArticle else {
 			return nil
 		}
-		return articles.firstIndex(of: article)
+		return articles.firstIndex(where: { $0.articleID == article.articleID && $0.accountID == article.accountID })
 	}
 
 	var isTimelineUnreadAvailable: Bool {
@@ -498,6 +499,7 @@ struct SidebarItemNode: Hashable, Sendable {
 
 	@objc func statusesDidChange(_ note: Notification) {
 		updateUnreadCount()
+		applyReadStatusChangeToTimeline(note)
 	}
 
 	@objc func containerChildrenDidChange(_ note: Notification) {
@@ -605,7 +607,11 @@ struct SidebarItemNode: Hashable, Sendable {
 		// For example if you select Next Unread from the Home Screen Quick actions, you can start a request before we are
 		// in the foreground.
 		if !fetchRequestQueue.isAnyCurrentRequest {
-			queueFetchAndMergeArticles()
+			if isReadArticlesFiltered {
+				queueRefreshTimelineAfterStatusChange()
+			} else {
+				queueFetchAndMergeArticles()
+			}
 		}
 	}
 
@@ -747,6 +753,7 @@ struct SidebarItemNode: Hashable, Sendable {
 	func suspend() {
 		fetchAndMergeArticlesQueue.performCallsImmediately()
 		rebuildBackingStoresQueue.performCallsImmediately()
+		refreshTimelineAfterStatusChangeQueue.cancelPendingCalls()
 		fetchRequestQueue.cancelAllRequests()
 	}
 
@@ -1131,14 +1138,14 @@ struct SidebarItemNode: Hashable, Sendable {
 	}
 
 	func findPrevArticle(_ article: Article) -> Article? {
-		guard let index = articles.firstIndex(of: article), index > 0 else {
+		guard let index = articles.firstIndex(where: { $0.articleID == article.articleID && $0.accountID == article.accountID }), index > 0 else {
 			return nil
 		}
 		return articles[index - 1]
 	}
 
 	func findNextArticle(_ article: Article) -> Article? {
-		guard let index = articles.firstIndex(of: article), index + 1 != articles.count else {
+		guard let index = articles.firstIndex(where: { $0.articleID == article.articleID && $0.accountID == article.accountID }), index + 1 < articles.count else {
 			return nil
 		}
 		return articles[index + 1]
@@ -2196,6 +2203,65 @@ private extension SceneCoordinator {
 		fetchAndMergeArticlesQueue.add(self, #selector(fetchAndMergeArticlesAsync))
 	}
 
+	func queueRefreshTimelineAfterStatusChange() {
+		refreshTimelineAfterStatusChangeQueue.add(self, #selector(refreshTimelineAfterStatusChange))
+	}
+
+	@objc func refreshTimelineAfterStatusChange() {
+		guard isReadArticlesFiltered, timelineFeed != nil else {
+			return
+		}
+		if let article = currentArticle, let account = article.account {
+			exceptionArticleFetcher = SingleArticleFetcher(account: account, articleID: article.articleID)
+		}
+		NotificationActionLog.log(.debug, operation: "Timeline hide-read", message: "Replacing timeline after read status change")
+		fetchAndReplaceArticlesAsync(animated: true, emptyFirst: false) {
+			self.mainTimelineViewController?.reinitializeArticles(resetScroll: false)
+		}
+	}
+
+	func applyReadStatusChangeToTimeline(_ note: Notification) {
+		guard isReadArticlesFiltered else {
+			return
+		}
+		guard let articleIDs = note.userInfo?[Account.UserInfoKey.articleIDs] as? Set<String>, !articleIDs.isEmpty else {
+			return
+		}
+
+		let statusKey = note.userInfo?[Account.UserInfoKey.statusKey] as? ArticleStatus.Key
+		let statusFlag = note.userInfo?[Account.UserInfoKey.statusFlag] as? Bool
+		if let statusKey, statusKey != .read {
+			return
+		}
+
+		let markedRead = statusKey == nil || statusFlag == true
+		var removedCount = 0
+		if markedRead {
+			let displayedArticleID = currentArticle?.articleID
+			let displayedAccountID = currentArticle?.accountID
+			let remaining = articles.filter { article in
+				if article.articleID == displayedArticleID, article.accountID == displayedAccountID {
+					return true
+				}
+				guard articleIDs.contains(article.articleID) else {
+					return true
+				}
+				return !article.status.read
+			}
+			removedCount = articles.count - remaining.count
+			if removedCount > 0 {
+				NotificationActionLog.log(.info, operation: "Timeline hide-read", message: "Removed \(removedCount) newly read articles from timeline")
+				replaceArticles(with: remaining, animated: true)
+			}
+		}
+
+		if UIApplication.shared.applicationState == .active {
+			queueRefreshTimelineAfterStatusChange()
+		} else {
+			NotificationActionLog.log(.debug, operation: "Timeline hide-read", message: "Skipped replace while app is not active; appState=\(UIApplication.shared.applicationState.rawValue)")
+		}
+	}
+
 	@objc func fetchAndMergeArticlesAsync() {
 		fetchAndMergeArticlesAsync(animated: true) {
 			self.mainTimelineViewController?.reinitializeArticles(resetScroll: false)
@@ -2214,15 +2280,27 @@ private extension SceneCoordinator {
 			guard let strongSelf = self else {
 				return
 			}
+			let hidingRead = strongSelf.isReadArticlesFiltered
 			let unsortedArticleIDs = unsortedArticles.articleIDs()
 			var updatedArticles = unsortedArticles
+			var skippedReadCount = 0
+			let displayedArticleID = strongSelf.currentArticle?.articleID
+			let displayedAccountID = strongSelf.currentArticle?.accountID
 			for article in strongSelf.articles {
 				if !unsortedArticleIDs.contains(article.articleID) {
+					let isDisplayedArticle = article.articleID == displayedArticleID && article.accountID == displayedAccountID
+					if hidingRead && article.status.read && !isDisplayedArticle {
+						skippedReadCount += 1
+						continue
+					}
 					updatedArticles.insert(article)
 				}
 				if article.account?.existingFeed(withFeedID: article.feedID) == nil {
 					updatedArticles.remove(article)
 				}
+			}
+			if skippedReadCount > 0 {
+				NotificationActionLog.log(.debug, operation: "Timeline hide-read", message: "Merge skipped \(skippedReadCount) read articles")
 			}
 
 			strongSelf.replaceArticles(with: updatedArticles, animated: animated)

@@ -50,9 +50,8 @@ public final class DatabaseQueue: Sendable {
 	/// Close the SQLite database and don’t allow database calls until resumed.
 	/// This is for iOS, where we need to close the SQLite database in some conditions.
 	///
-	/// After calling suspend, if you call into the database before calling resume,
-	/// your code will not run, and runInDatabaseSync and runInTransactionSync will
-	/// both throw DatabaseQueueError.isSuspended.
+	/// After calling suspend, further database calls fail immediately with
+	/// `DatabaseError.isSuspended` instead of blocking on the suspended GCD queue.
 	///
 	/// On Mac, suspend() and resume() are no-ops, since there isn’t a need for them.
 	public func suspend() {
@@ -60,7 +59,7 @@ public final class DatabaseQueue: Sendable {
 		Self.logger.info("DatabaseQueue: suspending")
 		state.withLock { state in
 			guard !state.isSuspended else {
-				assertionFailure("DatabaseQueue: suspend called when already suspended")
+				Self.logger.info("DatabaseQueue: suspend skipped because already suspended")
 				return
 			}
 
@@ -78,7 +77,7 @@ public final class DatabaseQueue: Sendable {
 		Self.logger.info("DatabaseQueue: resuming")
 		state.withLock { state in
 			guard state.isSuspended else {
-				assertionFailure("DatabaseQueue: resume called when already resumed")
+				Self.logger.info("DatabaseQueue: resume skipped because already resumed")
 				return
 			}
 
@@ -96,6 +95,9 @@ public final class DatabaseQueue: Sendable {
 	/// the DatabaseBlock *and* depending on how many other calls have been
 	/// scheduled on the queue. Use sparingly — prefer async versions.
 	public func runInDatabaseSync(_ databaseBlock: DatabaseBlock) {
+		guard enqueueDatabaseCall(databaseBlock) else {
+			return
+		}
 		serialDispatchQueue.sync {
 			self.state.withLock { state in
 				self._runInDatabase(&state, databaseBlock, false)
@@ -105,6 +107,9 @@ public final class DatabaseQueue: Sendable {
 
 	/// Run a DatabaseBlock asynchronously.
 	public func runInDatabase(_ databaseBlock: @escaping DatabaseBlock) {
+		guard enqueueDatabaseCall(databaseBlock) else {
+			return
+		}
 		serialDispatchQueue.async {
 			self.state.withLock { state in
 				self._runInDatabase(&state, databaseBlock, false)
@@ -117,6 +122,9 @@ public final class DatabaseQueue: Sendable {
 	/// Nevertheless, it’s best to avoid this because it will block the main thread —
 	/// prefer the async `runInTransaction` instead.
 	public func runInTransactionSync(_ databaseBlock: @escaping DatabaseBlock) {
+		guard enqueueDatabaseCall(databaseBlock) else {
+			return
+		}
 		serialDispatchQueue.sync {
 			self.state.withLock { state in
 				self._runInDatabase(&state, databaseBlock, true)
@@ -127,6 +135,9 @@ public final class DatabaseQueue: Sendable {
 	/// Run a DatabaseBlock wrapped in a transaction asynchronously.
 	/// Transactions help performance significantly when updating the database.
 	public func runInTransaction(_ databaseBlock: @escaping DatabaseBlock) {
+		guard enqueueDatabaseCall(databaseBlock) else {
+			return
+		}
 		serialDispatchQueue.async {
 			self.state.withLock { state in
 				self._runInDatabase(&state, databaseBlock, true)
@@ -202,6 +213,18 @@ public final class DatabaseQueue: Sendable {
 }
 
 private extension DatabaseQueue {
+
+	func enqueueDatabaseCall(_ databaseBlock: DatabaseBlock) -> Bool {
+		#if os(iOS)
+		let isSuspended = state.withLock { $0.isSuspended }
+		if isSuspended {
+			Self.logger.debug("DatabaseQueue: skipped call because queue is suspended")
+			databaseBlock(.failure(.isSuspended))
+			return false
+		}
+		#endif
+		return true
+	}
 
 	private func _runInDatabase(_ state: inout State, _ databaseBlock: DatabaseBlock, _ useTransaction: Bool) {
 		precondition(!state.isCallingDatabase)

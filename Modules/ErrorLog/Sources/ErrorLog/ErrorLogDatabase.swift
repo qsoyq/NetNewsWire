@@ -16,15 +16,11 @@ public actor ErrorLogDatabase {
 
 	private static let tableCreationStatements = "CREATE TABLE if not EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, date REAL NOT NULL, sourceName TEXT NOT NULL, sourceID INTEGER NOT NULL, operation TEXT NOT NULL DEFAULT '', fileName TEXT NOT NULL DEFAULT '', functionName TEXT NOT NULL DEFAULT '', lineNumber INTEGER NOT NULL DEFAULT 0, errorMessage TEXT NOT NULL, level INTEGER NOT NULL DEFAULT 3);"
 
-	private static let pruneLimit = 200
-
 	public init(databasePath: String) {
 		let database = FMDatabase.openAndSetUpDatabase(path: databasePath)
 		database.executeStatements("PRAGMA journal_mode = WAL;")
 		database.runCreateStatements(Self.tableCreationStatements)
 		Self.migrateLevelColumnIfNeeded(database)
-		ErrorLogTable.pruneEntries(limit: Self.pruneLimit, database: database)
-		database.vacuum()
 
 		self.database = database
 
@@ -43,6 +39,11 @@ public actor ErrorLogDatabase {
 
 	public func allEntries() -> [ErrorLogEntry] {
 		ErrorLogTable.allEntries(database: database)
+	}
+
+	public func clearEntries() {
+		ErrorLogTable.deleteAllEntries(database: database)
+		database.vacuum()
 	}
 
 	// MARK: - Notifications

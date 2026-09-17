@@ -10,28 +10,83 @@ import Foundation
 import RSCore
 import Articles
 import Account
+#if os(iOS)
+import UIKit
+#endif
 
 // These handle multiple accounts.
 
 @MainActor func markArticles(_ articles: Set<Article>, statusKey: ArticleStatus.Key, flag: Bool, completion: (() -> Void)? = nil) {
+	markArticles(articles, statusKey: statusKey, flag: flag, allowRetry: true, completion: completion)
+}
+
+private final class MarkArticlesErrorBox: @unchecked Sendable {
+	let lock = NSLock()
+	var stored: Error?
+
+	func assignIfEmpty(_ error: Error) {
+		lock.lock()
+		defer { lock.unlock() }
+		if stored == nil {
+			stored = error
+		}
+	}
+
+	var value: Error? {
+		lock.lock()
+		defer { lock.unlock() }
+		return stored
+	}
+}
+
+@MainActor private func markArticles(_ articles: Set<Article>, statusKey: ArticleStatus.Key, flag: Bool, allowRetry: Bool, completion: (() -> Void)?) {
 	let d: [String: Set<Article>] = accountAndArticlesDictionary(articles)
 
 	let group = DispatchGroup()
+	let firstError = MarkArticlesErrorBox()
 
 	for (accountID, accountArticles) in d {
 		guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
 			continue
 		}
 		group.enter()
-		account.markArticles(accountArticles, statusKey: statusKey, flag: flag) { _ in
+		account.markArticles(accountArticles, statusKey: statusKey, flag: flag) { result in
+			if case .failure(let error) = result {
+				firstError.assignIfEmpty(error)
+			}
 			group.leave()
 		}
 	}
 
 	group.notify(queue: .main) {
-		completion?()
+		Task { @MainActor in
+			#if os(iOS)
+			if let error = firstError.value {
+				let previewIDs = articles.prefix(8).map(\.articleID).joined(separator: ",")
+				NotificationActionLog.log(.warning, operation: "Mark articles", message: "Failed statusKey=\(statusKey.rawValue) flag=\(flag) count=\(articles.count) articleIDs=\(previewIDs) error=\(error.localizedDescription); isSuspended=\(AccountManager.shared.isSuspended); appState=\(UIApplication.shared.applicationState.rawValue)")
+				if allowRetry, shouldRetryMarkArticles(after: error) {
+					appDelegate.resumeDatabaseProcessingIfNecessary()
+					NotificationActionLog.log(.info, operation: "Mark articles", message: "Retrying after database resume; count=\(articles.count)")
+					markArticles(articles, statusKey: statusKey, flag: flag, allowRetry: false, completion: completion)
+					return
+				}
+			}
+			#else
+			_ = allowRetry
+			#endif
+			completion?()
+		}
 	}
 }
+
+#if os(iOS)
+@MainActor private func shouldRetryMarkArticles(after error: Error) -> Bool {
+	if AccountManager.shared.isSuspended {
+		return true
+	}
+	return error.localizedDescription.localizedCaseInsensitiveContains("database is suspended")
+}
+#endif
 
 private func accountAndArticlesDictionary(_ articles: Set<Article>) -> [String: Set<Article>] {
 	let d = Dictionary(grouping: articles, by: { $0.accountID })

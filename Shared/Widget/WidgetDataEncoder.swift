@@ -47,6 +47,10 @@ import Account
 	}
 
 	func encode() {
+		guard !AccountManager.shared.isSuspended else {
+			Self.logger.debug("WidgetDataEncoder: skipping encode because databases are suspended")
+			return
+		}
 		guard !isRunning else {
 			Self.logger.debug("WidgetDataEncoder: skipping encode because already in encode")
 			return

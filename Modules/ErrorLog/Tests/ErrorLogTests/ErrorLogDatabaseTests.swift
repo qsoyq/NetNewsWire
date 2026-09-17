@@ -74,7 +74,7 @@ import Foundation
 		#expect(entries[1].id < entries[2].id)
 	}
 
-	@Test func pruneOnInit() async {
+	@Test func keepsMoreThanTwoHundredEntries() async {
 		let path = temporaryDatabasePath()
 		defer { deleteDatabaseFiles(at: path) }
 
@@ -83,16 +83,26 @@ import Foundation
 			await database.addEntry(sourceName: "Account", sourceID: 1, operation: "Refreshing", fileName: "Account/Test.swift", functionName: "refresh()", lineNumber: i, errorMessage: "Error \(i)")
 		}
 
-		let entriesBeforePrune = await database.allEntries()
-		#expect(entriesBeforePrune.count == 210)
+		let entries = await database.allEntries()
+		#expect(entries.count == 210)
+		#expect(entries[0].errorMessage == "Error 1")
+		#expect(entries[209].errorMessage == "Error 210")
 
-		// Creating a new database at the same path triggers pruning on init.
-		let database2 = ErrorLogDatabase(databasePath: path)
-		let entriesAfterPrune = await database2.allEntries()
-		#expect(entriesAfterPrune.count == 200)
+		let reopened = ErrorLogDatabase(databasePath: path)
+		let entriesAfterReopen = await reopened.allEntries()
+		#expect(entriesAfterReopen.count == 210)
+	}
 
-		// Oldest entries should have been removed; newest should remain.
-		#expect(entriesAfterPrune[0].errorMessage == "Error 11")
-		#expect(entriesAfterPrune[199].errorMessage == "Error 210")
+	@Test func clearEntriesRemovesAllRows() async {
+		let path = temporaryDatabasePath()
+		defer { deleteDatabaseFiles(at: path) }
+
+		let database = ErrorLogDatabase(databasePath: path)
+		await database.addEntry(sourceName: "First", sourceID: 1, operation: "Refreshing", fileName: "Account/A.swift", functionName: "refresh()", lineNumber: 10, errorMessage: "Error 1")
+		await database.addEntry(sourceName: "Second", sourceID: 2, operation: "Syncing", fileName: "Account/B.swift", functionName: "sync()", lineNumber: 20, errorMessage: "Error 2")
+		#expect((await database.allEntries()).count == 2)
+
+		await database.clearEntries()
+		#expect((await database.allEntries()).isEmpty)
 	}
 }

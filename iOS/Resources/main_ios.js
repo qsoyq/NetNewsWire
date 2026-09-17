@@ -248,6 +248,7 @@ function collectMediaForSaving(mediaType) {
 
 	document.querySelectorAll(selector).forEach(element => {
 		if (!isVisibleMedia(element)) return;
+		if (mediaType === "image" && isArticleHeaderElement(element)) return;
 		if (mediaType === "video" && isAnimatedGIFVideo(element)) return;
 
 		var source = mediaSourceForSaving(element, mediaType);
@@ -273,12 +274,19 @@ function isAnimatedGIFVideo(element) {
 	return element.tagName.toLowerCase() === "video" && element.classList.contains("nnwAnimatedGIF");
 }
 
+function isArticleHeaderElement(element) {
+	if (!element || !element.closest) return false;
+	return !!element.closest("header, .headerContainer, .header-container, .headerTable, .headerBar, .headerBarInner, .feedHeader, a.feedlink, .feed-link, #nnwImageIcon");
+}
+
 function mediaContextTargetType(event) {
+	if (isArticleHeaderElement(event.target)) return "header";
 	var target = event.target.closest ? event.target.closest("img, video") : null;
 	if (!target || !isVisibleMedia(target)) return null;
 	// Animated GIFs are rendered as videos by the article renderer, but they are images to the
 	// reader, so they must never be offered as videos.
 	if (isAnimatedGIFVideo(target)) return null;
+	if (target.id === "nnwImageIcon") return "header";
 	return target.tagName.toLowerCase() === "video" ? "video" : "image";
 }
 
@@ -307,21 +315,30 @@ var mediaLongPressMoveHandler = null;
 function beginMediaLongPress(event) {
 	cancelMediaLongPress();
 	var type = mediaContextTargetType(event);
-	if (type !== "video") return;
-
-	// WebKit exposes no way to add an item to a video's controls menu, so the app shows its own.
-	// Detecting the press here keeps the native gesture handling — and therefore WebKit's image and
-	// link menus — completely untouched.
 	var touch = event.touches && event.touches[0];
 	if (!touch) return;
 	var startX = touch.clientX;
 	var startY = touch.clientY;
-
 	var press = mediaPressSequence;
-	mediaLongPressTimer = setTimeout(function() {
-		mediaLongPressTimer = null;
-		window.webkit.messageHandlers.mediaLongPress.postMessage("video:" + press);
-	}, 600);
+
+	if (type === "header") {
+		// Links and images in the header keep WebKit's element menu. Plain header text does not.
+		if (event.target.closest && event.target.closest("a, img")) return;
+		mediaLongPressTimer = setTimeout(function() {
+			mediaLongPressTimer = null;
+			window.webkit.messageHandlers.mediaLongPress.postMessage("header:" + press);
+		}, 500);
+	} else if (type === "video") {
+		// WebKit exposes no way to add an item to a video's controls menu, so the app shows its own.
+		// Detecting the press here keeps the native gesture handling — and therefore WebKit's image and
+		// link menus — completely untouched.
+		mediaLongPressTimer = setTimeout(function() {
+			mediaLongPressTimer = null;
+			window.webkit.messageHandlers.mediaLongPress.postMessage("video:" + press);
+		}, 600);
+	} else {
+		return;
+	}
 
 	mediaLongPressMoveHandler = function(moveEvent) {
 		var current = moveEvent.touches && moveEvent.touches[0];

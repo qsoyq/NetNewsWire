@@ -137,7 +137,9 @@ final class ArticleViewController: UIViewController {
 			fullScreenTapZone.widthAnchor.constraint(equalToConstant: 150),
 			fullScreenTapZone.heightAnchor.constraint(equalToConstant: 44)
 		])
+		fullScreenTapZone.isUserInteractionEnabled = true
 		fullScreenTapZone.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(didTapNavigationBar)))
+		fullScreenTapZone.addInteraction(UIContextMenuInteraction(delegate: self))
 		navigationItem.titleView = fullScreenTapZone
 
 		articleExtractorButton.addTarget(self, action: #selector(toggleArticleExtractor(_:)), for: .touchUpInside)
@@ -625,4 +627,20 @@ private extension ArticleViewController {
 		return controller
 	}
 
+}
+
+extension ArticleViewController: UIContextMenuInteractionDelegate {
+	func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+		guard let feed = article?.feed, !coordinator.timelineFeedIsEqualTo(feed) else {
+			return nil
+		}
+
+		return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+			let title = NSLocalizedString("Go to Feed", comment: "Go to Feed")
+			let action = UIAction(title: title, image: Assets.Images.openInSidebar) { [weak self] _ in
+				self?.coordinator.discloseFeed(feed, animations: [.scroll, .navigation])
+			}
+			return UIMenu(title: "", children: [action])
+		}
+	}
 }
