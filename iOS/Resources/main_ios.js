@@ -88,8 +88,26 @@ class ImageViewer {
 
 		// keep track of when an image has finished downloading for ImageViewer
 		document.querySelectorAll("img").forEach(element => {
-			element.onload = function() {
-				this.classList.add("nnwLoaded");
+			if (shouldIgnoreDiagnosticImage(element)) {
+				element.addEventListener("load", function() {
+					element.classList.add("nnwLoaded");
+				});
+				return;
+			}
+			element.addEventListener("load", function() {
+				element.classList.add("nnwLoaded");
+				reportArticleImageLoad(element, "load");
+			});
+			element.addEventListener("error", function() {
+				reportArticleImageLoad(element, "error");
+			});
+			if (element.complete) {
+				if (element.naturalWidth > 0) {
+					element.classList.add("nnwLoaded");
+					reportArticleImageLoad(element, "load");
+				} else if (element.getAttribute("src")) {
+					reportArticleImageLoad(element, "error");
+				}
 			}
 		});
 
@@ -113,6 +131,31 @@ class ImageViewer {
 			}
 		}
 	}
+}
+
+
+function shouldIgnoreDiagnosticImage(img) {
+	if (!img) return true;
+	if (img.id === "nnwImageIcon") return true;
+	if (img.classList.contains("activityIndicator")) return true;
+	var src = img.getAttribute("src") || img.src || "";
+	if (src.toLowerCase().indexOf("data:") === 0) return true;
+	if (src.toLowerCase().indexOf("nnwimageicon:") === 0) return true;
+	return false;
+}
+
+function reportArticleImageLoad(img, status) {
+	var handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.articleImageLoad;
+	if (!handler) return;
+	handler.postMessage({
+		status: status,
+		src: img.currentSrc || img.getAttribute("src") || img.src || "",
+		width: img.naturalWidth || 0,
+		height: img.naturalHeight || 0,
+		complete: !!img.complete,
+		documentURL: document.URL || "",
+		baseURI: document.baseURI || ""
+	});
 }
 
 function cancelImageLoad() {

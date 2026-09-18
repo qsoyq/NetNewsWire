@@ -38,4 +38,47 @@ enum ArticleMediaLog {
 		}
 		return "\(url.scheme ?? "?")://\(host)"
 	}
+
+	static func logRender(articleID: String, link: String?, loadBaseURL: String, htmlBaseURL: String, imageSources: [String]) {
+		let message = ArticleImageDiagnostics.renderMessage(
+			articleID: articleID,
+			link: link,
+			loadBaseURL: loadBaseURL,
+			htmlBaseURL: htmlBaseURL,
+			imageSources: imageSources
+		)
+		log(.info, operation: "Render", message: message)
+	}
+
+	static func logImageLoad(_ event: ArticleImageDiagnostics.ImageLoadEvent) {
+		let level: ErrorLogLevel = event.isFailure ? .warning : .debug
+		// Failures keep the full URL; that is the whole point of this diagnostic.
+		let source = event.isFailure ? event.source : urlDescription(event.source, level: level)
+		let described = ArticleImageDiagnostics.ImageLoadEvent(
+			status: event.status,
+			source: source,
+			width: event.width,
+			height: event.height,
+			complete: event.complete,
+			documentURL: event.documentURL,
+			baseURI: event.baseURI
+		)
+		log(level, operation: "Image load", message: ArticleImageDiagnostics.imageLoadMessage(described))
+	}
+
+	static func logLoadSummary(articleID: String, link: String?, loadBaseURL: String, htmlBaseURL: String, documentURL: String, expectedCount: Int, events: [ArticleImageDiagnostics.ImageLoadEvent]) {
+		guard ArticleImageDiagnostics.shouldLogLoadSummary(expectedCount: expectedCount, events: events) else {
+			return
+		}
+		let message = ArticleImageDiagnostics.loadSummaryMessage(
+			articleID: articleID,
+			link: link,
+			loadBaseURL: loadBaseURL,
+			htmlBaseURL: htmlBaseURL,
+			documentURL: documentURL,
+			expectedCount: expectedCount,
+			events: events
+		)
+		log(.warning, operation: "Image summary", message: message)
+	}
 }

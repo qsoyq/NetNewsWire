@@ -32,6 +32,7 @@ final class WebViewController: UIViewController {
 		static let webViewPiPStopped = "webViewPiPStopped"
 		static let mediaContextTarget = "mediaContextTarget"
 		static let mediaLongPress = "mediaLongPress"
+		static let articleImageLoad = "articleImageLoad"
 	}
 
 	private enum MediaContextTarget: String {
@@ -70,6 +71,8 @@ final class WebViewController: UIViewController {
 	private var mediaContextTargetState: MediaContextTargetState?
 	private var didConfigureContextMenuForCurrentPress = false
 	private var mediaSaveProgressAlert: UIAlertController?
+	private var articleImageLoadTracker: ArticleImageLoadTracker?
+	private var articleImageSummaryTask: Task<Void, Never>?
 
 	private var articleExtractor: ArticleExtractor?
 	var extractedArticle: ExtractedArticle? {
@@ -446,6 +449,10 @@ extension WebViewController: WKUIDelegate {
 extension WebViewController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		if let article {
+			logMediaEvent(.info, operation: "Render", message: "documentURL=\(webView.url?.absoluteString ?? "(nil)") articleID=\(article.articleID)")
+			scheduleArticleImageSummary(documentURL: webView.url?.absoluteString ?? "")
+		}
 		for (index, view) in view.subviews.enumerated() {
 			if index != 0, let oldWebView = view as? PreloadedWebView {
 				oldWebView.removeFromSuperview()
@@ -573,6 +580,8 @@ extension WebViewController: WKScriptMessageHandler {
 			WebViewPiPManager.shared.pipDidStop(from: self)
 		case MessageName.mediaLongPress:
 			handleMediaLongPressMessage(message.body as? String)
+		case MessageName.articleImageLoad:
+			handleArticleImageLoadMessage(message.body)
 		case MessageName.mediaContextTarget:
 			// Reports carry "<type>:<press>" so a straggler from an earlier press can never overwrite
 			// the media element the current press is about to build a menu for.
@@ -963,6 +972,40 @@ private extension WebViewController {
 		ArticleMediaLog.log(level, operation: operation, message: message)
 	}
 
+	func handleArticleImageLoadMessage(_ body: Any) {
+		guard let event = ArticleImageDiagnostics.imageLoadEvent(from: body) else {
+			return
+		}
+		articleImageLoadTracker?.events.append(event)
+		ArticleMediaLog.logImageLoad(event)
+		if event.isFailure {
+			let source = event.source
+			Task { @MainActor in
+				let probe = await ArticleImageProbe.describe(source)
+				ArticleMediaLog.log(.warning, operation: "Image probe", message: probe)
+			}
+		}
+	}
+
+	func scheduleArticleImageSummary(documentURL: String) {
+		articleImageSummaryTask?.cancel()
+		articleImageSummaryTask = Task { @MainActor in
+			try? await Task.sleep(for: .seconds(2))
+			guard !Task.isCancelled, let tracker = articleImageLoadTracker else {
+				return
+			}
+			ArticleMediaLog.logLoadSummary(
+				articleID: tracker.articleID,
+				link: tracker.link,
+				loadBaseURL: tracker.loadBaseURL,
+				htmlBaseURL: tracker.htmlBaseURL,
+				documentURL: documentURL,
+				expectedCount: tracker.sources.count,
+				events: tracker.events
+			)
+		}
+	}
+
 	func loadWebView(replaceExistingWebView: Bool = false) {
 		guard isViewLoaded else { return }
 
@@ -1011,6 +1054,7 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.webViewPiPStopped)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.mediaContextTarget)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.mediaLongPress)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.articleImageLoad)
 
 				// Add handlers
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasClicked)
@@ -1022,6 +1066,7 @@ private extension WebViewController {
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.webViewPiPStopped)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.mediaContextTarget)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.mediaLongPress)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.articleImageLoad)
 
 				self.renderPage(webView)
 			}
@@ -1085,6 +1130,26 @@ private extension WebViewController {
 		}
 
 		WebViewConfiguration.addContentBlockingRules(to: webView)
+		if let article {
+			let imageSources = ArticleImageDiagnostics.imageSources(inHTML: html)
+			articleImageSummaryTask?.cancel()
+			articleImageLoadTracker = ArticleImageLoadTracker(
+				articleID: article.articleID,
+				link: article.preferredLink,
+				loadBaseURL: ArticleRenderer.page.baseURL.absoluteString,
+				htmlBaseURL: rendering.baseURL,
+				sources: imageSources
+			)
+			ArticleMediaLog.logRender(
+				articleID: article.articleID,
+				link: article.preferredLink,
+				loadBaseURL: ArticleRenderer.page.baseURL.absoluteString,
+				htmlBaseURL: rendering.baseURL,
+				imageSources: imageSources
+			)
+		} else {
+			articleImageLoadTracker = nil
+		}
 		webView.loadHTMLString(html, baseURL: ArticleRenderer.page.baseURL)
 	}
 
@@ -1366,4 +1431,22 @@ extension WebViewController {
 		webView?.evaluateJavaScript("selectPreviousResult()")
 	}
 
+}
+
+
+private final class ArticleImageLoadTracker {
+	let articleID: String
+	let link: String?
+	let loadBaseURL: String
+	let htmlBaseURL: String
+	let sources: [String]
+	var events: [ArticleImageDiagnostics.ImageLoadEvent] = []
+
+	init(articleID: String, link: String?, loadBaseURL: String, htmlBaseURL: String, sources: [String]) {
+		self.articleID = articleID
+		self.link = link
+		self.loadBaseURL = loadBaseURL
+		self.htmlBaseURL = htmlBaseURL
+		self.sources = sources
+	}
 }

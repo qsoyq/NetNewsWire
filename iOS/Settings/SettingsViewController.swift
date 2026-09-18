@@ -13,6 +13,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import RSCore
 import Account
+import ErrorLog
 
 final class SettingsViewController: UITableViewController {
 
@@ -30,7 +31,8 @@ final class SettingsViewController: UITableViewController {
 	private enum TroubleshootingRow: Int {
 		case errorLog = 0
 		case logLevel = 1
-		case cloudKitZoneStats = 2
+		case rebuildArticleContent = 2
+		case cloudKitZoneStats = 3
 	}
 
 	private weak var opmlAccount: Account?
@@ -268,6 +270,11 @@ final class SettingsViewController: UITableViewController {
 			let colorPalette = UIStoryboard.settings.instantiateController(ofType: ColorPaletteTableViewController.self)
 			self.navigationController?.pushViewController(colorPalette, animated: true)
 		case .troubleshooting:
+			if TroubleshootingRow(rawValue: indexPath.row) == .rebuildArticleContent {
+				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
+				confirmRebuildUnreadArticleContent()
+				return
+			}
 			let viewController: UIViewController? = {
 				switch TroubleshootingRow(rawValue: indexPath.row) {
 				case .errorLog:
@@ -589,6 +596,100 @@ private extension SettingsViewController {
 		self.present(docPicker, animated: true)
 	}
 
+	func confirmRebuildUnreadArticleContent() {
+		let freshRSSAccounts = AccountManager.shared.activeAccounts.filter { ArticleContentCacheRebuilder.supports($0.type) }
+		guard !freshRSSAccounts.isEmpty else {
+			presentRebuildArticleContentResult(
+				title: NSLocalizedString("Rebuild Article Content", comment: "Rebuild article content title"),
+				message: NSLocalizedString("No FreshRSS account is active.", comment: "No FreshRSS account")
+			)
+			return
+		}
+
+		let title = NSLocalizedString("Rebuild Unread Article Content", comment: "Rebuild unread article content title")
+		let message = NSLocalizedString("This deletes locally cached HTML for unread and starred FreshRSS articles, then downloads that content again in parallel.\n\nFeed folders and favorite feeds are not changed. Read articles are left alone so the download stays small.\n\nKeep the app in the foreground until it finishes. Switching away only gets about 30 extra seconds. You do not need to pull to refresh afterwards.", comment: "Rebuild unread article content message")
+		let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+		alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel))
+		alert.addAction(UIAlertAction(title: NSLocalizedString("Rebuild", comment: "Rebuild article content"), style: .destructive) { [weak self] _ in
+			self?.rebuildUnreadArticleContent()
+		})
+		present(alert, animated: true)
+	}
+
+	func rebuildUnreadArticleContent() {
+		let progressAlert = UIAlertController(title: NSLocalizedString("Rebuilding Article Content", comment: "Rebuilding article content progress title"), message: NSLocalizedString("Downloading unread and starred articles…", comment: "Rebuilding article content progress message"), preferredStyle: .alert)
+		present(progressAlert, animated: true)
+
+		UIApplication.shared.isIdleTimerDisabled = true
+		var rebuildTask: Task<Void, Never>?
+		var backgroundTask = UIBackgroundTaskIdentifier.invalid
+		backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "RebuildArticleContent") {
+			Task { @MainActor in
+				ArticleContentCacheLog.log(.warning, operation: "Rebuild", message: "Background time expired. Keep the app in the foreground to finish downloading.")
+				rebuildTask?.cancel()
+			}
+		}
+
+		rebuildTask = Task { @MainActor in
+			defer {
+				UIApplication.shared.isIdleTimerDisabled = false
+				if backgroundTask != .invalid {
+					UIApplication.shared.endBackgroundTask(backgroundTask)
+					backgroundTask = .invalid
+				}
+			}
+
+			let summaries: [ArticleContentCacheRebuildSummary]
+			do {
+				summaries = try await ArticleContentCacheRebuilder.rebuildUnreadAndStarredContent(in: Array(AccountManager.shared.activeAccounts)) { message in
+					progressAlert.message = message
+				}
+			} catch is CancellationError {
+				ArticleContentCacheLog.log(.warning, operation: "Rebuild", message: "Rebuild cancelled")
+				progressAlert.dismiss(animated: true) {
+					self.presentRebuildArticleContentResult(
+						title: NSLocalizedString("Rebuild Interrupted", comment: "Rebuild article content interrupted title"),
+						message: NSLocalizedString("The download did not finish. Keep the app in the foreground and try again. Feed folders and favorite feeds were not changed.", comment: "Rebuild article content interrupted message")
+					)
+				}
+				return
+			} catch {
+				ArticleContentCacheLog.log(.error, operation: "Rebuild", message: error.localizedDescription)
+				progressAlert.dismiss(animated: true) {
+					self.presentRebuildArticleContentResult(
+						title: NSLocalizedString("Rebuild Failed", comment: "Rebuild article content failed title"),
+						message: String.localizedStringWithFormat(NSLocalizedString("Local unread and starred article content may be incomplete: %@\n\nKeep the app open and try again. Feed folders and favorite feeds were not changed.", comment: "Rebuild article content failed message"), error.localizedDescription)
+					)
+				}
+				return
+			}
+
+			ArticleContentCacheLog.log(.warning, operation: "Rebuild", message: summaries.map { "\($0.accountName): rebuilt \($0.rebuiltCount), downloaded \($0.downloadedCount) (unread \($0.unreadCount), starred \($0.starredCount))" }.joined(separator: "; "))
+			progressAlert.dismiss(animated: true) {
+				self.presentRebuildArticleContentResult(title: NSLocalizedString("Rebuild Complete", comment: "Rebuild article content complete title"), message: self.rebuildArticleContentResultMessage(summaries))
+			}
+		}
+	}
+
+	func rebuildArticleContentResultMessage(_ summaries: [ArticleContentCacheRebuildSummary]) -> String {
+		if summaries.isEmpty {
+			return NSLocalizedString("No FreshRSS account is active.", comment: "No FreshRSS account")
+		}
+		let rebuiltCount = summaries.reduce(0) { $0 + $1.rebuiltCount }
+		if rebuiltCount == 0 {
+			return NSLocalizedString("No unread or starred articles needed rebuilding. Read articles were left unchanged.", comment: "No articles rebuilt")
+		}
+		let names = summaries.map { $0.accountName }.joined(separator: ", ")
+		let downloadedCount = summaries.reduce(0) { $0 + $1.downloadedCount }
+		return String.localizedStringWithFormat(NSLocalizedString("Rebuilt %ld unread and starred articles in %@ and downloaded %ld entries.\n\nRead articles were left unchanged. Feed folders and favorite feeds were not changed.", comment: "Rebuild article content result"), rebuiltCount, names, downloadedCount)
+	}
+
+	func presentRebuildArticleContentResult(title: String, message: String) {
+		let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+		alert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: "OK"), style: .default))
+		present(alert, animated: true)
+	}
+
 	func clearVideoCache() {
 		let title = NSLocalizedString("Clear Video Cache", comment: "Clear Video Cache")
 		let message = NSLocalizedString("Are you sure you want to clear the video cache?", comment: "Clear Video Cache Message")
@@ -609,5 +710,19 @@ private extension SettingsViewController {
 		let vc = SFSafariViewController(url: URL(string: urlString)!)
 		vc.modalPresentationStyle = .pageSheet
 		present(vc, animated: true)
+	}
+}
+
+
+private enum ArticleContentCacheLog {
+	static let sourceName = "Article Cache"
+	static let sourceID = 103
+
+	static func log(_ level: ErrorLogLevel, operation: String, message: String) {
+		guard level.rawValue >= AppDefaults.shared.errorLogLevel.rawValue else {
+			return
+		}
+		let userInfo = ErrorLogUserInfoKey.userInfo(sourceName: sourceName, sourceID: sourceID, operation: operation, errorMessage: message, level: level)
+		NotificationCenter.default.post(name: .appDidEncounterError, object: nil, userInfo: userInfo)
 	}
 }

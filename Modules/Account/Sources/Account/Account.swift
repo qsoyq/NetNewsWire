@@ -459,6 +459,19 @@ public enum FetchType {
 		try await delegate.refreshAll(for: self)
 	}
 
+	/// Re-download article HTML for the given IDs. Feed folders and favorite
+	/// feeds are not changed. Used by FreshRSS content rebuild.
+	@discardableResult
+	func rebuildArticleContent(
+		articleIDs: Set<String>,
+		progress: (@MainActor (Int, Int) -> Void)? = nil
+	) async throws -> Int {
+		guard let readerDelegate = delegate as? ReaderAPIAccountDelegate else {
+			return 0
+		}
+		return try await readerDelegate.refreshArticleContent(for: self, articleIDs: articleIDs, progress: progress)
+	}
+
 	// MARK: - Syncing Article Status
 
 	public func sendArticleStatus() async throws {

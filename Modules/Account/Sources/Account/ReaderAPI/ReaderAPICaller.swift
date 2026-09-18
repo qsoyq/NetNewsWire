@@ -391,6 +391,10 @@ enum CreateReaderAPISubscriptionResult {
 	}
 
 	@MainActor public func retrieveEntries(articleIDs: [String]) async throws -> [ReaderAPIEntry]? {
+		try await retrieveEntries(articleIDs: articleIDs, using: transport)
+	}
+
+	@MainActor func retrieveEntries(articleIDs: [String], using sessionTransport: Transport) async throws -> [ReaderAPIEntry]? {
 
 		guard !articleIDs.isEmpty else {
 			return [ReaderAPIEntry]()
@@ -425,7 +429,7 @@ enum CreateReaderAPISubscriptionResult {
 
 		let postData = Data("T=\(token)&output=json&\(idsToFetch)".utf8)
 
-		let (_, entryWrapper) = try await transport.send(request: request, method: HTTPMethod.post, data: postData, resultType: ReaderAPIEntryWrapper.self)
+		let (_, entryWrapper) = try await sessionTransport.send(request: request, method: HTTPMethod.post, data: postData, resultType: ReaderAPIEntryWrapper.self)
 
 		guard let entryWrapper else {
 			throw AccountError.invalidResponse

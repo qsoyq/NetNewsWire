@@ -45,6 +45,21 @@ final class ReaderAPIAccountDelegate: AccountDelegate {
 	private let caller: ReaderAPICaller
 	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "ReaderAPI")
 
+	private lazy var rebuildTransport: URLSession = {
+		let sessionConfiguration = URLSessionConfiguration.default
+		sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
+		sessionConfiguration.timeoutIntervalForRequest = 60.0
+		sessionConfiguration.httpShouldSetCookies = false
+		sessionConfiguration.httpCookieAcceptPolicy = .never
+		sessionConfiguration.httpMaximumConnectionsPerHost = ArticleContentCacheRebuilder.maxConcurrentContentRequests
+		sessionConfiguration.httpCookieStorage = nil
+		sessionConfiguration.urlCache = nil
+		if let userAgentHeaders = UserAgent.headers() {
+			sessionConfiguration.httpAdditionalHeaders = userAgentHeaders
+		}
+		return URLSession(configuration: sessionConfiguration)
+	}()
+
 	var progressInfo = ProgressInfo() {
 		didSet {
 			if progressInfo != oldValue {
@@ -161,6 +176,70 @@ final class ReaderAPIAccountDelegate: AccountDelegate {
 				throw wrappedError
 			}
 		}
+	}
+
+	@MainActor func refreshArticleContent(
+		for account: Account,
+		articleIDs: Set<String>,
+		progress: (@MainActor (Int, Int) -> Void)? = nil
+	) async throws -> Int {
+		guard !articleIDs.isEmpty else {
+			return 0
+		}
+
+		retrieveCredentialsIfNeeded(account)
+
+		let chunks = ArticleContentCacheRebuilder.contentRequestChunks(articleIDs: Array(articleIDs))
+		refreshProgress.addTasks(chunks.count)
+		progress?(0, chunks.count)
+
+		var downloadedCount = 0
+		var firstError: Error?
+		var start = 0
+		let concurrency = ArticleContentCacheRebuilder.maxConcurrentContentRequests
+
+		while start < chunks.count {
+			try Task.checkCancellation()
+			let end = min(start + concurrency, chunks.count)
+			let wave = Array(chunks[start..<end])
+
+			do {
+				let waveEntries = try await retrieveEntriesConcurrently(wave)
+				for entries in waveEntries {
+					downloadedCount += entries.count
+					await processEntries(account: account, entries: entries)
+					refreshProgress.completeTask()
+				}
+			} catch {
+				for _ in 0..<wave.count {
+					refreshProgress.completeTask()
+				}
+				Self.logger.error("ReaderAPIAccountDelegate: refreshArticleContent — wave failed: \(error.localizedDescription)")
+				firstError = firstError ?? error
+			}
+
+			start = end
+			progress?(min(start, chunks.count), chunks.count)
+		}
+
+		if let firstError {
+			throw firstError
+		}
+		return downloadedCount
+	}
+
+
+	func retrieveEntriesConcurrently(_ chunks: [[String]]) async throws -> [[ReaderAPIEntry]] {
+		guard !chunks.isEmpty else {
+			return []
+		}
+		if chunks.count == 1 {
+			return [try await caller.retrieveEntries(articleIDs: chunks[0], using: rebuildTransport) ?? []]
+		}
+		let mid = chunks.count / 2
+		async let left = retrieveEntriesConcurrently(Array(chunks[..<mid]))
+		async let right = retrieveEntriesConcurrently(Array(chunks[mid...]))
+		return try await left + right
 	}
 
 	@MainActor func syncArticleStatus(for account: Account) async throws {
