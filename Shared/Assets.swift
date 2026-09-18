@@ -52,6 +52,13 @@ struct Assets {
 					  isBackgroundSuppressed: true,
 					  preferredColor: Assets.Colors.star.cgColor)
 		}
+		static var favoriteFeed: IconImage {
+			let image = RSImage(symbol: "bookmark.fill")!
+			return IconImage(image,
+							 isSymbol: true,
+							 isBackgroundSuppressed: true,
+							 preferredColor: RSColor.systemOrange.cgColor)
+		}
 
 #if os(macOS)
 		static var accountLocal: RSImage { RSImage(named: "accountLocal")! }

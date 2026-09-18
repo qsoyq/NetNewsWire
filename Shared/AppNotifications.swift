@@ -12,5 +12,6 @@ import Articles
 extension Notification.Name {
 	static let InspectableObjectsDidChange = Notification.Name("TimelineSelectionDidChangeNotification")
 	static let UserDidAddFeed = Notification.Name("UserDidAddFeedNotification")
+	static let FavoriteFeedsDidChange = Notification.Name("FavoriteFeedsDidChangeNotification")
 	static let WebInspectorEnabledDidChange = Notification.Name("WebInspectorEnabledDidChange")
 }

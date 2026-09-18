@@ -21,10 +21,18 @@ extension MainFeedCollectionViewController: UICollectionViewDropDelegate {
 	func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: any UICollectionViewDropCoordinator) {
 		guard let dragItem = coordinator.items.first?.dragItem,
 			  let dragNode = dragItem.localObject as? Node,
-			  let source = dragNode.parent?.representedObject as? Container,
 			  let destIndexPath = coordinator.destinationIndexPath else {
 				  return
 			  }
+
+		if isFavoriteFeedsSection(destIndexPath) {
+			performFavoriteDrop(dragNode: dragNode, destIndexPath: destIndexPath)
+			return
+		}
+
+		guard let source = dragNode.parent?.representedObject as? Container else {
+			return
+		}
 
 		let isFolderDrop: Bool = {
 			if dataSource.itemIdentifier(for: destIndexPath)?.node.representedObject is Folder, let propCell = collectionView.cellForItem(at: destIndexPath) {
@@ -72,7 +80,13 @@ extension MainFeedCollectionViewController: UICollectionViewDropDelegate {
 
 	func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: any UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
 
-		guard let destIndexPath = destinationIndexPath, destIndexPath.section > 0, collectionView.hasActiveDrag else {
+		guard let destIndexPath = destinationIndexPath, collectionView.hasActiveDrag else {
+			return UICollectionViewDropProposal(operation: .forbidden)
+		}
+		if isFavoriteFeedsSection(destIndexPath) {
+			return favoriteDropProposal(session: session, destIndexPath: destIndexPath)
+		}
+		guard isAccountSection(destIndexPath) else {
 			return UICollectionViewDropProposal(operation: .forbidden)
 		}
 
@@ -168,6 +182,67 @@ extension MainFeedCollectionViewController: UICollectionViewDropDelegate {
 				}
 			}
 
+		}
+	}
+
+
+
+	func favoriteDropProposal(session: any UIDropSession, destIndexPath: IndexPath) -> UICollectionViewDropProposal {
+		guard let sourceNode = session.localDragSession?.items.first?.localObject as? Node,
+			  let destObject = dataSource.itemIdentifier(for: destIndexPath)?.node.representedObject else {
+			return UICollectionViewDropProposal(operation: .forbidden)
+		}
+
+		let isAlias = sourceNode.representedObject is FavoriteFeedAlias
+		let isFeed = sourceNode.representedObject is Feed
+		guard isAlias || isFeed else {
+			return UICollectionViewDropProposal(operation: .forbidden)
+		}
+
+		if destObject is FavoriteFeedsAllFeed {
+			if isFeed {
+				return UICollectionViewDropProposal(operation: .copy, intent: .insertAtDestinationIndexPath)
+			}
+			return UICollectionViewDropProposal(operation: .forbidden)
+		}
+
+		let destination = favoriteDestinationFolder(at: destIndexPath)
+		let operation: UIDropOperation = (isFeed || destination != nil) ? .copy : .move
+		if destObject is FavoriteFeedsFolder {
+			return UICollectionViewDropProposal(operation: operation, intent: .insertIntoDestinationIndexPath)
+		}
+		if destObject is FavoriteFeedAlias {
+			return UICollectionViewDropProposal(operation: operation, intent: .insertAtDestinationIndexPath)
+		}
+		return UICollectionViewDropProposal(operation: .forbidden)
+	}
+
+	func favoriteDestinationFolder(at destIndexPath: IndexPath) -> FavoriteFeedsFolder? {
+		let destNode = dataSource.itemIdentifier(for: destIndexPath)?.node
+		if let folder = destNode?.representedObject as? FavoriteFeedsFolder {
+			return folder.isUserFolder ? folder : nil
+		}
+		if destNode?.representedObject is FavoriteFeedAlias,
+		   let folder = destNode?.parent?.representedObject as? FavoriteFeedsFolder {
+			return folder.isUserFolder ? folder : nil
+		}
+		return nil
+	}
+
+	func performFavoriteDrop(dragNode: Node, destIndexPath: IndexPath) {
+		let destObject = dataSource.itemIdentifier(for: destIndexPath)?.node.representedObject
+		let destination = favoriteDestinationFolder(at: destIndexPath)
+		let discloseFolder = destObject is FavoriteFeedsFolder || destObject is FavoriteFeedAlias
+
+		if let alias = dragNode.representedObject as? FavoriteFeedAlias {
+			if destination != nil || destObject is FavoriteFeedsFolder {
+				coordinator.moveFavorite(alias, to: destination, discloseFolder: discloseFolder)
+			}
+			return
+		}
+
+		if let feed = dragNode.representedObject as? Feed {
+			coordinator.favorite(feed, to: destination, discloseFolder: discloseFolder)
 		}
 	}
 

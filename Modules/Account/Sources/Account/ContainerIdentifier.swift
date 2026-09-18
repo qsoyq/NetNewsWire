@@ -14,6 +14,8 @@ import Foundation
 
 public enum ContainerIdentifier: Hashable, Equatable, Sendable {
 	case smartFeedController
+	case favoriteFeedsController
+	case favoriteFeedsFolder(String) // folderID
 	case account(String) // accountID
 	case folder(String, String) // accountID, folderName
 
@@ -22,6 +24,15 @@ public enum ContainerIdentifier: Hashable, Equatable, Sendable {
 		case .smartFeedController:
 			return [
 				"type": "smartFeedController"
+			]
+		case .favoriteFeedsController:
+			return [
+				"type": "favoriteFeedsController"
+			]
+		case .favoriteFeedsFolder(let folderID):
+			return [
+				"type": "favoriteFeedsFolder",
+				"folderID": folderID
 			]
 		case .account(let accountID):
 			return [
@@ -43,6 +54,11 @@ public enum ContainerIdentifier: Hashable, Equatable, Sendable {
 		switch type {
 		case "smartFeedController":
 			self = ContainerIdentifier.smartFeedController
+		case "favoriteFeedsController":
+			self = ContainerIdentifier.favoriteFeedsController
+		case "favoriteFeedsFolder":
+			guard let folderID = userInfo["folderID"] as? String else { return nil }
+			self = ContainerIdentifier.favoriteFeedsFolder(folderID)
 		case "account":
 			guard let accountID = userInfo["accountID"] as? String else { return nil }
 			self = ContainerIdentifier.account(accountID)
@@ -61,6 +77,7 @@ extension ContainerIdentifier: Encodable {
 		case type
 		case accountID
 		case folderName
+		case folderID
 	}
 
 	public func encode(to encoder: Encoder) throws {
@@ -68,6 +85,11 @@ extension ContainerIdentifier: Encodable {
 		switch self {
 		case .smartFeedController:
 			try container.encode("smartFeedController", forKey: .type)
+		case .favoriteFeedsController:
+			try container.encode("favoriteFeedsController", forKey: .type)
+		case .favoriteFeedsFolder(let folderID):
+			try container.encode("favoriteFeedsFolder", forKey: .type)
+			try container.encode(folderID, forKey: .folderID)
 		case .account(let accountID):
 			try container.encode("account", forKey: .type)
 			try container.encode(accountID, forKey: .accountID)
@@ -88,6 +110,11 @@ extension ContainerIdentifier: Decodable {
 		switch type {
 		case "smartFeedController":
 			self = .smartFeedController
+		case "favoriteFeedsController":
+			self = .favoriteFeedsController
+		case "favoriteFeedsFolder":
+			let folderID = try container.decode(String.self, forKey: .folderID)
+			self = .favoriteFeedsFolder(folderID)
 		case "account":
 			let accountID =  try container.decode(String.self, forKey: .accountID)
 			self = .account(accountID)

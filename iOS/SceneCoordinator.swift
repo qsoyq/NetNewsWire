@@ -68,6 +68,9 @@ struct SidebarItemNode: Hashable, Sendable {
 
 	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "SceneCoordinator")
 
+	private var isSidebarContextMenuPresented = false
+	private var pendingFavoriteFeedsReload = false
+
 	// Which Containers are expanded
 	private var expandedContainers = Set<ContainerIdentifier>()
 
@@ -340,6 +343,7 @@ struct SidebarItemNode: Hashable, Sendable {
 		NotificationCenter.default.addObserver(self, selector: #selector(userDidDeleteAccount(_:)), name: .UserDidDeleteAccount, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(userDidAddFeed(_:)), name: .UserDidAddFeed, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(accountDidDownloadArticles(_:)), name: .AccountDidDownloadArticles, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(favoriteFeedsDidChange(_:)), name: .FavoriteFeedsDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(willEnterForeground(_:)), name: UIApplication.willEnterForegroundNotification, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(importDownloadedTheme(_:)), name: .didEndDownloadingTheme, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(themeDownloadDidFail(_:)), name: .didFailToImportThemeWithError, object: nil)
@@ -519,6 +523,9 @@ struct SidebarItemNode: Hashable, Sendable {
 
 		if let sidebarItem = note.object as? SidebarItem {
 			reconfigureSidebarItem(sidebarItem)
+			if timelineFeed?.sidebarItemID == sidebarItem.sidebarItemID {
+				mainTimelineViewController?.updateNavigationBarTitle(sidebarItem.nameForDisplay)
+			}
 		}
 		queueRebuildBackingStores()
 	}
@@ -589,6 +596,20 @@ struct SidebarItemNode: Hashable, Sendable {
 		updateTimelineSortDirection()
 		groupByFeed = AppDefaults.shared.timelineGroupByFeed
 		mainTimelineViewController?.resetUI(resetScroll: false)
+	}
+
+	func beginSidebarContextMenu() {
+		isSidebarContextMenuPresented = true
+	}
+
+	func endSidebarContextMenu() {
+		isSidebarContextMenuPresented = false
+		flushPendingFavoriteFeedsReload()
+	}
+
+	@objc func favoriteFeedsDidChange(_ note: Notification) {
+		Self.logger.debug("SceneCoordinator: favoriteFeedsDidChange")
+		reloadFavoriteFeeds(deferIfContextMenuPresented: true)
 	}
 
 	@objc func accountDidDownloadArticles(_ note: Notification) {
@@ -902,7 +923,7 @@ struct SidebarItemNode: Hashable, Sendable {
 		for sectionNode in treeController.rootNode.childNodes {
 			markExpanded(sectionNode)
 			for topLevelNode in sectionNode.childNodes {
-				if topLevelNode.representedObject is Folder {
+				if topLevelNode.representedObject is Folder || topLevelNode.representedObject is FavoriteFeedsFolder {
 					markExpanded(topLevelNode)
 				}
 			}
@@ -933,7 +954,7 @@ struct SidebarItemNode: Hashable, Sendable {
 		Self.logger.debug("SceneCoordinator: collapseAllFolders")
 		for sectionNode in treeController.rootNode.childNodes {
 			for topLevelNode in sectionNode.childNodes {
-				if topLevelNode.representedObject is Folder {
+				if topLevelNode.representedObject is Folder || topLevelNode.representedObject is FavoriteFeedsFolder {
 					unmarkExpanded(topLevelNode)
 				}
 			}
@@ -1041,6 +1062,60 @@ struct SidebarItemNode: Hashable, Sendable {
 		self.ensureFeedIsAvailableToSelect(SmartFeedsController.shared.starredFeed) {
 			self.selectFeed(SmartFeedsController.shared.starredFeed, animations: [.navigation, .scroll], completion: completion)
 		}
+	}
+
+	func toggleFavorite(for feed: Feed) {
+		if !FavoriteFeedsController.shared.isFavorite(feed) {
+			markExpanded(FavoriteFeedsController.shared)
+		}
+		FavoriteFeedsController.shared.toggle(feed)
+	}
+
+	func toggleFavorite(_ feed: Feed, in folder: FavoriteFeedsFolder) {
+		markExpanded(FavoriteFeedsController.shared)
+		markExpanded(folder)
+		FavoriteFeedsController.shared.toggle(feed, in: folder)
+	}
+
+	func favorite(_ feed: Feed, to folder: FavoriteFeedsFolder?, discloseFolder: Bool = false) {
+		markExpanded(FavoriteFeedsController.shared)
+		if discloseFolder {
+			if let folder, folder.isUserFolder {
+				markExpanded(folder)
+			} else {
+				markExpanded(FavoriteFeedsController.shared.ungroupedFolder)
+			}
+		}
+		FavoriteFeedsController.shared.add(feed, to: folder)
+	}
+
+	func unfavorite(_ alias: FavoriteFeedAlias) {
+		FavoriteFeedsController.shared.remove(alias)
+	}
+
+	func createFavoriteFolder(named name: String) -> FavoriteFeedsFolder {
+		markExpanded(FavoriteFeedsController.shared)
+		return FavoriteFeedsController.shared.createFolder(named: name)
+	}
+
+	func renameFavoriteFolder(_ folder: FavoriteFeedsFolder, to name: String) {
+		FavoriteFeedsController.shared.rename(folder, to: name)
+	}
+
+	func deleteFavoriteFolder(_ folder: FavoriteFeedsFolder) {
+		FavoriteFeedsController.shared.deleteFolder(folder)
+	}
+
+	func moveFavorite(_ alias: FavoriteFeedAlias, to folder: FavoriteFeedsFolder?, discloseFolder: Bool = true) {
+		markExpanded(FavoriteFeedsController.shared)
+		if discloseFolder {
+			if let folder, folder.isUserFolder {
+				markExpanded(folder)
+			} else {
+				markExpanded(FavoriteFeedsController.shared.ungroupedFolder)
+			}
+		}
+		FavoriteFeedsController.shared.move(alias, to: folder)
 	}
 
 	var videoPlayerPresenter: UIViewController? {
@@ -1354,11 +1429,13 @@ struct SidebarItemNode: Hashable, Sendable {
 	}
 
 	func timelineFeedIsEqualTo(_ feed: Feed) -> Bool {
-		guard let timelineFeed = timelineFeed as? Feed else {
-			return false
+		if let timelineFeed = timelineFeed as? Feed {
+			return timelineFeed == feed
 		}
-
-		return timelineFeed == feed
+		if let alias = timelineFeed as? FavoriteFeedAlias {
+			return alias.key == FavoriteFeedKey(feed: feed)
+		}
+		return false
 	}
 
 	func discloseFeed(_ feed: Feed, initialLoad: Bool = false, animations: Animations = [], completion: (() -> Void)? = nil) {
@@ -1368,37 +1445,12 @@ struct SidebarItemNode: Hashable, Sendable {
 			mainTimelineViewController?.hideSearch()
 		}
 
-		guard let account = feed.account else {
-			completion?()
+		if isFavoritesTimelineContext, FavoriteFeedsController.shared.isFavorite(feed) {
+			discloseFavoriteFeed(feed, initialLoad: initialLoad, animations: animations, completion: completion)
 			return
 		}
 
-		let parentFolder = account.sortedFolders?.first(where: { $0.objectIsChild(feed) })
-
-		markExpanded(account)
-		if let parentFolder = parentFolder {
-			markExpanded(parentFolder)
-		}
-
-		if let feedSidebarItemID = feed.sidebarItemID {
-			self.treeControllerDelegate.addFilterException(feedSidebarItemID)
-		}
-		if let parentFolderSidebarItemID = parentFolder?.sidebarItemID {
-			self.treeControllerDelegate.addFilterException(parentFolderSidebarItemID)
-		}
-
-		rebuildBackingStores(initialLoad: initialLoad, completion: {
-			self.treeControllerDelegate.resetFilterExceptions()
-			self.selectFeed(nil) {
-				if self.rootSplitViewController.traitCollection.horizontalSizeClass == .compact {
-					DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-						self.selectFeed(feed, animations: animations, completion: completion)
-					}
-				} else {
-					self.selectFeed(feed, animations: animations, completion: completion)
-				}
-			}
-		})
+		discloseAccountFeed(feed, initialLoad: initialLoad, animations: animations, completion: completion)
 	}
 
 	func showStatusBar() {
@@ -1699,7 +1751,10 @@ private extension SceneCoordinator {
 
 	func addToFilterExceptionsIfNecessary(_ sidebarItem: SidebarItem?) {
 		if isReadFeedsFiltered, let sidebarItemID = sidebarItem?.sidebarItemID {
-			if sidebarItem is SmartFeed {
+			if let alias = sidebarItem as? FavoriteFeedAlias {
+				treeControllerDelegate.addFilterException(sidebarItemID)
+				addParentFolderToFilterExceptions(alias)
+			} else if sidebarItem is PseudoFeed {
 				treeControllerDelegate.addFilterException(sidebarItemID)
 			} else if let folderFeed = sidebarItem as? Folder {
 				if folderFeed.account?.existingFolder(withID: folderFeed.folderID) != nil {
@@ -1715,13 +1770,20 @@ private extension SceneCoordinator {
 	}
 
 	func addParentFolderToFilterExceptions(_ sidebarItem: SidebarItem) {
-		guard let node = treeController.rootNode.descendantNodeRepresentingObject(sidebarItem as AnyObject),
-			  let folder = node.parent?.representedObject as? Folder,
-			  let folderSidebarItemID = folder.sidebarItemID else {
+		guard let node = treeController.rootNode.descendantNodeRepresentingObject(sidebarItem as AnyObject) else {
 			return
 		}
 
-		treeControllerDelegate.addFilterException(folderSidebarItemID)
+		if let folder = node.parent?.representedObject as? Folder,
+		   let folderSidebarItemID = folder.sidebarItemID {
+			treeControllerDelegate.addFilterException(folderSidebarItemID)
+			return
+		}
+
+		if let folder = node.parent?.representedObject as? FavoriteFeedsFolder,
+		   let folderSidebarItemID = folder.sidebarItemID {
+			treeControllerDelegate.addFilterException(folderSidebarItemID)
+		}
 	}
 
 	func addVisibleSidebarItemsToFilterExceptions() {
@@ -1744,6 +1806,33 @@ private extension SceneCoordinator {
 	}
 
 	static var rebuildCount = 0
+
+	func flushPendingFavoriteFeedsReload() {
+		guard pendingFavoriteFeedsReload else {
+			return
+		}
+		pendingFavoriteFeedsReload = false
+		reloadFavoriteFeeds(deferIfContextMenuPresented: false)
+	}
+
+	func reloadFavoriteFeeds(deferIfContextMenuPresented: Bool) {
+		if deferIfContextMenuPresented, isSidebarContextMenuPresented {
+			pendingFavoriteFeedsReload = true
+			return
+		}
+
+		let shouldRefreshTimeline = timelineFeed?.sidebarItemID == FavoriteFeedsController.shared.allFeed.sidebarItemID || timelineFeed is FavoriteFeedAlias || timelineFeed is FavoriteFeedsFolder
+		if shouldRefreshTimeline {
+			fetchAndMergeArticlesAsync(animated: true) {
+				self.mainTimelineViewController?.reinitializeArticles(resetScroll: false)
+				self.rebuildBackingStores {
+					self.clearTimelineIfNoLongerAvailable()
+				}
+			}
+		} else {
+			rebuildBackingStores()
+		}
+	}
 
 	func rebuildBackingStores(initialLoad: Bool = false, updateExpandedNodes: (() -> Void)? = nil, completion: (() -> Void)? = nil) {
 #if DEBUG
@@ -1777,7 +1866,7 @@ private extension SceneCoordinator {
 
 		for i in 0..<treeController.rootNode.numberOfChildNodes {
 			let sectionNode = treeController.rootNode.childAtIndex(i)!
-			let sectionID = (sectionNode.representedObject as? Account)?.accountID ?? ""
+			let sectionID = sidebarSectionID(for: sectionNode)
 
 			snapshot.appendSections([sectionID])
 
@@ -1798,6 +1887,16 @@ private extension SceneCoordinator {
 		}
 
 		return snapshot
+	}
+
+	func sidebarSectionID(for sectionNode: Node) -> String {
+		if let account = sectionNode.representedObject as? Account {
+			return account.accountID
+		}
+		if sectionNode.representedObject is FavoriteFeedsController {
+			return FavoriteFeedsController.sectionID
+		}
+		return ""
 	}
 
 	func reconfigureSidebarItem(_ sidebarItem: SidebarItem) {
@@ -1836,6 +1935,102 @@ private extension SceneCoordinator {
 		}
 	}
 
+	var isFavoritesTimelineContext: Bool {
+		timelineFeed is FavoriteFeedsAllFeed
+			|| timelineFeed is FavoriteFeedsFolder
+			|| timelineFeed is FavoriteFeedAlias
+	}
+
+	func preferredFavoriteFolder(for feed: Feed) -> FavoriteFeedsFolder? {
+		if let folder = timelineFeed as? FavoriteFeedsFolder, folder.contains(feed) {
+			return folder
+		}
+		if let folder = FavoriteFeedsController.shared.foldersContaining(feed).first {
+			return folder
+		}
+		let ungrouped = FavoriteFeedsController.shared.ungroupedFolder
+		return ungrouped.contains(feed) ? ungrouped : nil
+	}
+
+	func selectFavoriteAlias(_ alias: FavoriteFeedAlias, in folder: FavoriteFeedsFolder?, animations: Animations, completion: (() -> Void)?) {
+		let indexPath: IndexPath?
+		if let folder,
+		   let node = treeController.rootNode.descendantNode(where: { node in
+			   node.representedObject === alias && node.parent?.representedObject === folder
+		   }) {
+			indexPath = indexPathFor(node)
+		} else {
+			indexPath = indexPathFor(alias as AnyObject)
+		}
+		selectSidebarItem(indexPath: indexPath, animations: animations, completion: completion)
+	}
+
+	func discloseFavoriteFeed(_ feed: Feed, initialLoad: Bool, animations: Animations, completion: (() -> Void)?) {
+		guard let alias = FavoriteFeedsController.shared.alias(for: feed) else {
+			discloseAccountFeed(feed, initialLoad: initialLoad, animations: animations, completion: completion)
+			return
+		}
+
+		markExpanded(FavoriteFeedsController.shared)
+		let folder = preferredFavoriteFolder(for: feed)
+		if let folder {
+			markExpanded(folder)
+		}
+		if let aliasID = alias.sidebarItemID {
+			treeControllerDelegate.addFilterException(aliasID)
+		}
+		if let folderID = folder?.sidebarItemID {
+			treeControllerDelegate.addFilterException(folderID)
+		}
+
+		rebuildBackingStores(initialLoad: initialLoad, completion: {
+			self.treeControllerDelegate.resetFilterExceptions()
+			self.selectFeed(nil) {
+				if self.rootSplitViewController.traitCollection.horizontalSizeClass == .compact {
+					DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+						self.selectFavoriteAlias(alias, in: folder, animations: animations, completion: completion)
+					}
+				} else {
+					self.selectFavoriteAlias(alias, in: folder, animations: animations, completion: completion)
+				}
+			}
+		})
+	}
+
+	func discloseAccountFeed(_ feed: Feed, initialLoad: Bool, animations: Animations, completion: (() -> Void)?) {
+		guard let account = feed.account else {
+			completion?()
+			return
+		}
+
+		let parentFolder = account.sortedFolders?.first(where: { $0.objectIsChild(feed) })
+
+		markExpanded(account)
+		if let parentFolder = parentFolder {
+			markExpanded(parentFolder)
+		}
+
+		if let feedSidebarItemID = feed.sidebarItemID {
+			treeControllerDelegate.addFilterException(feedSidebarItemID)
+		}
+		if let parentFolderSidebarItemID = parentFolder?.sidebarItemID {
+			treeControllerDelegate.addFilterException(parentFolderSidebarItemID)
+		}
+
+		rebuildBackingStores(initialLoad: initialLoad, completion: {
+			self.treeControllerDelegate.resetFilterExceptions()
+			self.selectFeed(nil) {
+				if self.rootSplitViewController.traitCollection.horizontalSizeClass == .compact {
+					DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+						self.selectFeed(feed, animations: animations, completion: completion)
+					}
+				} else {
+					self.selectFeed(feed, animations: animations, completion: completion)
+				}
+			}
+		})
+	}
+
 	func indexPathFor(_ object: AnyObject) -> IndexPath? {
 		guard let node = treeController.rootNode.descendantNodeRepresentingObject(object) else {
 			return nil
@@ -1854,7 +2049,7 @@ private extension SceneCoordinator {
 
 	func updateShowNamesAndIcons() {
 
-		if timelineFeed is Feed {
+		if timelineFeed is Feed || timelineFeed is FavoriteFeedAlias {
 			showFeedNames = {
 				for article in articles {
 					if !article.byline().isEmpty {
@@ -2382,6 +2577,24 @@ private extension SceneCoordinator {
 					return true
 				}
 			}
+		} else if let alias = timelineFeed as? FavoriteFeedAlias, let feed = alias.feed {
+			for oneFeed in feeds {
+				if feed.feedID == oneFeed.feedID || feed.url == oneFeed.url {
+					return true
+				}
+			}
+		} else if let favoriteFolder = timelineFeed as? FavoriteFeedsFolder {
+			for oneFeed in feeds {
+				if favoriteFolder.contains(oneFeed) {
+					return true
+				}
+			}
+		} else if timelineFeed?.sidebarItemID == FavoriteFeedsController.shared.allFeed.sidebarItemID {
+			for oneFeed in feeds {
+				if FavoriteFeedsController.shared.isFavorite(oneFeed) {
+					return true
+				}
+			}
 		} else if let folder = timelineFeed as? Folder {
 			for oneFeed in feeds {
 				if folder.hasFeed(with: oneFeed.feedID) || folder.hasFeed(withURL: oneFeed.url) {
@@ -2410,12 +2623,37 @@ private extension SceneCoordinator {
 		switch sidebarItemID {
 
 		case .smartFeed:
-			guard let smartFeed = SmartFeedsController.shared.find(by: sidebarItemID) else { return }
+			if let smartFeed = SmartFeedsController.shared.find(by: sidebarItemID) {
+				markExpanded(SmartFeedsController.shared)
+				rebuildBackingStores(initialLoad: true, completion: {
+					self.treeControllerDelegate.resetFilterExceptions()
+					if let indexPath = self.indexPathFor(smartFeed) {
+						self.selectSidebarItem(indexPath: indexPath) {
+							self.mainFeedCollectionViewController.focus()
+						}
+					}
+				})
+				return
+			}
 
-			markExpanded(SmartFeedsController.shared)
+			guard let favoriteItem = FavoriteFeedsController.shared.find(by: sidebarItemID) else {
+				return
+			}
+
+			markExpanded(FavoriteFeedsController.shared)
+			if let alias = favoriteItem as? FavoriteFeedAlias {
+				let folders = FavoriteFeedsController.shared.foldersContaining(alias)
+				if folders.isEmpty {
+					markExpanded(FavoriteFeedsController.shared.ungroupedFolder)
+				} else {
+					for folder in folders {
+						markExpanded(folder)
+					}
+				}
+			}
 			rebuildBackingStores(initialLoad: true, completion: {
 				self.treeControllerDelegate.resetFilterExceptions()
-				if let indexPath = self.indexPathFor(smartFeed) {
+				if let indexPath = self.indexPathFor(favoriteItem) {
 					self.selectSidebarItem(indexPath: indexPath) {
 						self.mainFeedCollectionViewController.focus()
 					}

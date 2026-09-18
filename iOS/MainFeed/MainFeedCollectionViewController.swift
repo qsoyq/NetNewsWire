@@ -22,6 +22,9 @@ private let folderIdentifier = "Folder"
 private let containerReuseIdentifier = "Container"
 
 final class MainFeedCollectionViewController: UICollectionViewController, UndoableCommandRunner {
+	private static let favoriteFoldersMenuIdentifier = UIMenu.Identifier("netnewswire.favorite-folders")
+	private static let favoriteFoldersMenuTitle = NSLocalizedString("Add to Folder", comment: "Add to Folder")
+
 	@IBOutlet var filterButton: UIBarButtonItem!
 	@IBOutlet var addNewItemButton: UIBarButtonItem! {
 		didSet {
@@ -158,8 +161,31 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 		var config = UICollectionLayoutListConfiguration(appearance: useSidebarAppearance ? .sidebar : .insetGrouped)
 		config.headerMode = .supplementary
 
+		config.leadingSwipeActionsConfigurationProvider = { [unowned self] indexPath in
+			guard self.isAccountSection(indexPath),
+				  let feed = self.feed(at: indexPath) else {
+				return UISwipeActionsConfiguration(actions: [])
+			}
+			return UISwipeActionsConfiguration(actions: [self.favoriteSwipeAction(for: feed)])
+		}
+
 		config.trailingSwipeActionsConfigurationProvider = { [unowned self] indexPath in
-			if indexPath.section == 0 { return UISwipeActionsConfiguration(actions: []) }
+			if self.isSmartFeedsSection(indexPath) {
+				return UISwipeActionsConfiguration(actions: [])
+			}
+			if self.isFavoriteFeedsSection(indexPath) {
+				if let alias = self.favoriteAlias(at: indexPath) {
+					let config = UISwipeActionsConfiguration(actions: [self.unfavoriteSwipeAction(for: alias)])
+					config.performsFirstActionWithFullSwipe = false
+					return config
+				}
+				if let folder = self.favoriteFolder(at: indexPath), folder.isUserFolder {
+					let config = UISwipeActionsConfiguration(actions: [self.deleteFavoriteFolderSwipeAction(for: folder)])
+					config.performsFirstActionWithFullSwipe = false
+					return config
+				}
+				return UISwipeActionsConfiguration(actions: [])
+			}
 			var actions = [UIContextualAction]()
 
 			// Set up the delete action
@@ -184,7 +210,7 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 			renameAction.accessibilityLabel = renameTitle
 			actions.append(renameAction)
 
-			if let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed {
+			if let feed = feed(at: indexPath) {
 				let moreTitle = NSLocalizedString("More", comment: "More")
 				let moreAction = UIContextualAction(style: .normal, title: nil) { [weak self] (action, view, completion) in
 
@@ -285,7 +311,7 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 				return nil
 			}
 
-			if sidebarItemNode.node.representedObject is Folder {
+			if sidebarItemNode.node.representedObject is Folder || sidebarItemNode.node.representedObject is FavoriteFeedsFolder {
 				let cell = collectionView.dequeueReusableCell(
 					withReuseIdentifier: folderIdentifier,
 					for: indexPath
@@ -327,6 +353,15 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 				headerView.headerTitle.text = SmartFeedsController.shared.nameForDisplay
 				headerView.unreadCount = 0
 				headerView.disclosureExpanded = self.coordinator.isExpanded(SmartFeedsController.shared)
+				return headerView
+			}
+
+			if sectionID == FavoriteFeedsController.sectionID {
+				headerView.sectionHeaderType = .favoriteFeeds
+				headerView.headerTitle.text = FavoriteFeedsController.shared.nameForDisplay
+				headerView.unreadCount = FavoriteFeedsController.shared.allFeed.unreadCount
+				headerView.disclosureExpanded = self.coordinator.isExpanded(FavoriteFeedsController.shared)
+				headerView.addInteraction(UIContextMenuInteraction(delegate: self))
 				return headerView
 			}
 
@@ -389,11 +424,29 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 
     }
 
+	override func collectionView(_ collectionView: UICollectionView, willDisplayContextMenu configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+		coordinator.beginSidebarContextMenu()
+	}
+
+	override func collectionView(_ collectionView: UICollectionView, willEndContextMenuInteraction configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+		if let animator {
+			animator.addCompletion { [weak self] in
+				self?.coordinator.endSidebarContextMenu()
+			}
+		} else {
+			coordinator.endSidebarContextMenu()
+		}
+	}
+
 	override func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
 		guard let sidebarItem = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? SidebarItem else {
 			return nil
 		}
-		if sidebarItem is Feed {
+		if sidebarItem is FavoriteFeedAlias {
+			return makeFavoriteAliasContextMenu(indexPath: indexPath)
+		} else if sidebarItem is FavoriteFeedsFolder {
+			return makeFavoriteFolderContextMenu(indexPath: indexPath)
+		} else if sidebarItem is Feed {
 			return makeFeedContextMenu(indexPath: indexPath, includeDeleteRename: true)
 		} else if sidebarItem is Folder {
 			return makeFolderContextMenu(indexPath: indexPath)
@@ -615,7 +668,7 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 	func configure(_ cell: MainFeedCollectionViewCell, sidebarItemNode: SidebarItemNode) {
 		let node = sidebarItemNode.node
 		var indentationLevel = 0
-		if node.parent?.representedObject is Folder {
+		if node.parent?.representedObject is Folder || node.parent?.representedObject is FavoriteFeedsFolder {
 			indentationLevel = 1
 		}
 
@@ -635,9 +688,14 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 			cell.folderTitle.text = folder.nameForDisplay
 			cell.unreadCount = folder.unreadCount
 			configureIcon(cell, sidebarItem: folder)
+		} else if let folder = node.representedObject as? FavoriteFeedsFolder {
+			cell.folderTitle.text = folder.nameForDisplay
+
+			cell.unreadCount = folder.unreadCount
+			configureIcon(cell, sidebarItem: folder)
 		}
 
-		if let containerID = (node.representedObject as? Container)?.containerID {
+		if let containerID = (node.representedObject as? ContainerIdentifiable)?.containerID {
 			cell.setDisclosure(isExpanded: coordinator.isExpanded(containerID), animated: false)
 		}
 	}
@@ -708,6 +766,12 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 			return
 		}
 
+		if unreadCountProvider as AnyObject === FavoriteFeedsController.shared.allFeed {
+			if let headerView = findHeaderViewForFavoriteFeeds() {
+				headerView.unreadCount = FavoriteFeedsController.shared.allFeed.unreadCount
+			}
+		}
+
 		for cell in collectionView.visibleCells {
 			guard let indexPath = collectionView.indexPath(for: cell),
 				  let sidebarItemNode = dataSource.itemIdentifier(for: indexPath),
@@ -740,7 +804,16 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 		guard let feed = note.userInfo?[UserInfoKey.feed] as? Feed else {
 			return
 		}
-		applyToCellsForRepresentedObject(feed, configureIcon(_:_:))
+		applyToAvailableCells { cell, indexPath in
+			let representedObject = self.dataSource.itemIdentifier(for: indexPath)?.node.representedObject
+			if representedObject as AnyObject === feed {
+				self.configureIcon(cell, indexPath)
+				return
+			}
+			if let alias = representedObject as? FavoriteFeedAlias, alias.key == FavoriteFeedKey(feed: feed) {
+				self.configureIcon(cell, indexPath)
+			}
+		}
 	}
 
 	// MARK: - Actions
@@ -766,6 +839,14 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 		}
 
 		menuItems.append(addFolderAction)
+
+		if FavoriteFeedsController.shared.hasFavorites {
+			let addFavoriteFolderTitle = NSLocalizedString("New Favorite Folder", comment: "New Favorite Folder")
+			let addFavoriteFolderAction = UIAction(title: addFavoriteFolderTitle, image: Assets.Images.folderOutlinePlus) { _ in
+				self.promptForNewFavoriteFolder()
+			}
+			menuItems.append(addFavoriteFolderAction)
+		}
 
 		let contextMenu = UIMenu(title: "", image: nil, identifier: nil, options: [], children: menuItems.reversed())
 
@@ -810,7 +891,15 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 			}
 			alertController.addAction(addFolderAction)
 		}
-		
+
+		if FavoriteFeedsController.shared.hasFavorites {
+			let addFavoriteFolderTitle = NSLocalizedString("New Favorite Folder", comment: "New Favorite Folder")
+			let addFavoriteFolderAction = UIAlertAction(title: addFavoriteFolderTitle, style: .default) { _ in
+				self.promptForNewFavoriteFolder()
+			}
+			alertController.addAction(addFavoriteFolderAction)
+		}
+
 		alertController.addAction(cancelAction)
 
 		alertController.popoverPresentationController?.barButtonItem = sender
@@ -831,6 +920,11 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 		switch sectionHeaderType {
 		case .smartFeeds:
 			guard let id = SmartFeedsController.shared.containerID else {
+				return
+			}
+			containerID = id
+		case .favoriteFeeds:
+			guard let id = FavoriteFeedsController.shared.containerID else {
 				return
 			}
 			containerID = id
@@ -887,8 +981,21 @@ extension MainFeedCollectionViewController: MainFeedCollectionViewFolderCellDele
 extension MainFeedCollectionViewController: UIContextMenuInteractionDelegate {
 	func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
 
-		guard let headerView = interaction.view as? MainFeedCollectionHeaderReusableView,
-			  case .account(let accountID) = headerView.sectionHeaderType,
+		guard let headerView = interaction.view as? MainFeedCollectionHeaderReusableView else {
+			return nil
+		}
+
+		if case .favoriteFeeds = headerView.sectionHeaderType {
+			return UIContextMenuConfiguration(identifier: FavoriteFeedsController.sectionID as NSCopying, previewProvider: nil) { _ in
+				let newFolderTitle = NSLocalizedString("New Folder", comment: "New Folder")
+				let newFolderAction = UIAction(title: newFolderTitle, image: Assets.Images.folderOutlinePlus) { _ in
+					self.promptForNewFavoriteFolder()
+				}
+				return UIMenu(title: "", children: [newFolderAction])
+			}
+		}
+
+		guard case .account(let accountID) = headerView.sectionHeaderType,
 			  let account = AccountManager.shared.existingAccount(accountID: accountID) else {
 			return nil
 		}
@@ -931,6 +1038,14 @@ extension MainFeedCollectionViewController {
 
 			if let inspectorAction = self.getInfoAction(indexPath: indexPath) {
 				menuElements.append(UIMenu(title: "", options: .displayInline, children: [inspectorAction]))
+			}
+
+			if let favoriteAction = self.favoriteMenuAction(indexPath: indexPath) {
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [favoriteAction]))
+			}
+
+			if let folderMenu = self.favoriteFoldersMenu(indexPath: indexPath) {
+				menuElements.append(folderMenu)
 			}
 
 			if let homePageAction = self.homePageAction(indexPath: indexPath) {
@@ -1000,8 +1115,85 @@ extension MainFeedCollectionViewController {
 		})
 	}
 
+	func makeFavoriteFolderContextMenu(indexPath: IndexPath) -> UIContextMenuConfiguration {
+		return UIContextMenuConfiguration(identifier: MainFeedRowIdentifier(indexPath: indexPath), previewProvider: nil, actionProvider: { [weak self] _ in
+			guard let self,
+				  let folder = self.favoriteFolder(at: indexPath) else {
+				return nil
+			}
+
+			var menuElements = [UIMenuElement]()
+
+			if let markAllAction = self.markAllAsReadAction(indexPath: indexPath) {
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [markAllAction]))
+			}
+
+			if folder.isUserFolder {
+				menuElements.append(UIMenu(title: "",
+										   options: .displayInline,
+										   children: [
+											self.renameAction(indexPath: indexPath),
+											self.deleteFavoriteFolderAction(folder: folder)
+										   ]))
+			} else {
+				let newFolderTitle = NSLocalizedString("New Folder", comment: "New Folder")
+				let newFolderAction = UIAction(title: newFolderTitle, image: Assets.Images.folderOutlinePlus) { _ in
+					self.promptForNewFavoriteFolder()
+				}
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [newFolderAction]))
+			}
+
+			return UIMenu(title: "", children: menuElements)
+		})
+	}
+
+	func makeFavoriteAliasContextMenu(indexPath: IndexPath) -> UIContextMenuConfiguration {
+		return UIContextMenuConfiguration(identifier: MainFeedRowIdentifier(indexPath: indexPath), previewProvider: nil, actionProvider: { [weak self] _ in
+			guard let self else {
+				return nil
+			}
+
+			var menuElements = [UIMenuElement]()
+
+			if let inspectorAction = self.getInfoAction(indexPath: indexPath) {
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [inspectorAction]))
+			}
+
+			if let favoriteAction = self.favoriteMenuAction(indexPath: indexPath) {
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [favoriteAction]))
+			}
+
+			if let homePageAction = self.homePageAction(indexPath: indexPath) {
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [homePageAction]))
+			}
+
+			var pageActions = [UIAction]()
+			if let copyFeedPageAction = self.copyFeedPageAction(indexPath: indexPath) {
+				pageActions.append(copyFeedPageAction)
+			}
+			if let copyHomePageAction = self.copyHomePageAction(indexPath: indexPath) {
+				pageActions.append(copyHomePageAction)
+			}
+			if !pageActions.isEmpty {
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: pageActions))
+			}
+
+			if let markAllAction = self.markAllAsReadAction(indexPath: indexPath) {
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [markAllAction]))
+			}
+
+			if let folderMenu = self.favoriteFoldersMenu(indexPath: indexPath) {
+				menuElements.append(folderMenu)
+			}
+
+			menuElements.append(UIMenu(title: "", options: .displayInline, children: [self.renameAction(indexPath: indexPath)]))
+
+			return UIMenu(title: "", children: menuElements)
+		})
+	}
+
 	func homePageAction(indexPath: IndexPath) -> UIAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed,
+		guard let feed = feed(at: indexPath),
 			  let homePageURL = feed.homePageURL,
 			  let url = URL(string: homePageURL) else {
 			return nil
@@ -1015,7 +1207,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func homePageAlertAction(indexPath: IndexPath, completion: @escaping (Bool) -> Void) -> UIAlertAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed,
+		guard let feed = feed(at: indexPath),
 			  let homePageURL = feed.homePageURL,
 			  let url = URL(string: homePageURL) else {
 			return nil
@@ -1030,7 +1222,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func copyFeedPageAction(indexPath: IndexPath) -> UIAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed,
+		guard let feed = feed(at: indexPath),
 			  let url = URL(string: feed.url) else {
 				  return nil
 			  }
@@ -1043,7 +1235,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func copyFeedPageAlertAction(indexPath: IndexPath, completion: @escaping (Bool) -> Void) -> UIAlertAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed,
+		guard let feed = feed(at: indexPath),
 			  let url = URL(string: feed.url) else {
 				  return nil
 			  }
@@ -1057,7 +1249,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func copyHomePageAction(indexPath: IndexPath) -> UIAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed,
+		guard let feed = feed(at: indexPath),
 			  let homePageURL = feed.homePageURL,
 			  let url = URL(string: homePageURL) else {
 				  return nil
@@ -1071,7 +1263,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func copyHomePageAlertAction(indexPath: IndexPath, completion: @escaping (Bool) -> Void) -> UIAlertAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed,
+		guard let feed = feed(at: indexPath),
 			  let homePageURL = feed.homePageURL,
 			  let url = URL(string: homePageURL) else {
 				  return nil
@@ -1086,7 +1278,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func markAllAsReadAlertAction(indexPath: IndexPath, completion: @escaping (Bool) -> Void) -> UIAlertAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed,
+		guard let feed = feed(at: indexPath),
 			feed.unreadCount > 0,
 			let articles = try? feed.fetchArticles(), let contentView = self.collectionView.cellForItem(at: indexPath)?.contentView else {
 				return nil
@@ -1125,7 +1317,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func getInfoAction(indexPath: IndexPath) -> UIAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed else {
+		guard let feed = feed(at: indexPath) else {
 			return nil
 		}
 
@@ -1134,6 +1326,21 @@ extension MainFeedCollectionViewController {
 			self?.coordinator.showFeedInspector(for: feed)
 		}
 		return action
+	}
+
+	func favoriteMenuAction(indexPath: IndexPath) -> UIAction? {
+		guard let feed = feed(at: indexPath) else {
+			return nil
+		}
+
+		let isFavorite = FavoriteFeedsController.shared.isFavorite(feed)
+		let title = isFavorite ?
+			NSLocalizedString("Remove from Favorites", comment: "Remove from Favorites") :
+			NSLocalizedString("Add to Favorites", comment: "Add to Favorites")
+		let image = UIImage(systemName: isFavorite ? "bookmark.slash" : "bookmark.fill")
+		return UIAction(title: title, image: image) { [weak self] _ in
+			self?.coordinator.toggleFavorite(for: feed)
+		}
 	}
 
 	func getAccountInfoAction(account: Account) -> UIAction {
@@ -1153,7 +1360,7 @@ extension MainFeedCollectionViewController {
 	}
 
 	func getInfoAlertAction(indexPath: IndexPath, completion: @escaping (Bool) -> Void) -> UIAlertAction? {
-		guard let feed = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Feed else {
+		guard let feed = feed(at: indexPath) else {
 			return nil
 		}
 
@@ -1235,6 +1442,15 @@ extension MainFeedCollectionViewController {
 						self?.presentError(error)
 					}
 				}
+			} else if let alias = sidebarItem as? FavoriteFeedAlias, let feed = alias.feed {
+				feed.rename(to: name) { result in
+					switch result {
+					case .success:
+						break
+					case .failure(let error):
+						self?.presentError(error)
+					}
+				}
 			} else if let folder = sidebarItem as? Folder {
 				folder.rename(to: name) { result in
 					switch result {
@@ -1244,6 +1460,8 @@ extension MainFeedCollectionViewController {
 						self?.presentError(error)
 					}
 				}
+			} else if let folder = sidebarItem as? FavoriteFeedsFolder {
+				self?.coordinator.renameFavoriteFolder(folder, to: name)
 			}
 
 		}
@@ -1264,6 +1482,15 @@ extension MainFeedCollectionViewController {
 	}
 
 	func delete(indexPath: IndexPath) {
+		if let alias = favoriteAlias(at: indexPath) {
+			coordinator.unfavorite(alias)
+			return
+		}
+		if let folder = favoriteFolder(at: indexPath), folder.isUserFolder {
+			confirmDeleteFavoriteFolder(folder)
+			return
+		}
+
 		guard let sidebarItem = dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? SidebarItem else {
 			return
 		}
@@ -1314,5 +1541,211 @@ extension MainFeedCollectionViewController {
 
 		pushUndoableCommand(deleteCommand)
 		deleteCommand.perform()
+	}
+
+	func sectionIdentifier(at indexPath: IndexPath) -> String? {
+		let sectionIdentifiers = dataSource.snapshot().sectionIdentifiers
+		guard indexPath.section < sectionIdentifiers.count else {
+			return nil
+		}
+		return sectionIdentifiers[indexPath.section]
+	}
+
+	func isSmartFeedsSection(_ indexPath: IndexPath) -> Bool {
+		sectionIdentifier(at: indexPath)?.isEmpty ?? false
+	}
+
+	func isFavoriteFeedsSection(_ indexPath: IndexPath) -> Bool {
+		sectionIdentifier(at: indexPath) == FavoriteFeedsController.sectionID
+	}
+
+	func isAccountSection(_ indexPath: IndexPath) -> Bool {
+		guard let sectionID = sectionIdentifier(at: indexPath) else {
+			return false
+		}
+		return !sectionID.isEmpty && sectionID != FavoriteFeedsController.sectionID
+	}
+
+	func feed(at indexPath: IndexPath) -> Feed? {
+		let representedObject = dataSource.itemIdentifier(for: indexPath)?.node.representedObject
+		if let feed = representedObject as? Feed {
+			return feed
+		}
+		if let alias = representedObject as? FavoriteFeedAlias {
+			return alias.feed
+		}
+		return nil
+	}
+
+	func favoriteAlias(at indexPath: IndexPath) -> FavoriteFeedAlias? {
+		dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? FavoriteFeedAlias
+	}
+
+	func favoriteFolder(at indexPath: IndexPath) -> FavoriteFeedsFolder? {
+		dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? FavoriteFeedsFolder
+	}
+
+	func deleteFavoriteFolderAction(folder: FavoriteFeedsFolder) -> UIAction {
+		let title = NSLocalizedString("Delete Folder", comment: "Delete Folder")
+		return UIAction(title: title, image: Assets.Images.trash, attributes: .destructive) { [weak self] _ in
+			self?.confirmDeleteFavoriteFolder(folder)
+		}
+	}
+
+	func deleteFavoriteFolderSwipeAction(for folder: FavoriteFeedsFolder) -> UIContextualAction {
+		let title = NSLocalizedString("Delete", comment: "Delete")
+		let action = UIContextualAction(style: .destructive, title: nil) { [weak self] _, _, completion in
+			self?.confirmDeleteFavoriteFolder(folder)
+			completion(true)
+		}
+		action.image = UIImage(systemName: "trash")
+		action.accessibilityLabel = title
+		action.backgroundColor = UIColor.systemRed
+		return action
+	}
+
+	func confirmDeleteFavoriteFolder(_ folder: FavoriteFeedsFolder) {
+		let title = NSLocalizedString("Delete Folder", comment: "Delete folder")
+		let localizedInformativeText = NSLocalizedString("Are you sure you want to delete the “%@” folder? Feeds stay in Favorites.", comment: "Favorite folder delete text")
+		let message = NSString.localizedStringWithFormat(localizedInformativeText as NSString, folder.nameForDisplay) as String
+		let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
+
+		let cancelTitle = NSLocalizedString("Cancel", comment: "Cancel")
+		alertController.addAction(UIAlertAction(title: cancelTitle, style: .cancel))
+
+		let deleteTitle = NSLocalizedString("Delete", comment: "Delete")
+		let deleteAction = UIAlertAction(title: deleteTitle, style: .destructive) { [weak self] _ in
+			self?.coordinator.deleteFavoriteFolder(folder)
+		}
+		alertController.addAction(deleteAction)
+		alertController.preferredAction = deleteAction
+		present(alertController, animated: true)
+	}
+
+	func promptForNewFavoriteFolder(feed: Feed? = nil) {
+		let title = NSLocalizedString("New Folder", comment: "New Folder")
+		let alertController = UIAlertController(title: title, message: nil, preferredStyle: .alert)
+
+		let cancelTitle = NSLocalizedString("Cancel", comment: "Cancel")
+		alertController.addAction(UIAlertAction(title: cancelTitle, style: .cancel))
+
+		let createTitle = NSLocalizedString("Create", comment: "Create")
+		let createAction = UIAlertAction(title: createTitle, style: .default) { [weak self] _ in
+			let name = alertController.textFields?.first?.text ?? ""
+			guard let self else {
+				return
+			}
+			let folder = self.coordinator.createFavoriteFolder(named: name)
+			if let feed {
+				self.coordinator.favorite(feed, to: folder, discloseFolder: true)
+			}
+		}
+		alertController.addAction(createAction)
+		alertController.preferredAction = createAction
+
+		alertController.addTextField { textField in
+			textField.placeholder = NSLocalizedString("Name", comment: "Name")
+			textField.clearButtonMode = .always
+		}
+
+		present(alertController, animated: true)
+	}
+
+	func favoriteFoldersMenu(indexPath: IndexPath) -> UIMenu? {
+		guard let feed = feed(at: indexPath) else {
+			return nil
+		}
+		return favoriteFoldersMenu(for: feed)
+	}
+
+	func favoriteFoldersMenu(for feed: Feed) -> UIMenu {
+		UIMenu(
+			title: Self.favoriteFoldersMenuTitle,
+			identifier: Self.favoriteFoldersMenuIdentifier,
+			children: favoriteFolderActions(for: feed)
+		)
+	}
+
+	func favoriteFolderActions(for feed: Feed) -> [UIMenuElement] {
+		let containingIDs = Set(FavoriteFeedsController.shared.foldersContaining(feed).map(\.folderID))
+		var actions = [UIMenuElement]()
+
+		for folder in FavoriteFeedsController.shared.userFolders {
+			let state: UIMenuElement.State = containingIDs.contains(folder.folderID) ? .on : .off
+			let action = UIAction(title: folder.nameForDisplay, state: state) { [weak self] _ in
+				self?.coordinator.toggleFavorite(feed, in: folder)
+				self?.refreshVisibleFavoriteFolderMenu(for: feed)
+			}
+			action.attributes.insert(.keepsMenuPresented)
+			actions.append(action)
+		}
+
+		let newFolderTitle = NSLocalizedString("New Folder", comment: "New Folder")
+		actions.append(UIAction(title: newFolderTitle, image: Assets.Images.folderOutlinePlus) { [weak self] _ in
+			self?.promptForNewFavoriteFolder(feed: feed)
+		})
+		return actions
+	}
+
+	func refreshVisibleFavoriteFolderMenu(for feed: Feed) {
+		DispatchQueue.main.async { [weak self] in
+			guard let self else {
+				return
+			}
+			self.collectionView.contextMenuInteraction?.updateVisibleMenu { visible in
+				self.replacingFavoriteFolderMenu(in: visible, for: feed)
+			}
+		}
+	}
+
+	func replacingFavoriteFolderMenu(in menu: UIMenu, for feed: Feed) -> UIMenu {
+		if menu.identifier == Self.favoriteFoldersMenuIdentifier || menu.title == Self.favoriteFoldersMenuTitle {
+			return menu.replacingChildren(favoriteFolderActions(for: feed))
+		}
+
+		let children = menu.children.map { element -> UIMenuElement in
+			guard let submenu = element as? UIMenu else {
+				return element
+			}
+			return self.replacingFavoriteFolderMenu(in: submenu, for: feed)
+		}
+		return menu.replacingChildren(children)
+	}
+
+	func favoriteSwipeAction(for feed: Feed) -> UIContextualAction {
+		let isFavorite = FavoriteFeedsController.shared.isFavorite(feed)
+		let title = isFavorite ?
+			NSLocalizedString("Unfavorite", comment: "Unfavorite") :
+			NSLocalizedString("Favorite", comment: "Favorite")
+		let action = UIContextualAction(style: .normal, title: nil) { [weak self] _, _, completion in
+			self?.coordinator.toggleFavorite(for: feed)
+			completion(true)
+		}
+		action.image = UIImage(systemName: isFavorite ? "bookmark.slash.fill" : "bookmark.fill")
+		action.accessibilityLabel = title
+		action.backgroundColor = UIColor.systemOrange
+		return action
+	}
+
+	func unfavoriteSwipeAction(for alias: FavoriteFeedAlias) -> UIContextualAction {
+		let title = NSLocalizedString("Unfavorite", comment: "Unfavorite")
+		let action = UIContextualAction(style: .normal, title: nil) { [weak self] _, _, completion in
+			self?.coordinator.unfavorite(alias)
+			completion(true)
+		}
+		action.image = UIImage(systemName: "bookmark.slash")
+		action.accessibilityLabel = title
+		action.backgroundColor = UIColor.systemOrange
+		return action
+	}
+
+	private func findHeaderViewForFavoriteFeeds() -> MainFeedCollectionHeaderReusableView? {
+		guard let sectionIndex = dataSource.snapshot().sectionIdentifiers.firstIndex(of: FavoriteFeedsController.sectionID) else {
+			return nil
+		}
+		return collectionView.supplementaryView(
+			forElementKind: UICollectionView.elementKindSectionHeader,
+			at: IndexPath(item: 0, section: sectionIndex))
+		as? MainFeedCollectionHeaderReusableView
 	}
 }

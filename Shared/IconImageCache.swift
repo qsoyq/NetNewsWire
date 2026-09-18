@@ -33,6 +33,9 @@ import RSCore
 		if let smartFeed = SmartFeedsController.shared.find(by: feedID) {
 			return imageForFeed(smartFeed)
 		}
+		if let favoriteItem = FavoriteFeedsController.shared.find(by: feedID) {
+			return imageForFeed(favoriteItem)
+		}
 		if let feed = AccountManager.shared.existingFeed(with: feedID) {
 			return imageForFeed(feed)
 		}

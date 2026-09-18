@@ -18,12 +18,20 @@ import UniformTypeIdentifiers
 
 extension MainFeedCollectionViewController: UICollectionViewDragDelegate {
 	func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: any UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
-		guard let node = dataSource.itemIdentifier(for: indexPath)?.node,
-			  let feed = node.representedObject as? Feed else {
+		guard let node = dataSource.itemIdentifier(for: indexPath)?.node else {
 			return [UIDragItem]()
 		}
 
-		let data = feed.url.data(using: .utf8)
+		let urlString: String
+		if let feed = node.representedObject as? Feed {
+			urlString = feed.url
+		} else if let alias = node.representedObject as? FavoriteFeedAlias, let feed = alias.feed {
+			urlString = feed.url
+		} else {
+			return [UIDragItem]()
+		}
+
+		let data = urlString.data(using: .utf8)
 		let itemProvider = NSItemProvider()
 
 		itemProvider.registerDataRepresentation(forTypeIdentifier: UTType.url.identifier, visibility: .ownProcess) { completion in

@@ -34,6 +34,12 @@ import Account
 		if node.representedObject is SmartFeedsController {
 			return childNodesForSmartFeeds(node)
 		}
+		if node.representedObject is FavoriteFeedsController {
+			return childNodesForFavoriteFeeds(node)
+		}
+		if node.representedObject is FavoriteFeedsFolder {
+			return childNodesForFavoriteFeedsFolder(node)
+		}
 
 		return nil
 	}
@@ -49,6 +55,15 @@ private extension SidebarTreeControllerDelegate {
 		smartFeedsNode.isGroupItem = true
 		topLevelNodes.append(smartFeedsNode)
 
+#if os(iOS)
+		if FavoriteFeedsController.shared.hasFavorites {
+			let favoriteFeedsNode = rootNode.existingOrNewChildNode(with: FavoriteFeedsController.shared)
+			favoriteFeedsNode.canHaveChildNodes = true
+			favoriteFeedsNode.isGroupItem = true
+			topLevelNodes.append(favoriteFeedsNode)
+		}
+#endif
+
 		topLevelNodes.append(contentsOf: sortedAccountNodes(rootNode))
 
 		return topLevelNodes
@@ -58,6 +73,38 @@ private extension SidebarTreeControllerDelegate {
 		return SmartFeedsController.shared.smartFeeds.compactMap { (feed) -> Node? in
 			// All Smart Feeds should remain visible despite the Hide Read Feeds setting
 			return parentNode.existingOrNewChildNode(with: feed as AnyObject)
+		}
+	}
+
+	func childNodesForFavoriteFeeds(_ parentNode: Node) -> [Node] {
+		return FavoriteFeedsController.shared.sidebarItems.compactMap { (sidebarItem) -> Node? in
+			if let folder = sidebarItem as? FavoriteFeedsFolder {
+				if let sidebarItemID = folder.sidebarItemID,
+				   !filterExceptions.contains(sidebarItemID),
+				   isReadFiltered,
+				   folder.unreadCount == 0 {
+					return nil
+				}
+				let folderNode = parentNode.existingOrNewChildNode(with: folder)
+				folderNode.canHaveChildNodes = true
+				return folderNode
+			}
+			return parentNode.existingOrNewChildNode(with: sidebarItem as AnyObject)
+		}
+	}
+
+	func childNodesForFavoriteFeedsFolder(_ parentNode: Node) -> [Node] {
+		guard let folder = parentNode.representedObject as? FavoriteFeedsFolder else {
+			return []
+		}
+		return folder.aliases.compactMap { alias -> Node? in
+			if let sidebarItemID = alias.sidebarItemID,
+			   !filterExceptions.contains(sidebarItemID),
+			   isReadFiltered,
+			   alias.unreadCount == 0 {
+				return nil
+			}
+			return parentNode.existingOrNewChildNode(with: alias)
 		}
 	}
 
