@@ -946,6 +946,209 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 	}
 }
 
+@MainActor enum BatchFavoriteFeedsMode {
+	case addToFavorites
+	case addToFolder(FavoriteFeedsFolder)
+
+	var actionTitle: String {
+		switch self {
+		case .addToFavorites:
+			return NSLocalizedString("Add to Favorites", comment: "Batch add to Favorites action")
+		case .addToFolder:
+			return NSLocalizedString("Add to Folder", comment: "Batch add to favorite folder action")
+		}
+	}
+}
+
+@MainActor final class BatchFavoriteFeedsViewController: UITableViewController {
+	private let feeds: [Feed]
+	private let mode: BatchFavoriteFeedsMode
+	private var selectedKeys = Set<FavoriteFeedKey>()
+	private var actionButton: UIBarButtonItem!
+	private var selectAllButton: UIBarButtonItem!
+
+	var completion: ((BatchFavoriteResult) -> Void)?
+
+	init(feeds: [Feed], mode: BatchFavoriteFeedsMode) {
+		var uniqueFeeds = [FavoriteFeedKey: Feed]()
+		for feed in feeds {
+			uniqueFeeds[FavoriteFeedKey(feed: feed)] = feed
+		}
+		self.feeds = uniqueFeeds.values.sorted {
+			$0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending
+		}
+		self.mode = mode
+		super.init(style: .insetGrouped)
+	}
+
+	required init?(coder: NSCoder) {
+		fatalError("init(coder:) has not been implemented")
+	}
+
+	override func viewDidLoad() {
+		super.viewDidLoad()
+		title = NSLocalizedString("Select Feeds", comment: "Batch feed selection title")
+		tableView.allowsMultipleSelection = false
+		tableView.rowHeight = UITableView.automaticDimension
+		tableView.estimatedRowHeight = 56
+
+		navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
+		selectAllButton = UIBarButtonItem(title: NSLocalizedString("Select All", comment: "Select all batch feeds"), style: .plain, target: self, action: #selector(toggleSelectAll))
+		navigationItem.rightBarButtonItem = selectAllButton
+
+		actionButton = UIBarButtonItem(title: mode.actionTitle, style: .done, target: self, action: #selector(applySelection))
+		toolbarItems = [UIBarButtonItem.flexibleSpace(), actionButton]
+		updateActionState()
+		updateEmptyState()
+	}
+
+	override func viewWillAppear(_ animated: Bool) {
+		super.viewWillAppear(animated)
+		navigationController?.isToolbarHidden = false
+	}
+
+	override func viewWillDisappear(_ animated: Bool) {
+		navigationController?.isToolbarHidden = true
+		super.viewWillDisappear(animated)
+	}
+
+	override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+		feeds.count
+	}
+
+	override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+		let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+		let feed = feeds[indexPath.row]
+		let key = FavoriteFeedKey(feed: feed)
+		let isEligible = isEligible(feed)
+		let isSelected = selectedKeys.contains(key)
+
+		cell.textLabel?.text = feed.nameForDisplay
+		cell.detailTextLabel?.text = feed.account?.nameForDisplay
+		cell.imageView?.image = IconImageCache.shared.imageForFeed(feed)?.image
+		cell.imageView?.tintColor = Assets.Colors.secondaryAccent
+		cell.accessoryType = isSelected ? .checkmark : .none
+		cell.accessoryView = isEligible ? nil : disabledAccessoryView()
+		cell.textLabel?.textColor = isEligible ? .label : .secondaryLabel
+		cell.detailTextLabel?.textColor = isEligible ? .secondaryLabel : .tertiaryLabel
+		cell.selectionStyle = isEligible ? .default : .none
+		cell.isUserInteractionEnabled = isEligible
+
+		var accessibilityValue = isEligible ? (isSelected ? NSLocalizedString("Selected", comment: "Selected batch feed") : NSLocalizedString("Not selected", comment: "Not selected batch feed")) : disabledStateText
+		if !isEligible {
+			accessibilityValue = disabledStateText
+		}
+		cell.accessibilityLabel = feed.nameForDisplay
+		cell.accessibilityValue = accessibilityValue
+		cell.accessibilityTraits = isEligible ? (isSelected ? [.button, .selected] : [.button]) : [.staticText]
+		return cell
+	}
+
+	override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+		let feed = feeds[indexPath.row]
+		guard isEligible(feed) else {
+			tableView.deselectRow(at: indexPath, animated: false)
+			return
+		}
+
+		let key = FavoriteFeedKey(feed: feed)
+		if selectedKeys.contains(key) {
+			selectedKeys.remove(key)
+		} else {
+			selectedKeys.insert(key)
+		}
+		tableView.deselectRow(at: indexPath, animated: false)
+		tableView.reloadRows(at: [indexPath], with: .none)
+		updateActionState()
+	}
+
+	@objc private func cancel() {
+		dismiss(animated: true)
+	}
+
+	@objc private func toggleSelectAll() {
+		let eligibleKeys = Set(feeds.filter(isEligible).map { FavoriteFeedKey(feed: $0) })
+		if selectedKeys == eligibleKeys {
+			selectedKeys.removeAll()
+		} else {
+			selectedKeys = eligibleKeys
+		}
+		tableView.reloadData()
+		updateActionState()
+	}
+
+	@objc private func applySelection() {
+		guard !selectedKeys.isEmpty else {
+			return
+		}
+
+		let selectedFeeds = feeds.filter { selectedKeys.contains(FavoriteFeedKey(feed: $0)) }
+		let destination: FavoriteFeedsFolder?
+		switch mode {
+		case .addToFavorites:
+			destination = nil
+		case .addToFolder(let folder):
+			destination = folder
+		}
+
+		let result = FavoriteFeedsController.shared.add(selectedFeeds, to: destination)
+		completion?(result)
+	}
+
+	private func isEligible(_ feed: Feed) -> Bool {
+		switch mode {
+		case .addToFavorites:
+			return !FavoriteFeedsController.shared.isFavorite(feed)
+		case .addToFolder(let folder):
+			return !folder.contains(feed)
+		}
+	}
+
+	private var disabledStateText: String {
+		switch mode {
+		case .addToFavorites:
+			return NSLocalizedString("Already in Favorites", comment: "Already favorited batch feed")
+		case .addToFolder:
+			return NSLocalizedString("Already in this folder", comment: "Already in target favorite folder")
+		}
+	}
+
+	private func disabledAccessoryView() -> UIView {
+		let imageView = UIImageView(image: UIImage(systemName: "bookmark.fill"))
+		imageView.tintColor = .systemOrange
+		imageView.accessibilityLabel = disabledStateText
+		return imageView
+	}
+
+	private func updateActionState() {
+		let selectedCount = selectedKeys.count
+		actionButton.title = selectedCount == 0 ? mode.actionTitle : "\(mode.actionTitle) (\(selectedCount))"
+		actionButton.isEnabled = selectedCount > 0
+
+		let eligibleCount = feeds.filter(isEligible).count
+		selectAllButton.title = eligibleCount > 0 && selectedCount == eligibleCount
+			? NSLocalizedString("Deselect All", comment: "Deselect all batch feeds")
+			: NSLocalizedString("Select All", comment: "Select all batch feeds")
+	}
+
+	private func updateEmptyState() {
+		guard feeds.isEmpty || feeds.allSatisfy({ !isEligible($0) }) else {
+			tableView.backgroundView = nil
+			return
+		}
+
+		let label = UILabel()
+		label.text = feeds.isEmpty
+			? NSLocalizedString("No feeds available", comment: "No feeds available for batch operation")
+			: NSLocalizedString("All feeds have already been handled", comment: "All feeds already handled for batch operation")
+		label.textColor = .secondaryLabel
+		label.textAlignment = .center
+		label.numberOfLines = 0
+		label.adjustsFontForContentSizeCategory = true
+		tableView.backgroundView = label
+	}
+}
+
 extension MainFeedCollectionViewController: MainFeedCollectionHeaderReusableViewDelegate {
 	func mainFeedCollectionHeaderReusableViewDidTapDisclosureIndicator(_ view: MainFeedCollectionHeaderReusableView) {
 		toggle(view)
@@ -1089,6 +1292,14 @@ extension MainFeedCollectionViewController {
 
 			var menuElements = [UIMenuElement]()
 
+			if let folder = self.dataSource.itemIdentifier(for: indexPath)?.node.representedObject as? Folder {
+				let title = NSLocalizedString("Batch Add to Favorites", comment: "Batch add feeds to Favorites")
+				let action = UIAction(title: title, image: UIImage(systemName: "bookmark.fill")) { [weak self] _ in
+					self?.presentBatchFavoriteSelection(for: folder)
+				}
+				menuElements.append(UIMenu(title: "", options: .displayInline, children: [action]))
+			}
+
 			if let markAllAction = self.markAllAsReadAction(indexPath: indexPath) {
 				menuElements.append(UIMenu(title: "", options: .displayInline, children: [markAllAction]))
 			}
@@ -1128,16 +1339,22 @@ extension MainFeedCollectionViewController {
 				menuElements.append(UIMenu(title: "", options: .displayInline, children: [markAllAction]))
 			}
 
-			if folder.isUserFolder {
-				menuElements.append(UIMenu(title: "",
+				if folder.isUserFolder {
+					menuElements.append(UIMenu(title: "",
 										   options: .displayInline,
 										   children: [
 											self.renameAction(indexPath: indexPath),
 											self.deleteFavoriteFolderAction(folder: folder)
-										   ]))
-			} else {
-				let newFolderTitle = NSLocalizedString("New Folder", comment: "New Folder")
-				let newFolderAction = UIAction(title: newFolderTitle, image: Assets.Images.folderOutlinePlus) { _ in
+												]))
+				} else {
+					let batchTitle = NSLocalizedString("Batch Add to Favorite Folder", comment: "Batch add favorite feeds to a folder")
+					let batchAction = UIAction(title: batchTitle, image: Assets.Images.folderOutlinePlus) { [weak self] _ in
+						self?.presentFavoriteFolderPicker(sourceFolder: folder)
+					}
+					menuElements.append(UIMenu(title: "", options: .displayInline, children: [batchAction]))
+
+					let newFolderTitle = NSLocalizedString("New Folder", comment: "New Folder")
+					let newFolderAction = UIAction(title: newFolderTitle, image: Assets.Images.folderOutlinePlus) { _ in
 					self.promptForNewFavoriteFolder()
 				}
 				menuElements.append(UIMenu(title: "", options: .displayInline, children: [newFolderAction]))
@@ -1622,7 +1839,7 @@ extension MainFeedCollectionViewController {
 		present(alertController, animated: true)
 	}
 
-	func promptForNewFavoriteFolder(feed: Feed? = nil) {
+	func promptForNewFavoriteFolder(feed: Feed? = nil, completion: ((FavoriteFeedsFolder) -> Void)? = nil) {
 		let title = NSLocalizedString("New Folder", comment: "New Folder")
 		let alertController = UIAlertController(title: title, message: nil, preferredStyle: .alert)
 
@@ -1639,6 +1856,7 @@ extension MainFeedCollectionViewController {
 			if let feed {
 				self.coordinator.favorite(feed, to: folder, discloseFolder: true)
 			}
+			completion?(folder)
 		}
 		alertController.addAction(createAction)
 		alertController.preferredAction = createAction
@@ -1737,6 +1955,80 @@ extension MainFeedCollectionViewController {
 		action.accessibilityLabel = title
 		action.backgroundColor = UIColor.systemOrange
 		return action
+	}
+
+	func presentFavoriteFolderPicker(sourceFolder: FavoriteFeedsFolder) {
+		let title = NSLocalizedString("Add to Favorite Folder", comment: "Choose a favorite folder for batch add")
+		let alertController = UIAlertController(title: title, message: nil, preferredStyle: .actionSheet)
+
+		for folder in FavoriteFeedsController.shared.userFolders {
+			alertController.addAction(UIAlertAction(title: folder.nameForDisplay, style: .default) { [weak self] _ in
+				self?.presentBatchFavoriteFolderSelection(sourceFolder: sourceFolder, destinationFolder: folder)
+			})
+		}
+
+		let newFolderTitle = NSLocalizedString("New Folder", comment: "New Folder")
+		alertController.addAction(UIAlertAction(title: newFolderTitle, style: .default) { [weak self] _ in
+			self?.promptForNewFavoriteFolder { [weak self] folder in
+				self?.presentBatchFavoriteFolderSelection(sourceFolder: sourceFolder, destinationFolder: folder)
+			}
+		})
+
+		alertController.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel))
+		if let popover = alertController.popoverPresentationController {
+			popover.sourceView = view
+			popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+		}
+		present(alertController, animated: true)
+	}
+
+	func presentBatchFavoriteFolderSelection(sourceFolder: FavoriteFeedsFolder, destinationFolder: FavoriteFeedsFolder) {
+		let feeds = sourceFolder.aliases.compactMap(\.feed)
+		presentBatchFavoriteSelection(feeds: feeds, mode: .addToFolder(destinationFolder))
+	}
+
+	func presentBatchFavoriteSelection(for folder: Folder) {
+		let feeds = folder.topLevelFeeds.sorted { $0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending }
+		presentBatchFavoriteSelection(feeds: feeds, mode: .addToFavorites)
+	}
+
+	private func presentBatchFavoriteSelection(feeds: [Feed], mode: BatchFavoriteFeedsMode) {
+		let controller = BatchFavoriteFeedsViewController(feeds: feeds, mode: mode)
+		controller.completion = { [weak self] result in
+			self?.dismiss(animated: true) {
+				self?.presentBatchFavoriteResult(result, mode: mode)
+			}
+		}
+
+		let navigationController = UINavigationController(rootViewController: controller)
+		navigationController.modalPresentationStyle = .formSheet
+		present(navigationController, animated: true)
+	}
+
+	private func presentBatchFavoriteResult(_ result: BatchFavoriteResult, mode: BatchFavoriteFeedsMode) {
+		let title = NSLocalizedString("Favorites Updated", comment: "Batch favorites result title")
+		let action = NSLocalizedString("Done", comment: "Done")
+		let message: String
+		switch mode {
+		case .addToFavorites:
+			message = String.localizedStringWithFormat(
+				NSLocalizedString("Added %ld feed(s) to Favorites. Skipped %ld already-favorite feed(s).", comment: "Batch add to Favorites result"),
+				result.addedCount,
+				result.skippedCount)
+		case .addToFolder(let folder):
+			message = String.localizedStringWithFormat(
+				NSLocalizedString("Added %ld feed(s) to %@. Skipped %ld already-added feed(s).", comment: "Batch add to favorite folder result"),
+				result.addedCount,
+				folder.nameForDisplay,
+				result.skippedCount)
+		}
+		let finalMessage = result.failedCount > 0
+			? "\(message) " + String.localizedStringWithFormat(NSLocalizedString("Failed %ld feed(s).", comment: "Batch favorites failed count"), result.failedCount)
+			: message
+
+		let alertController = UIAlertController(title: title, message: finalMessage, preferredStyle: .alert)
+		alertController.addAction(UIAlertAction(title: action, style: .default))
+		present(alertController, animated: true)
 	}
 
 	private func findHeaderViewForFavoriteFeeds() -> MainFeedCollectionHeaderReusableView? {

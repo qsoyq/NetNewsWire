@@ -29,6 +29,12 @@ struct FavoriteFeedKey: Codable, Hashable, Sendable {
 	}
 }
 
+struct BatchFavoriteResult: Sendable, Equatable {
+	let addedCount: Int
+	let skippedCount: Int
+	let failedCount: Int
+}
+
 @MainActor final class FavoriteFeedsAllFeed: PseudoFeed {
 
 	var account: Account?
@@ -186,6 +192,64 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		rebuildFolders()
 		updateAllUnreadCount()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
+	}
+
+	@discardableResult
+	func add(_ feeds: [Feed], to folder: FavoriteFeedsFolder? = nil) -> BatchFavoriteResult {
+		var seenKeys = Set<FavoriteFeedKey>()
+		var addedCount = 0
+		var skippedCount = 0
+		var failedCount = 0
+		var keysChanged = false
+		var foldersChanged = false
+
+		for feed in feeds {
+			let key = FavoriteFeedKey(feed: feed)
+			guard seenKeys.insert(key).inserted else {
+				skippedCount += 1
+				continue
+			}
+
+			if let folder {
+				guard folder.isUserFolder else {
+					failedCount += 1
+					continue
+				}
+				if folder.contains(key) {
+					skippedCount += 1
+					continue
+				}
+
+				if keys.insert(key).inserted {
+					keysChanged = true
+				}
+				add(key, to: folder, save: false)
+				foldersChanged = true
+				addedCount += 1
+			} else {
+				guard !keys.contains(key) else {
+					skippedCount += 1
+					continue
+				}
+				keys.insert(key)
+				keysChanged = true
+				addedCount += 1
+			}
+		}
+
+		if keysChanged {
+			saveKeys()
+		}
+		if foldersChanged {
+			saveFolders()
+		}
+		if keysChanged || foldersChanged {
+			rebuildFolders()
+			updateAllUnreadCount()
+			NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
+		}
+
+		return BatchFavoriteResult(addedCount: addedCount, skippedCount: skippedCount, failedCount: failedCount)
 	}
 
 	func toggle(_ feed: Feed, in folder: FavoriteFeedsFolder) {
@@ -464,13 +528,15 @@ private extension FavoriteFeedsController {
 		ungroupedFolder.replaceAliases(ungroupedAliases)
 	}
 
-	func add(_ key: FavoriteFeedKey, to folder: FavoriteFeedsFolder) {
+	func add(_ key: FavoriteFeedKey, to folder: FavoriteFeedsFolder, save: Bool = true) {
 		guard let id = folder.userID,
 			  let index = folderRecords.firstIndex(where: { $0.id == id }) else {
 			return
 		}
 		folderRecords[index].feedKeys.insert(key)
-		saveFolders()
+		if save {
+			saveFolders()
+		}
 	}
 
 	func remove(_ key: FavoriteFeedKey, from folder: FavoriteFeedsFolder) {
