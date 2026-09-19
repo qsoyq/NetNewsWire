@@ -1488,7 +1488,9 @@ struct SidebarItemNode: Hashable, Sendable {
 	}
 
 	func showFeedInspector() {
-		guard let feed = timelineFeed as? Feed ?? currentArticle?.feed else {
+		guard let feed = (timelineFeed as? Feed)
+			?? (timelineFeed as? FavoriteFeedAlias)?.feed
+			?? currentArticle?.feed else {
 			return
 		}
 		showFeedInspector(for: feed)

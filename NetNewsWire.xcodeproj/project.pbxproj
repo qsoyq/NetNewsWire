@@ -754,6 +754,7 @@
 			name = "NetNewsWire iOS Share Extension";
 			packageProductDependencies = (
 				51BC2F3724D3439A00E90810 /* Account */,
+				8C00352722FF4540BF3E5072 /* ErrorLog */,
 				848E84D72DB749720023F3BA /* RSCore */,
 				84EE3F172DB8A0AC009D3A8D /* RSTree */,
 			);
