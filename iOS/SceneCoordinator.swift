@@ -627,11 +627,7 @@ struct SidebarItemNode: Hashable, Sendable {
 		// For example if you select Next Unread from the Home Screen Quick actions, you can start a request before we are
 		// in the foreground.
 		if !fetchRequestQueue.isAnyCurrentRequest {
-			if isReadArticlesFiltered {
-				queueRefreshTimelineAfterStatusChange()
-			} else {
-				queueFetchAndMergeArticles()
-			}
+			queueTimelineRefresh(for: .foreground)
 		}
 	}
 
@@ -2082,7 +2078,7 @@ private extension SceneCoordinator {
 	func setTimelineFeed(_ sidebarItem: SidebarItem?, animated: Bool, completion: (() -> Void)? = nil) {
 		timelineFeed = sidebarItem
 
-		fetchAndReplaceArticlesAsync(animated: animated) {
+		refreshTimeline(for: .feedSelection, animated: animated) {
 			self.mainTimelineViewController?.reinitializeArticles(resetScroll: true)
 			completion?()
 		}
@@ -2439,6 +2435,15 @@ private extension SceneCoordinator {
 		fetchAndMergeArticlesQueue.add(self, #selector(fetchAndMergeArticlesAsync))
 	}
 
+	func queueTimelineRefresh(for reason: TimelineRefreshReason) {
+		switch reason.fetchMode {
+		case .merge:
+			queueFetchAndMergeArticles()
+		case .replace:
+			queueRefreshTimelineAfterStatusChange()
+		}
+	}
+
 	func queueRefreshTimelineAfterStatusChange() {
 		refreshTimelineAfterStatusChangeQueue.add(self, #selector(refreshTimelineAfterStatusChange))
 	}
@@ -2501,6 +2506,15 @@ private extension SceneCoordinator {
 			completion?()
 		}
 
+	}
+
+	func refreshTimeline(for reason: TimelineRefreshReason, animated: Bool, completion: @escaping () -> Void) {
+		switch reason.fetchMode {
+		case .merge:
+			fetchAndMergeArticlesAsync(animated: animated, completion: completion)
+		case .replace:
+			fetchAndReplaceArticlesAsync(animated: animated, emptyFirst: false, completion: completion)
+		}
 	}
 
 	func cancelPendingAsyncFetches() {
