@@ -20,9 +20,10 @@ import Articles
 	let undoManager: UndoManager
 	let flag: Bool
 	let statusKey: ArticleStatus.Key
+	let statusChangeHandler: ((Set<Article>, ArticleStatus.Key, Bool) -> Void)?
 	var completion: (() -> Void)?
 
-	init?(initialArticles: [Article], statusKey: ArticleStatus.Key, flag: Bool, undoManager: UndoManager, completion: (() -> Void)? = nil) {
+	init?(initialArticles: [Article], statusKey: ArticleStatus.Key, flag: Bool, undoManager: UndoManager, statusChangeHandler: ((Set<Article>, ArticleStatus.Key, Bool) -> Void)? = nil, completion: (() -> Void)? = nil) {
 
         // Filter out articles that already have the desired status or can't be marked.
 		let articlesToMark = MarkStatusCommand.filteredArticles(initialArticles, statusKey, flag)
@@ -35,6 +36,7 @@ import Articles
 		self.flag = flag
 		self.statusKey = statusKey
  		self.undoManager = undoManager
+		self.statusChangeHandler = statusChangeHandler
 		self.completion = completion
 
 		let actionName = MarkStatusCommand.actionName(statusKey, flag)
@@ -64,8 +66,12 @@ import Articles
 @MainActor private extension MarkStatusCommand {
 
 	func mark(_ statusKey: ArticleStatus.Key, _ flag: Bool) {
-        markArticles(articles, statusKey: statusKey, flag: flag, completion: completion)
-		completion = nil
+		let completion = completion
+        markArticles(articles, statusKey: statusKey, flag: flag) { [articles, statusChangeHandler] in
+			statusChangeHandler?(articles, statusKey, flag)
+			completion?()
+		}
+		self.completion = nil
     }
 
 	static private let markReadActionName = NSLocalizedString("Mark Read", comment: "command")

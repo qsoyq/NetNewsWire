@@ -503,7 +503,6 @@ struct SidebarItemNode: Hashable, Sendable {
 
 	@objc func statusesDidChange(_ note: Notification) {
 		updateUnreadCount()
-		applyReadStatusChangeToTimeline(note)
 	}
 
 	@objc func containerChildrenDidChange(_ note: Notification) {
@@ -1332,7 +1331,12 @@ struct SidebarItemNode: Hashable, Sendable {
 
 	func markAboveAsRead(_ article: Article) {
 		let articlesAboveArray = articles.articlesAbove(article: article)
-		markAllAsRead(articlesAboveArray)
+		markAboveAsReadAndRemoveFromTimeline(articlesAboveArray)
+	}
+
+	func markAboveAndIncludingAsRead(_ article: Article) {
+		let articlesAboveArray = articles.articlesAboveAndIncluding(article: article)
+		markAboveAsReadAndRemoveFromTimeline(articlesAboveArray)
 	}
 
 	func canMarkBelowAsRead(for article: Article) -> Bool {
@@ -1709,13 +1713,48 @@ extension SceneCoordinator: UINavigationControllerDelegate {
 
 private extension SceneCoordinator {
 
-	func markArticlesWithUndo(_ articles: [Article], statusKey: ArticleStatus.Key, flag: Bool, completion: (() -> Void)? = nil) {
+	func markArticlesWithUndo(_ articles: [Article], statusKey: ArticleStatus.Key, flag: Bool, statusChangeHandler: ((Set<Article>, ArticleStatus.Key, Bool) -> Void)? = nil, completion: (() -> Void)? = nil) {
 		guard let undoManager = undoManager,
-			  let markReadCommand = MarkStatusCommand(initialArticles: articles, statusKey: statusKey, flag: flag, undoManager: undoManager, completion: completion) else {
+			  let markReadCommand = MarkStatusCommand(initialArticles: articles, statusKey: statusKey, flag: flag, undoManager: undoManager, statusChangeHandler: statusChangeHandler, completion: completion) else {
 			completion?()
 			return
 		}
 		runCommand(markReadCommand)
+	}
+
+	func markAboveAsReadAndRemoveFromTimeline(_ articles: [Article]) {
+		let removalCandidates = Set(articles)
+		markArticlesWithUndo(articles, statusKey: .read, flag: true, statusChangeHandler: { [weak self] _, statusKey, flag in
+			self?.applyExplicitAboveReadStatusChange(removalCandidates, statusKey: statusKey, flag: flag)
+		})
+	}
+
+	func applyExplicitAboveReadStatusChange(_ removalCandidates: Set<Article>, statusKey: ArticleStatus.Key, flag: Bool) {
+		guard statusKey == .read, isReadArticlesFiltered else {
+			return
+		}
+
+		if flag {
+			let articleIDsByAccount = Dictionary(grouping: removalCandidates, by: \.accountID).mapValues { Set($0.map(\.articleID)) }
+			let remaining = articles.filter { article in
+				guard article.status.read,
+					  let articleIDs = articleIDsByAccount[article.accountID],
+					  articleIDs.contains(article.articleID) else {
+					return true
+				}
+				return false
+			}
+
+			let removedCount = articles.count - remaining.count
+			if removedCount > 0 {
+				NotificationActionLog.log(.info, operation: "Timeline explicit hide-read", message: "Removed \(removedCount) articles marked above as read from timeline")
+				replaceArticles(with: remaining, animated: true)
+			}
+		} else {
+			fetchAndMergeArticlesAsync(animated: true) {
+				self.mainTimelineViewController?.reinitializeArticles(resetScroll: false)
+			}
+		}
 	}
 
 	func updateUnreadCount() {
@@ -2414,48 +2453,6 @@ private extension SceneCoordinator {
 		NotificationActionLog.log(.debug, operation: "Timeline hide-read", message: "Replacing timeline after read status change")
 		fetchAndReplaceArticlesAsync(animated: true, emptyFirst: false) {
 			self.mainTimelineViewController?.reinitializeArticles(resetScroll: false)
-		}
-	}
-
-	func applyReadStatusChangeToTimeline(_ note: Notification) {
-		guard isReadArticlesFiltered else {
-			return
-		}
-		guard let articleIDs = note.userInfo?[Account.UserInfoKey.articleIDs] as? Set<String>, !articleIDs.isEmpty else {
-			return
-		}
-
-		let statusKey = note.userInfo?[Account.UserInfoKey.statusKey] as? ArticleStatus.Key
-		let statusFlag = note.userInfo?[Account.UserInfoKey.statusFlag] as? Bool
-		if let statusKey, statusKey != .read {
-			return
-		}
-
-		let markedRead = statusKey == nil || statusFlag == true
-		var removedCount = 0
-		if markedRead {
-			let displayedArticleID = currentArticle?.articleID
-			let displayedAccountID = currentArticle?.accountID
-			let remaining = articles.filter { article in
-				if article.articleID == displayedArticleID, article.accountID == displayedAccountID {
-					return true
-				}
-				guard articleIDs.contains(article.articleID) else {
-					return true
-				}
-				return !article.status.read
-			}
-			removedCount = articles.count - remaining.count
-			if removedCount > 0 {
-				NotificationActionLog.log(.info, operation: "Timeline hide-read", message: "Removed \(removedCount) newly read articles from timeline")
-				replaceArticles(with: remaining, animated: true)
-			}
-		}
-
-		if UIApplication.shared.applicationState == .active {
-			queueRefreshTimelineAfterStatusChange()
-		} else {
-			NotificationActionLog.log(.debug, operation: "Timeline hide-read", message: "Skipped replace while app is not active; appState=\(UIApplication.shared.applicationState.rawValue)")
 		}
 	}
 

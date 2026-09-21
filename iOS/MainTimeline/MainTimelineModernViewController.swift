@@ -1210,9 +1210,7 @@ extension MainTimelineModernViewController {
 
 	func markAboveAndIncludingAsRead(_ article: Article) {
 		assert(coordinator != nil)
-		guard let articles else { return }
-		let articlesToMark = articles.articlesAboveAndIncluding(article: article)
-		coordinator?.markAllAsRead(articlesToMark)
+		coordinator?.markAboveAndIncludingAsRead(article)
 	}
 
 	func canMarkAboveAsRead(for article: Article) -> Bool {
