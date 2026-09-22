@@ -2513,7 +2513,7 @@ private extension SceneCoordinator {
 		case .merge:
 			fetchAndMergeArticlesAsync(animated: animated, completion: completion)
 		case .replace:
-			fetchAndReplaceArticlesAsync(animated: animated, emptyFirst: false, completion: completion)
+			fetchAndReplaceArticlesAsync(animated: animated, emptyFirst: reason.emptiesTimelineBeforeFetch, completion: completion)
 		}
 	}
 

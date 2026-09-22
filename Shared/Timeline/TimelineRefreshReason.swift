@@ -15,6 +15,15 @@ enum TimelineRefreshReason: Equatable {
 			return .replace
 		}
 	}
+
+	var emptiesTimelineBeforeFetch: Bool {
+		switch self {
+		case .foreground:
+			return false
+		case .feedSelection:
+			return true
+		}
+	}
 }
 
 enum TimelineFetchMode: Equatable {
