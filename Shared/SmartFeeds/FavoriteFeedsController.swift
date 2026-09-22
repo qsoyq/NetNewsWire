@@ -83,8 +83,7 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 	}
 
 	func fetchUnreadArticlesAsync() async throws -> Set<Article> {
-		let articles = try await fetchArticlesAsync()
-		return articles.unreadArticles()
+		try await FavoriteFeedsController.shared.fetchUnreadArticlesAsync()
 	}
 }
 
@@ -364,11 +363,19 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 	}
 
 	func fetchArticlesAsync(for aliases: [FavoriteFeedAlias]) async throws -> Set<Article> {
-		var articles = Set<Article>()
-		for (account, feedIDs) in feedIDsByAccount(for: aliases) {
-			articles.formUnion(try await account.fetchArticlesAsync(feedIDs: feedIDs))
+		try await fetchAcrossAccounts(feedIDsByAccount(for: aliases)) { account, feedIDs in
+			try await account.fetchArticlesAsync(feedIDs: feedIDs)
 		}
-		return articles
+	}
+
+	func fetchUnreadArticlesAsync() async throws -> Set<Article> {
+		try await fetchUnreadArticlesAsync(for: aliases)
+	}
+
+	func fetchUnreadArticlesAsync(for aliases: [FavoriteFeedAlias]) async throws -> Set<Article> {
+		try await fetchAcrossAccounts(feedIDsByAccount(for: aliases)) { account, feedIDs in
+			try await account.fetchUnreadArticlesAsync(feedIDs: feedIDs)
+		}
 	}
 
 	@objc func unreadCountDidChange(_ note: Notification) {
@@ -410,6 +417,30 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 }
 
 private extension FavoriteFeedsController {
+
+	typealias AccountArticleFetcher = @MainActor @Sendable (Account, Set<String>) async throws -> Set<Article>
+
+	func fetchAcrossAccounts(_ requests: [(Account, Set<String>)], fetcher: @escaping AccountArticleFetcher) async throws -> Set<Article> {
+		let fetchedSets = try await withThrowingTaskGroup(of: Set<Article>.self, returning: [Set<Article>].self) { group in
+			for (account, feedIDs) in requests {
+				group.addTask {
+					try await fetcher(account, feedIDs)
+				}
+			}
+
+			var results = [Set<Article>]()
+			for try await result in group {
+				results.append(result)
+			}
+			return results
+		}
+
+		return await Task.detached(priority: .userInitiated) {
+			fetchedSets.reduce(into: Set<Article>()) { combined, articles in
+				combined.formUnion(articles)
+			}
+		}.value
+	}
 
 	func feedIDsByAccount(for aliases: [FavoriteFeedAlias]) -> [(Account, Set<String>)] {
 		var feedIDsByAccountID = [String: Set<String>]()

@@ -9,6 +9,7 @@
 import UIKit
 import UserNotifications
 import Account
+import ErrorLog
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -76,11 +77,16 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 	}
 
 	func sceneDidEnterBackground(_ scene: UIScene) {
+		PerformanceDiagnosticLog.event(operation: "Lifecycle", message: "scene-did-enter-background")
+		TimelineMainThreadWatchdog.shared.setActive(false)
 		coordinator.didEnterBackground()
 		appDelegate.prepareAccountsForBackground()
 	}
 
 	func sceneWillEnterForeground(_ scene: UIScene) {
+		PerformanceDiagnosticLog.beginSession(reason: "scene-will-enter-foreground")
+		TimelineMainThreadWatchdog.shared.setActive(true)
+		PerformanceDiagnosticLog.event(operation: "Lifecycle", message: "scene-will-enter-foreground")
 		appDelegate.resumeDatabaseProcessingIfNecessary()
 		appDelegate.prepareAccountsForForeground()
 		coordinator.resetFocus()

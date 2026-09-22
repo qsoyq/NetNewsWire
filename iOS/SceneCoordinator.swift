@@ -11,6 +11,7 @@ import os
 import UserNotifications
 import Account
 import Articles
+import ErrorLog
 import RSCore
 import RSTree
 import SafariServices
@@ -63,8 +64,11 @@ struct SidebarItemNode: Hashable, Sendable {
 	private let fetchAndMergeArticlesQueue = CoalescingQueue(name: "Fetch and Merge Articles", interval: 0.5)
 	private let rebuildBackingStoresQueue = CoalescingQueue(name: "Rebuild The Backing Stores", interval: 0.5)
 	private let refreshTimelineAfterStatusChangeQueue = CoalescingQueue(name: "Refresh Timeline After Status Change", interval: 0.5)
+	private var queuedFetchAndMergeShouldAnimate = true
 	private var fetchSerialNumber = 0
 	private let fetchRequestQueue = FetchRequestQueue()
+	private var performanceFetchInterval: PerformanceDiagnosticInterval?
+	private var performanceRequestID: Int?
 
 	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "SceneCoordinator")
 
@@ -627,7 +631,10 @@ struct SidebarItemNode: Hashable, Sendable {
 		// For example if you select Next Unread from the Home Screen Quick actions, you can start a request before we are
 		// in the foreground.
 		if !fetchRequestQueue.isAnyCurrentRequest {
+			PerformanceDiagnosticLog.event(operation: "Timeline refresh", message: "queue reason=foreground kind=\(timelinePerformanceKind)")
 			queueTimelineRefresh(for: .foreground)
+		} else {
+			PerformanceDiagnosticLog.event(operation: "Timeline refresh", message: "skip reason=foreground current_request=true kind=\(timelinePerformanceKind)")
 		}
 	}
 
@@ -2407,12 +2414,19 @@ private extension SceneCoordinator {
 	}
 
 	func replaceArticles(with unsortedArticles: Set<Article>, animated: Bool) {
+		let sortInterval = PerformanceDiagnosticLog.begin("Timeline sort", details: "article_count=\(unsortedArticles.count) group_by_feed=\(groupByFeed)")
 		let sortedArticles = Array(unsortedArticles).sortedByDate(sortDirection, groupByFeed: groupByFeed)
+		PerformanceDiagnosticLog.end(sortInterval, details: "article_count=\(sortedArticles.count)")
 		replaceArticles(with: sortedArticles, animated: animated)
 	}
 
 	func replaceArticles(with sortedArticles: ArticleArray, animated: Bool) {
-		if articles != sortedArticles {
+		let didChange = articles != sortedArticles
+		let updateInterval = PerformanceDiagnosticLog.begin("Timeline model update", details: "old_count=\(articles.count) new_count=\(sortedArticles.count) animated=\(animated)")
+		defer {
+			PerformanceDiagnosticLog.end(updateInterval, details: "changed=\(didChange)")
+		}
+		if didChange {
 			articles = sortedArticles
 
 			// Update currentArticle to the new instance if it's still in the timeline.
@@ -2436,8 +2450,12 @@ private extension SceneCoordinator {
 	}
 
 	func queueTimelineRefresh(for reason: TimelineRefreshReason) {
+		PerformanceDiagnosticLog.event(operation: "Timeline refresh", message: "dispatch reason=\(reason.performanceName) mode=\(reason.fetchMode.performanceName) kind=\(timelinePerformanceKind)")
 		switch reason.fetchMode {
 		case .merge:
+			if reason == .foreground {
+				queuedFetchAndMergeShouldAnimate = false
+			}
 			queueFetchAndMergeArticles()
 		case .replace:
 			queueRefreshTimelineAfterStatusChange()
@@ -2462,7 +2480,9 @@ private extension SceneCoordinator {
 	}
 
 	@objc func fetchAndMergeArticlesAsync() {
-		fetchAndMergeArticlesAsync(animated: true) {
+		let animated = queuedFetchAndMergeShouldAnimate
+		queuedFetchAndMergeShouldAnimate = true
+		fetchAndMergeArticlesAsync(animated: animated) {
 			self.mainTimelineViewController?.reinitializeArticles(resetScroll: false)
 			self.mainTimelineViewController?.restoreSelectionIfNecessary(adjustScroll: false)
 		}
@@ -2479,6 +2499,7 @@ private extension SceneCoordinator {
 			guard let strongSelf = self else {
 				return
 			}
+			let mergeInterval = PerformanceDiagnosticLog.begin("Timeline merge", details: "fetched_count=\(unsortedArticles.count) existing_count=\(strongSelf.articles.count)")
 			let hidingRead = strongSelf.isReadArticlesFiltered
 			let unsortedArticleIDs = unsortedArticles.articleIDs()
 			var updatedArticles = unsortedArticles
@@ -2501,6 +2522,7 @@ private extension SceneCoordinator {
 			if skippedReadCount > 0 {
 				NotificationActionLog.log(.debug, operation: "Timeline hide-read", message: "Merge skipped \(skippedReadCount) read articles")
 			}
+			PerformanceDiagnosticLog.end(mergeInterval, details: "result_count=\(updatedArticles.count) skipped_read=\(skippedReadCount)")
 
 			strongSelf.replaceArticles(with: updatedArticles, animated: animated)
 			completion?()
@@ -2518,6 +2540,14 @@ private extension SceneCoordinator {
 	}
 
 	func cancelPendingAsyncFetches() {
+		if let performanceFetchInterval {
+			PerformanceDiagnosticLog.end(performanceFetchInterval, details: "result=cancelled")
+			self.performanceFetchInterval = nil
+		}
+		if let performanceRequestID {
+			PerformanceDiagnosticLog.endRequest(performanceRequestID, details: "result=cancelled")
+			self.performanceRequestID = nil
+		}
 		fetchSerialNumber += 1
 		fetchRequestQueue.cancelAllRequests()
 	}
@@ -2555,15 +2585,48 @@ private extension SceneCoordinator {
 		cancelPendingAsyncFetches()
 
 		let fetchers = representedObjects.compactMap { $0 as? ArticleFetcher }
+		let requestID = PerformanceDiagnosticLog.beginRequest(kind: timelinePerformanceKind, details: "fetcher_count=\(fetchers.count) serial=\(fetchSerialNumber)")
+		performanceRequestID = requestID
+		performanceFetchInterval = PerformanceDiagnosticLog.begin("Timeline fetch", details: "fetcher_count=\(fetchers.count)", requestID: requestID, tracksMainThread: false)
 		let fetchOperation = FetchRequestOperation(id: fetchSerialNumber, hidingReadArticlesState: hidingReadArticlesState, fetchers: fetchers) { [weak self] (articles, operation) in
 			precondition(Thread.isMainThread)
 			guard !operation.isCanceled, let strongSelf = self, operation.id == strongSelf.fetchSerialNumber else {
 				return
 			}
+			if let interval = strongSelf.performanceFetchInterval {
+				PerformanceDiagnosticLog.end(interval, details: "article_count=\(articles.count) result=success")
+				strongSelf.performanceFetchInterval = nil
+			}
 			completion(articles)
+			if let requestID = strongSelf.performanceRequestID {
+				PerformanceDiagnosticLog.endRequest(requestID, details: "result=delivered article_count=\(articles.count)")
+				strongSelf.performanceRequestID = nil
+			}
 		}
 
 		fetchRequestQueue.add(fetchOperation)
+	}
+
+	var timelinePerformanceKind: String {
+		guard let timelineFeed else {
+			return "none"
+		}
+		if timelineFeed is Feed {
+			return "feed"
+		}
+		if timelineFeed is FavoriteFeedsAllFeed {
+			return "favorites-all"
+		}
+		if timelineFeed is FavoriteFeedsFolder {
+			return "favorites-folder"
+		}
+		if timelineFeed is Folder {
+			return "folder"
+		}
+		if timelineFeed is PseudoFeed {
+			return "pseudo-feed"
+		}
+		return "other"
 	}
 
 	func timelineFetcherContainsAnyPseudoFeed() -> Bool {

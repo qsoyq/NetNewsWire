@@ -84,6 +84,8 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NNWGitCommit</key>
+	<string>$(NNW_GIT_COMMIT)</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
 	<key>NSAppTransportSecurity</key>

@@ -282,13 +282,17 @@ import ErrorLog
 		let accounts = self.accounts
 		let accountCount = accounts.count
 		var pendingDatabaseResumes = accountCount
+		let resumeAllInterval = PerformanceDiagnosticLog.begin("Database resume all", details: "account_count=\(accountCount)", tracksMainThread: false)
 		isSuspended = false
-		for account in accounts {
+		for (accountIndex, account) in accounts.enumerated() {
+			let accountInterval = PerformanceDiagnosticLog.begin("Database resume account", details: "account_index=\(accountIndex + 1)", tracksMainThread: false)
 			account.resumeDatabaseAndDelegate {
+				PerformanceDiagnosticLog.end(accountInterval, details: "account_index=\(accountIndex + 1)")
 				pendingDatabaseResumes -= 1
 				if pendingDatabaseResumes == 0 {
 					let duration = CFAbsoluteTimeGetCurrent() - startTime
 					Self.logger.info("Resumed databases for \(accountCount) accounts in \(duration, format: .fixed(precision: 3)) seconds")
+					PerformanceDiagnosticLog.end(resumeAllInterval, details: "account_count=\(accountCount)")
 				}
 			}
 		}
@@ -297,6 +301,7 @@ import ErrorLog
 		}
 		if accountCount == 0 {
 			Self.logger.info("Resumed databases for 0 accounts")
+			PerformanceDiagnosticLog.end(resumeAllInterval, details: "account_count=0")
 		}
 	}
 

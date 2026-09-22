@@ -32,6 +32,11 @@ if [[ -n "${IOS_BUNDLE_ID_OVERRIDE}" ]]; then
 	IOS_BUNDLE_ID_ARGS+=("PRODUCT_BUNDLE_IDENTIFIER=${IOS_BUNDLE_ID_OVERRIDE}")
 fi
 
+GIT_COMMIT_HASH="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+if ! git diff --quiet || ! git diff --cached --quiet; then
+	GIT_COMMIT_HASH="${GIT_COMMIT_HASH}-dirty"
+fi
+
 mkdir -p "${OUT_DIR}"
 
 log() { printf "\n[%s] %s\n" "$(date +'%H:%M:%S')" "$*"; }
@@ -107,6 +112,7 @@ build_ios_unsigned_ipa() {
 		CODE_SIGNING_REQUIRED=NO \
 		CODE_SIGN_IDENTITY="" \
 		${IOS_BUNDLE_ID_ARGS[@]+"${IOS_BUNDLE_ID_ARGS[@]}"} \
+		NNW_GIT_COMMIT="${GIT_COMMIT_HASH}" \
 		clean build
 
   local APP_PATH

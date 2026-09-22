@@ -36,6 +36,37 @@ struct ErrorLogTable {
 		return resultSet.compactMap(entryWithRow)
 	}
 
+	static func entries(limit: Int, beforeID: Int?, database: FMDatabase) -> [ErrorLogEntry] {
+		guard limit > 0 else {
+			return []
+		}
+
+		let sql: String
+		let parameters: [Any]
+		if let beforeID {
+			sql = "select * from \(name) where id < ? order by id desc limit ?"
+			parameters = [beforeID, limit]
+		} else {
+			sql = "select * from \(name) order by id desc limit ?"
+			parameters = [limit]
+		}
+		guard let resultSet = database.executeQuery(sql, withArgumentsIn: parameters) else {
+			return []
+		}
+		return resultSet.compactMap(entryWithRow)
+	}
+
+	static func entryCount(database: FMDatabase) -> Int {
+		guard let resultSet = database.executeQuery("select count(*) from \(name)", withArgumentsIn: nil) else {
+			return 0
+		}
+		defer { resultSet.close() }
+		guard resultSet.next() else {
+			return 0
+		}
+		return Int(resultSet.longLongInt(forColumnIndex: 0))
+	}
+
 	static func deleteAllEntries(database: FMDatabase) {
 		database.executeUpdateInTransaction("delete from \(name)")
 	}

@@ -13,6 +13,7 @@ import RSCore
 import RSWeb
 import Account
 import Articles
+import ErrorLog
 
 final class MainTimelineModernViewController: UIViewController, UndoableCommandRunner {
 
@@ -33,7 +34,16 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	private let refreshProgressView = RefreshProgressView(frame: .zero)
 	private lazy var refreshBarItem = UIBarButtonItem(customView: refreshProgressView)
 	private var isToolbarProgressViewShowing = false
-	private var dataSource: UICollectionViewDiffableDataSource<Int, Article>?
+	private var dataSource: UICollectionViewDiffableDataSource<Int, TimelineArticleID>?
+	private var articlesByID = [TimelineArticleID: Article]()
+	private var pendingSnapshotCompletions: [() -> Void]?
+	private var snapshotState = TimelineSnapshotState()
+	private var pendingUpdateCheckScheduled = false
+	private var needsVisibleCellReload = false
+	private var isInteractingWithTimeline: Bool {
+		guard let collectionView else { return false }
+		return collectionView.isTracking || collectionView.isDragging || collectionView.isDecelerating
+	}
 	var didPushArticleViewController = false
 
 	private var timelineFeed: SidebarItem? {
@@ -106,6 +116,17 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	private var articles: ArticleArray? {
 		assert(coordinator != nil)
 		return coordinator?.articles
+	}
+
+	private func article(for identifier: TimelineArticleID) -> Article? {
+		articlesByID[identifier]
+	}
+
+	private func article(at indexPath: IndexPath, dataSource: UICollectionViewDiffableDataSource<Int, TimelineArticleID>) -> Article? {
+		guard let identifier = dataSource.itemIdentifier(for: indexPath) else {
+			return nil
+		}
+		return article(for: identifier)
 	}
 
 	private lazy var navigationBarTitleLabel: UILabel = {
@@ -271,7 +292,7 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 		guard let collectionView else {
 			return
 		}
-		if let article = currentArticle, let dataSource, let indexPath = dataSource.indexPath(for: article) {
+		if let article = currentArticle, let dataSource, let indexPath = dataSource.indexPath(for: TimelineArticleID(article)) {
 			if adjustScroll {
 				Self.logger.debug("MainTimelineModernViewController: restoreSelectionIfNecessary selecting item and adjusting scroll")
 				collectionView.selectItemAndScrollIfNotVisible(at: indexPath, animations: [])
@@ -326,7 +347,7 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 		}
 
 		if let article = currentArticle,
-		   let indexPath = dataSource.indexPath(for: article), let indexPaths = collectionView.indexPathsForSelectedItems {
+		   let indexPath = dataSource.indexPath(for: TimelineArticleID(article)), let indexPaths = collectionView.indexPathsForSelectedItems {
 			if indexPaths.contains(indexPath) {
 				return
 			}
@@ -376,27 +397,28 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 		}
 		let indexPaths = collectionView.indexPathsForVisibleItems
 
-		let visibleArticles = indexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
+		let visibleArticles = indexPaths.compactMap { article(at: $0, dataSource: dataSource) }
 		reloadCells(visibleArticles)
 	}
 
 	private func reloadCells(_ articles: [Article]) {
 		Self.logger.debug("MainTimelineModernViewController: reloadCells")
-		guard !articles.isEmpty, let dataSource else {
+		guard !articles.isEmpty, let dataSource, let collectionView else {
 			return
 		}
-
-		var snapshot = dataSource.snapshot()
-		snapshot.reloadItems(articles)
-		DispatchQueue.main.asyncAfter(wallDeadline: .now() + 0.0, execute: {
-			guard let dataSource = self.dataSource else {
-				return
-			}
-			dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-				self?.restoreSelectionIfNecessary(adjustScroll: false)
-			}
-		})
-
+		guard !isInteractingWithTimeline, !snapshotState.isApplying else {
+			needsVisibleCellReload = true
+			schedulePendingUpdateCheck()
+			return
+		}
+		// Updating visible cell data avoids diffing the entire snapshot for a status or icon change.
+		let identifiers = Set(articles.map(TimelineArticleID.init))
+		for indexPath in collectionView.indexPathsForVisibleItems {
+			guard let identifier = dataSource.itemIdentifier(for: indexPath), identifiers.contains(identifier),
+				let article = article(for: identifier),
+				let cell = collectionView.cellForItem(at: indexPath) as? MainTimelineCollectionViewCell else { continue }
+			cell.cellData = configure(article: article)
+		}
 	}
 
 	@objc func refreshAccounts(_ sender: Any) {
@@ -508,14 +530,34 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 extension MainTimelineModernViewController: UICollectionViewDelegate {
 	func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
 		becomeFirstResponder()
-		if let dataSource {
-			let article = dataSource.itemIdentifier(for: indexPath)
+		if let dataSource, let article = article(at: indexPath, dataSource: dataSource) {
 			coordinator?.selectArticle(article, animations: [.scroll, .select, .navigation])
 		}
 	}
 
+	func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+		if !decelerate {
+			applyPendingSnapshotIfNeeded()
+		}
+	}
+
+	func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+		applyPendingSnapshotIfNeeded()
+	}
+
+	func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+		applyPendingSnapshotIfNeeded()
+	}
+
+	func scrollViewDidScroll(_ scrollView: UIScrollView) {
+		// Tracking can finish without deceleration (for example after a cancelled gesture).
+		if !isInteractingWithTimeline {
+			applyPendingSnapshotIfNeeded()
+		}
+	}
+
 	func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemsAt indexPaths: [IndexPath], point: CGPoint) -> UIContextMenuConfiguration? {
-		guard let firstIndex = indexPaths.first, let dataSource, let article = dataSource.itemIdentifier(for: firstIndex) else { return nil }
+		guard let firstIndex = indexPaths.first, let dataSource, let article = article(at: firstIndex, dataSource: dataSource) else { return nil }
 
 		return UIContextMenuConfiguration(identifier: firstIndex.row as NSCopying, previewProvider: nil, actionProvider: { [weak self] _ in
 
@@ -684,12 +726,12 @@ extension MainTimelineModernViewController {
 		}
 	}
 
-	private func configureCollectionView(_ dataSource: UICollectionViewDiffableDataSource<Int, Article>) {
+	private func configureCollectionView(_ dataSource: UICollectionViewDiffableDataSource<Int, TimelineArticleID>) {
 		var config = UICollectionLayoutListConfiguration(appearance: .plain)
 		config.showsSeparators = false
 		config.headerMode = .none
 		config.trailingSwipeActionsConfigurationProvider = { [unowned self] indexPath in
-			guard let article = dataSource.itemIdentifier(for: indexPath) else { return nil }
+			guard let article = article(at: indexPath, dataSource: dataSource) else { return nil }
 			var actions = [UIContextualAction]()
 
 			// Set up the star action
@@ -779,7 +821,7 @@ extension MainTimelineModernViewController {
 			return config
 		}
 		config.leadingSwipeActionsConfigurationProvider = { [unowned self] indexPath in
-			guard let article = dataSource.itemIdentifier(for: indexPath) else { return nil }
+			guard let article = article(at: indexPath, dataSource: dataSource) else { return nil }
 			guard !article.status.read || article.isAvailableToMarkUnread else { return nil }
 			var actions = [UIContextualAction]()
 
@@ -844,10 +886,10 @@ extension MainTimelineModernViewController {
 		collectionView?.collectionViewLayout = layout
 	}
 
-	private func makeDataSource(_ collectionView: UICollectionView) -> UICollectionViewDiffableDataSource<Int, Article> {
-		let dataSource: UICollectionViewDiffableDataSource<Int, Article> =
-			MainTimelineCollectionViewDataSource(collectionView: collectionView, cellProvider: { [weak self] collectionView, indexPath, article in
-				guard let self else {
+	private func makeDataSource(_ collectionView: UICollectionView) -> UICollectionViewDiffableDataSource<Int, TimelineArticleID> {
+		let dataSource: UICollectionViewDiffableDataSource<Int, TimelineArticleID> =
+			MainTimelineCollectionViewDataSource(collectionView: collectionView, cellProvider: { [weak self] collectionView, indexPath, identifier in
+				guard let self, let article = self.article(for: identifier) else {
 					return nil
 				}
 				let cellData = self.configure(article: article)
@@ -1006,17 +1048,87 @@ extension MainTimelineModernViewController {
 
 	private func applyChanges(animated: Bool, completion: (() -> Void)? = nil) {
 		Self.logger.debug("MainTimelineModernViewController: applyChanges")
+		guard dataSource != nil, collectionView != nil else {
+			completion?()
+			return
+		}
+		var completions = pendingSnapshotCompletions ?? []
+		if let completion { completions.append(completion) }
+		guard snapshotState.requestUpdate(isInteracting: isInteractingWithTimeline) else {
+			pendingSnapshotCompletions = completions
+			schedulePendingUpdateCheck()
+			PerformanceDiagnosticLog.event(operation: "Timeline snapshot apply", message: "deferred reason=interaction-or-apply")
+			return
+		}
+		let wasDeferred = pendingSnapshotCompletions != nil
+		pendingSnapshotCompletions = nil
+
+		let currentArticles = articles ?? ArticleArray()
+		var updatedArticlesByID = [TimelineArticleID: Article](minimumCapacity: currentArticles.count)
+		let identifiers = currentArticles.map { article in
+			let identifier = TimelineArticleID(article)
+			updatedArticlesByID[identifier] = article
+			return identifier
+		}
+		if !snapshotState.requiresSnapshot(identifiers) {
+			articlesByID = updatedArticlesByID
+			reloadVisibleCells()
+			PerformanceDiagnosticLog.event(operation: "Timeline snapshot apply", message: "skipped reason=unchanged article_count=\(identifiers.count)")
+			completions.forEach { $0() }
+			return
+		}
+		// Keep old items resolvable until UIKit finishes removing their cells.
+		articlesByID.merge(updatedArticlesByID) { _, new in new }
+		applySnapshot(identifiers: identifiers, animated: wasDeferred ? false : animated, completions: [{ [weak self] in
+			self?.articlesByID = updatedArticlesByID
+		}] + completions)
+	}
+
+	private func applySnapshot(identifiers: [TimelineArticleID], animated: Bool, completions: [() -> Void]) {
 		guard let dataSource else {
+			completions.forEach { $0() }
 			return
 		}
 
-		var snapshot = NSDiffableDataSourceSnapshot<Int, Article>()
+		let buildInterval = PerformanceDiagnosticLog.begin("Timeline snapshot build", details: "article_count=\(identifiers.count) animated=\(animated)")
+		var snapshot = NSDiffableDataSourceSnapshot<Int, TimelineArticleID>()
 		snapshot.appendSections([0])
-		snapshot.appendItems(articles ?? ArticleArray(), toSection: 0)
+		snapshot.appendItems(identifiers, toSection: 0)
+		PerformanceDiagnosticLog.end(buildInterval, details: "article_count=\(snapshot.numberOfItems)")
 
+		snapshotState.beginApply(identifiers)
+		let applyInterval = PerformanceDiagnosticLog.begin("Timeline snapshot apply", details: "article_count=\(snapshot.numberOfItems) animated=\(animated)")
 		dataSource.apply(snapshot, animatingDifferences: animated) { [weak self] in
+			PerformanceDiagnosticLog.end(applyInterval, details: "article_count=\(snapshot.numberOfItems)")
 			self?.restoreSelectionIfNecessary(adjustScroll: false)
-			completion?()
+			completions.forEach { $0() }
+			self?.snapshotState.finishApply()
+			self?.needsVisibleCellReload = true
+			self?.applyPendingSnapshotIfNeeded()
+		}
+	}
+
+	private func applyPendingSnapshotIfNeeded() {
+		guard !isInteractingWithTimeline, !snapshotState.isApplying else { return }
+		if snapshotState.needsUpdate {
+			applyChanges(animated: false)
+		}
+		if needsVisibleCellReload, !snapshotState.isApplying {
+			needsVisibleCellReload = false
+			reloadVisibleCells()
+		}
+	}
+
+	private func schedulePendingUpdateCheck() {
+		guard !pendingUpdateCheckScheduled else { return }
+		pendingUpdateCheckScheduled = true
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+			guard let self else { return }
+			self.pendingUpdateCheckScheduled = false
+			self.applyPendingSnapshotIfNeeded()
+			if self.snapshotState.needsUpdate || self.needsVisibleCellReload {
+				self.schedulePendingUpdateCheck()
+			}
 		}
 	}
 
@@ -1043,7 +1155,7 @@ private extension MainTimelineModernViewController {
 			return
 		}
 
-		let visibleArticles = indexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
+		let visibleArticles = indexPaths.compactMap { article(at: $0, dataSource: dataSource) }
 		let visibleUpdatedArticles = visibleArticles.filter { articleIDs.contains($0.articleID) }
 		reloadCells(visibleUpdatedArticles)
 	}

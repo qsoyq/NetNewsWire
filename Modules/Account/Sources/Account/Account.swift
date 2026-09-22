@@ -836,10 +836,31 @@ public enum FetchType {
 
 	/// Asynchronously fetches articles for the given feeds in SQLite-safe batches.
 	public func fetchArticlesAsync(feedIDs: Set<String>) async throws -> Set<Article> {
+		try await fetchArticleBatches(feedIDs: feedIDs, unreadOnly: false)
+	}
+
+	/// Asynchronously fetches only unread articles for the given feeds in SQLite-safe batches.
+	public func fetchUnreadArticlesAsync(feedIDs: Set<String>) async throws -> Set<Article> {
+		try await fetchArticleBatches(feedIDs: feedIDs, unreadOnly: true)
+	}
+
+	private func fetchArticleBatches(feedIDs: Set<String>, unreadOnly: Bool) async throws -> Set<Article> {
 		let feeds = Set(feedIDs.compactMap { existingFeed(withFeedID: $0) })
-		var articles = Set<Article>()
-		for feedIDBatch in Self.articleFetchFeedIDBatches(feedIDs) {
-			articles.formUnion(try await database.fetchArticlesAsync(feedIDs: feedIDBatch))
+		let batches = Self.articleFetchFeedIDBatches(feedIDs)
+		let database = self.database
+		let task = Task.detached(priority: .userInitiated) {
+			var articles = Set<Article>()
+			for batch in batches {
+				try Task.checkCancellation()
+				let fetched = try await unreadOnly ? database.fetchUnreadArticlesAsync(feedIDs: batch) : database.fetchArticlesAsync(feedIDs: batch)
+				articles.formUnion(fetched)
+			}
+			return articles
+		}
+		let articles = try await withTaskCancellationHandler {
+			try await task.value
+		} onCancel: {
+			task.cancel()
 		}
 		validateUnreadCountsAfterFetchingUnreadArticles(feeds: feeds, articles: articles)
 		return articles

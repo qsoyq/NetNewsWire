@@ -105,4 +105,74 @@ import Foundation
 		await database.clearEntries()
 		#expect((await database.allEntries()).isEmpty)
 	}
+
+	@Test func paginatesNewestEntriesWithoutDuplicates() async {
+		let path = temporaryDatabasePath()
+		defer { deleteDatabaseFiles(at: path) }
+
+		let database = ErrorLogDatabase(databasePath: path)
+		for i in 1...250 {
+			await database.addEntry(sourceName: "Source", sourceID: 100, operation: "Page", fileName: "", functionName: "", lineNumber: 0, errorMessage: "Entry \(i)")
+		}
+
+		#expect(await database.entryCount() == 250)
+		let firstPage = await database.entries(limit: 200)
+		#expect(firstPage.count == 200)
+		#expect(firstPage.first?.errorMessage == "Entry 250")
+		#expect(firstPage.last?.errorMessage == "Entry 51")
+
+		let secondPage = await database.entries(limit: 200, beforeID: firstPage.last?.id)
+		#expect(secondPage.count == 50)
+		#expect(secondPage.first?.errorMessage == "Entry 50")
+		#expect(secondPage.last?.errorMessage == "Entry 1")
+		#expect(Set(firstPage.map(\.id)).isDisjoint(with: Set(secondPage.map(\.id))))
+	}
+
+	@Test func paginationHandlesEmptyAndZeroLimit() async {
+		let path = temporaryDatabasePath()
+		defer { deleteDatabaseFiles(at: path) }
+
+		let database = ErrorLogDatabase(databasePath: path)
+		#expect(await database.entries(limit: 200).isEmpty)
+		#expect(await database.entries(limit: 0).isEmpty)
+		#expect(await database.entryCount() == 0)
+	}
+
+	@Test func largeLogKeepsFirstPageBoundedAndExportsAllEntries() async throws {
+		let path = temporaryDatabasePath()
+		defer { deleteDatabaseFiles(at: path) }
+		let database = ErrorLogDatabase(databasePath: path)
+		let message = String(repeating: "x", count: 160)
+		for index in 0..<25_000 {
+			await database.addEntry(sourceName: "Test", sourceID: 100, operation: "", fileName: "", functionName: "", lineNumber: 0, errorMessage: "\(index):\(message)")
+		}
+		let page = await database.entries(limit: 200)
+		#expect(page.count == 200)
+		#expect(page.first?.errorMessage.hasPrefix("24999:") == true)
+		let exported = await database.allEntries()
+		#expect(exported.count == 25_000)
+		#expect(exported.first?.errorMessage.hasPrefix("0:") == true)
+		#expect(exported.map(\.id) == exported.map(\.id).sorted())
+		let url = try ErrorLogTextFormatter.writeDiagnosticsFile(entries: exported, header: "NetNewsWire Diagnostics\nCommit: test-build")
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let text = try String(contentsOf: url, encoding: .utf8)
+		#expect(text.hasPrefix("NetNewsWire Diagnostics\nCommit: test-build\n\n"))
+		#expect(text.components(separatedBy: "] Test: ").count - 1 == 25_000)
+		#expect(text.range(of: "Test: 0:")!.lowerBound < text.range(of: "Test: 24999:")!.lowerBound)
+		await database.clearEntries()
+		#expect(await database.entries(limit: 200, beforeID: page.last?.id).isEmpty)
+		#expect(await database.entryCount() == 0)
+	}
+
+	@Test func performanceDiagnosticsAreBoundedAndTrackActivePhase() {
+		PerformanceDiagnosticLog.beginTestingSession(maximumEvents: 3)
+		let interval = PerformanceDiagnosticLog.begin("Sorting")
+		#expect(PerformanceDiagnosticLog.currentPhase == "Sorting")
+		PerformanceDiagnosticLog.end(interval)
+		PerformanceDiagnosticLog.event(operation: "Ignored", message: "over capacity")
+
+		#expect(PerformanceDiagnosticLog.currentPhase == "idle")
+		#expect(PerformanceDiagnosticLog.stateForTesting.sequence == 3)
+		#expect(PerformanceDiagnosticLog.stateForTesting.remainingEvents == 0)
+	}
 }

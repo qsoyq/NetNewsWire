@@ -51,7 +51,7 @@ public extension FMDatabase {
 		}
 	}
 
-	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "FMDatabase")
+	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "RSDatabase", category: "FMDatabase")
 
 	func vacuum() {
 		let shortName: String

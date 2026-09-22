@@ -6,65 +6,108 @@
 //
 
 import SwiftUI
+import UIKit
 import Account
 import ErrorLog
 
 struct ErrorLogView: View {
 
+	private static let pageSize = 200
+
 	@State private var entries = [ErrorLogEntry]()
-	@State private var plainText = ""
+	@State private var totalCount = 0
+	@State private var isLoading = false
+	@State private var isExporting = false
+	@State private var shareURL: URL?
+	@State private var isShareSheetPresented = false
+	@State private var exportError: String?
 
 	var body: some View {
 		Group {
-			if entries.isEmpty {
+			if isLoading && entries.isEmpty {
+				ProgressView("Loading Error Log…")
+			} else if entries.isEmpty {
 				ContentUnavailableView("No Errors Logged", systemImage: "checkmark.circle")
 			} else {
-				VStack(spacing: 0) {
-					privacyWarning
-					Divider()
-					ScrollView {
-						Text(buildAttributedString(entries))
-							.font(.system(.body, design: .monospaced))
-							.textSelection(.enabled)
-							.frame(maxWidth: .infinity, alignment: .leading)
-							.padding()
+				List {
+					Section {
+						privacyWarning
+					}
+					Section {
+						ForEach(entries, id: \.id) { entry in
+							ErrorLogEntryRow(entry: entry)
+						}
+						if entries.count < totalCount {
+							Button {
+								Task { await loadEarlierEntries() }
+							} label: {
+								HStack {
+									Spacer()
+									if isLoading {
+										ProgressView()
+									} else {
+										Text("Load Earlier Entries")
+									}
+									Spacer()
+								}
+							}
+							.disabled(isLoading)
+						}
+					} header: {
+						Text("Showing \(entries.count) of \(totalCount), newest first")
 					}
 				}
+				.listStyle(.plain)
 			}
 		}
 		.navigationTitle("Error Log")
 		.toolbar {
 			ToolbarItem(placement: .topBarTrailing) {
-				Button("Clear", role: .destructive) {
-					Task {
-						await AccountManager.shared.errorLogDatabase.clearEntries()
-						entries = []
-						plainText = ""
-					}
+				Button("Refresh", systemImage: "arrow.clockwise") {
+					Task { await reloadLatestEntries() }
 				}
-				.disabled(entries.isEmpty)
+				.disabled(isLoading || isExporting)
+			}
+			ToolbarItem(placement: .topBarTrailing) {
+				Button("Clear", role: .destructive) {
+					Task { await clearEntries() }
+				}
+				.disabled(entries.isEmpty || isLoading || isExporting)
 			}
 			if #available(iOS 26.0, *) {
 				ToolbarSpacer(.fixed, placement: .topBarTrailing)
 			}
 			ToolbarItem(placement: .topBarTrailing) {
-				Button("Copy Contents") {
-					UIPasteboard.general.string = plainText
+				Button("Copy Recent") {
+					Task { await copyLoadedEntries() }
 				}
-				.disabled(entries.isEmpty)
+				.disabled(entries.isEmpty || isExporting)
+			}
+			ToolbarItem(placement: .topBarTrailing) {
+				Button {
+					Task { await exportDiagnostics() }
+				} label: {
+					if isExporting {
+						ProgressView()
+					} else {
+						Label("Share Diagnostics", systemImage: "square.and.arrow.up")
+					}
+				}
+				.disabled(entries.isEmpty || isExporting)
 			}
 		}
 		.task {
-			let allEntries = await AccountManager.shared.errorLogDatabase.allEntries()
-			entries = allEntries
-			plainText = buildPlainText(entries)
+			await reloadLatestEntries()
 		}
-		.onReceive(NotificationCenter.default.publisher(for: .appDidEncounterError)) { notification in
-			guard let entry = errorLogEntry(from: notification) else {
-				return
+		.sheet(isPresented: $isShareSheetPresented) {
+			if let shareURL {
+				ActivityViewController(activityItems: [shareURL])
 			}
-			entries.append(entry)
-			plainText = buildPlainText(entries)
+		}
+		.alert("Unable to Export Diagnostics", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
+			Button("OK", role: .cancel) { exportError = nil }
+		} message: {
+			Text(exportError ?? "")
 		}
 	}
 
@@ -72,115 +115,145 @@ struct ErrorLogView: View {
 		Text("Errors may contain feed URLs and other information you may not want to share publicly.")
 			.font(.footnote)
 			.foregroundStyle(.secondary)
-			.padding()
 	}
 }
 
-// MARK: - Private
+// MARK: - Actions
 
 private extension ErrorLogView {
 
-	static let dateFormatter: DateFormatter = {
-		let formatter = DateFormatter()
-		formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-		return formatter
-	}()
-
-	func buildAttributedString(_ entries: [ErrorLogEntry]) -> AttributedString {
-		var result = AttributedString()
-		for entry in entries {
-			result.append(attributedString(for: entry))
-		}
-		return result
+	func reloadLatestEntries() async {
+		guard !isLoading else { return }
+		isLoading = true
+		async let latestEntries = AccountManager.shared.errorLogDatabase.entries(limit: Self.pageSize)
+		async let count = AccountManager.shared.errorLogDatabase.entryCount()
+		entries = await latestEntries
+		totalCount = await count
+		isLoading = false
 	}
 
-	func attributedString(for entry: ErrorLogEntry) -> AttributedString {
-		var timestamp = AttributedString("[\(Self.dateFormatter.string(from: entry.date))] [\(entry.level.name)] ")
-		timestamp.foregroundColor = .secondary
-
-		let sourceString: String
-		if entry.operation.isEmpty {
-			sourceString = "\(entry.sourceName): "
-		} else {
-			sourceString = "\(entry.sourceName) — \(entry.operation): "
-		}
-		var source = AttributedString(sourceString)
-		source.foregroundColor = color(for: entry.sourceID)
-		source.font = .system(.body, design: .monospaced).weight(.medium)
-
-		var message = AttributedString(entry.errorMessage)
-		message.foregroundColor = .primary
-
-		var result = timestamp
-		result.append(source)
-		result.append(message)
-
-		if !entry.functionName.isEmpty {
-			var location = AttributedString(" (\(entry.fileName):\(entry.functionName):\(entry.lineNumber))")
-			location.foregroundColor = Color(uiColor: .tertiaryLabel)
-			result.append(location)
-		}
-
-		result.append(AttributedString("\n\n"))
-		return result
+	func loadEarlierEntries() async {
+		guard !isLoading, let beforeID = entries.last?.id else { return }
+		isLoading = true
+		let olderEntries = await AccountManager.shared.errorLogDatabase.entries(limit: Self.pageSize, beforeID: beforeID)
+		entries.append(contentsOf: olderEntries)
+		isLoading = false
 	}
 
-	func buildPlainText(_ entries: [ErrorLogEntry]) -> String {
-		var result = ""
-		for entry in entries {
-			result += "[\(Self.dateFormatter.string(from: entry.date))] [\(entry.level.name)] "
-			if entry.operation.isEmpty {
-				result += "\(entry.sourceName): "
-			} else {
-				result += "\(entry.sourceName) — \(entry.operation): "
-			}
-			result += entry.errorMessage
+	func clearEntries() async {
+		guard !isLoading else { return }
+		isLoading = true
+		await AccountManager.shared.errorLogDatabase.clearEntries()
+		entries = []
+		totalCount = 0
+		isLoading = false
+	}
+
+	func exportDiagnostics() async {
+		guard !isExporting else { return }
+		isExporting = true
+		defer { isExporting = false }
+		let database = AccountManager.shared.errorLogDatabase
+		let header = diagnosticsHeader()
+		do {
+			shareURL = try await Task.detached(priority: .userInitiated) {
+				let allEntries = await database.allEntries()
+				return try ErrorLogTextFormatter.writeDiagnosticsFile(entries: allEntries, header: header)
+			}.value
+			isShareSheetPresented = true
+		} catch {
+			exportError = error.localizedDescription
+		}
+	}
+
+	func copyLoadedEntries() async {
+		guard !isExporting else { return }
+		isExporting = true
+		defer { isExporting = false }
+		let loadedEntries = entries
+		let header = diagnosticsHeader()
+		UIPasteboard.general.string = await Task.detached(priority: .userInitiated) {
+			ErrorLogTextFormatter.diagnosticsText(entries: loadedEntries, header: header)
+		}.value
+	}
+}
+
+// MARK: - Rows
+
+private struct ErrorLogEntryRow: View {
+
+	let entry: ErrorLogEntry
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 6) {
+			Text("[\(ErrorLogTextFormatter.timestamp(entry.date))] [\(entry.level.name)]")
+				.font(.caption.monospaced())
+				.foregroundStyle(.secondary)
+			Text(sourceText)
+				.font(.body.monospaced().weight(.medium))
+				.foregroundStyle(color)
+			Text(entry.errorMessage)
+				.font(.body.monospaced())
+				.textSelection(.enabled)
 			if !entry.functionName.isEmpty {
-				result += " (\(entry.fileName):\(entry.functionName):\(entry.lineNumber))"
+				Text("\(entry.fileName):\(entry.functionName):\(entry.lineNumber)")
+					.font(.caption2.monospaced())
+					.foregroundStyle(.tertiary)
 			}
-			result += "\n\n"
 		}
-		return result
+		.padding(.vertical, 4)
 	}
 
-	func color(for sourceID: Int) -> Color {
-		guard let type = AccountType(rawValue: sourceID) else {
+	private var sourceText: String {
+		entry.operation.isEmpty ? entry.sourceName : "\(entry.sourceName) — \(entry.operation)"
+	}
+
+	private var color: Color {
+		guard let type = AccountType(rawValue: entry.sourceID) else {
 			return .secondary
 		}
-
 		switch type {
-		case .onMyMac:
-			return .secondary
-		case .cloudKit:
-			return .purple
-		case .feedly:
-			return .green
-		case .feedbin:
-			return .blue
-		case .newsBlur:
-			return .orange
-		case .freshRSS:
-			return .teal
-		case .inoreader:
-			return .brown
-		case .bazQux:
-			return .indigo
-		case .theOldReader:
-			return .pink
+		case .onMyMac: return Color.secondary
+		case .cloudKit: return Color.purple
+		case .feedly: return Color.green
+		case .feedbin: return Color.blue
+		case .newsBlur: return Color.orange
+		case .freshRSS: return Color.teal
+		case .inoreader: return Color.brown
+		case .bazQux: return Color.indigo
+		case .theOldReader: return Color.pink
 		}
 	}
+}
 
-	func errorLogEntry(from notification: Notification) -> ErrorLogEntry? {
-		guard let errorMessage = notification.userInfo?[ErrorLogUserInfoKey.errorMessage] as? String,
-			  let sourceName = notification.userInfo?[ErrorLogUserInfoKey.sourceName] as? String,
-			  let sourceID = notification.userInfo?[ErrorLogUserInfoKey.sourceID] as? Int else {
-			return nil
-		}
-		let operation = notification.userInfo?[ErrorLogUserInfoKey.operation] as? String ?? ""
-		let fileName = notification.userInfo?[ErrorLogUserInfoKey.fileName] as? String ?? ""
-		let functionName = notification.userInfo?[ErrorLogUserInfoKey.functionName] as? String ?? ""
-		let lineNumber = notification.userInfo?[ErrorLogUserInfoKey.lineNumber] as? Int ?? 0
+// MARK: - Export
 
-		return ErrorLogEntry(id: 0, date: Date(), sourceName: sourceName, sourceID: sourceID, operation: operation, fileName: fileName, functionName: functionName, lineNumber: lineNumber, errorMessage: errorMessage)
+private extension ErrorLogView {
+
+	@MainActor func diagnosticsHeader() -> String {
+		let info = Bundle.main.infoDictionary ?? [:]
+		let version = info["CFBundleShortVersionString"] as? String ?? "unknown"
+		let build = info["CFBundleVersion"] as? String ?? "unknown"
+		let commit = info["NNWGitCommit"] as? String ?? "unknown"
+		return """
+		NetNewsWire Diagnostics
+		Generated: \(ErrorLogTextFormatter.timestamp(Date()))
+		Version: \(version) (\(build))
+		Commit: \(commit)
+		Device: \(UIDevice.current.model)
+		System: \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)
+		"""
+	}
+}
+
+private struct ActivityViewController: UIViewControllerRepresentable {
+
+	let activityItems: [Any]
+
+	func makeUIViewController(context: Context) -> UIActivityViewController {
+		UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+	}
+
+	func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
 	}
 }

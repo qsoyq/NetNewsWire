@@ -41,6 +41,14 @@ public actor ErrorLogDatabase {
 		ErrorLogTable.allEntries(database: database)
 	}
 
+	public func entries(limit: Int, beforeID: Int? = nil) -> [ErrorLogEntry] {
+		ErrorLogTable.entries(limit: limit, beforeID: beforeID, database: database)
+	}
+
+	public func entryCount() -> Int {
+		ErrorLogTable.entryCount(database: database)
+	}
+
 	public func clearEntries() {
 		ErrorLogTable.deleteAllEntries(database: database)
 		database.vacuum()

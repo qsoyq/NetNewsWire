@@ -136,7 +136,6 @@ extension FavoriteFeedsFolder: ArticleFetcher {
 	}
 
 	func fetchUnreadArticlesAsync() async throws -> Set<Article> {
-		let articles = try await fetchArticlesAsync()
-		return articles.unreadArticles()
+		try await FavoriteFeedsController.shared.fetchUnreadArticlesAsync(for: aliases)
 	}
 }
