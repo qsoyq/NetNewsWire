@@ -8,7 +8,6 @@
 
 import Foundation
 import os
-import os
 import SQLite3
 import RSDatabaseObjC
 
@@ -17,9 +16,33 @@ import RSDatabaseObjC
 /// On iOS, the queue can be suspended
 /// in order to support background refreshing.
 public final class DatabaseQueue: Sendable {
+	private enum LifecycleState {
+		case active
+		case suspended
+		case resuming(Int)
+	}
+
+	private struct ResumeRequest: @unchecked Sendable {
+		let database: FMDatabase
+		let generation: Int
+	}
+
+	private enum ResumeAction: @unchecked Sendable {
+		case completeImmediately
+		case alreadyResuming
+		case start(ResumeRequest)
+	}
+
+	private struct ResumeResult: Sendable {
+		let didResume: Bool
+		let completions: [@Sendable () -> Void]
+	}
+
 	private struct State: @unchecked Sendable {
 		var isCallingDatabase = false
-		var isSuspended = false
+		var lifecycleState = LifecycleState.active
+		var lifecycleGeneration = 0
+		var resumeCompletions = [@Sendable () -> Void]()
 		let database: FMDatabase
 
 		init(_ database: FMDatabase) {
@@ -30,19 +53,34 @@ public final class DatabaseQueue: Sendable {
 	private let state: OSAllocatedUnfairLock<State>
 	private let databasePath: String
 	private let serialDispatchQueue: DispatchQueue
+	private let resumeDispatchQueue: DispatchQueue
+	private let supportsSuspension: Bool
+	private let databaseOpener: @Sendable (FMDatabase) -> Void
 
 	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "DatabaseQueue")
 
-	public init(databasePath: String) {
+	public convenience init(databasePath: String) {
+		#if os(iOS)
+		let supportsSuspension = true
+		#else
+		let supportsSuspension = false
+		#endif
+		self.init(databasePath: databasePath, supportsSuspension: supportsSuspension, databaseOpener: Self.openDatabase)
+	}
+
+	init(databasePath: String, supportsSuspension: Bool, databaseOpener: @escaping @Sendable (FMDatabase) -> Void) {
 		Self.logger.debug("DatabaseQueue: creating with database path \(databasePath)")
 
 		self.serialDispatchQueue = DispatchQueue(label: "DatabaseQueue (Serial) - \(databasePath)")
+		self.resumeDispatchQueue = DispatchQueue(label: "DatabaseQueue (Resume) - \(databasePath)", qos: .userInitiated)
 
 		self.databasePath = databasePath
+		self.supportsSuspension = supportsSuspension
+		self.databaseOpener = databaseOpener
 		let database = FMDatabase(path: databasePath)!
 		self.state = OSAllocatedUnfairLock(initialState: State(database))
 
-		self.state.withLock { openDatabase($0.database) }
+		databaseOpener(database)
 	}
 
 	// MARK: - Suspend and Resume
@@ -55,37 +93,101 @@ public final class DatabaseQueue: Sendable {
 	///
 	/// On Mac, suspend() and resume() are no-ops, since there isn’t a need for them.
 	public func suspend() {
-		#if os(iOS)
+		guard supportsSuspension else {
+			return
+		}
 		Self.logger.info("DatabaseQueue: suspending")
 		state.withLock { state in
-			guard !state.isSuspended else {
+			switch state.lifecycleState {
+			case .suspended:
 				Self.logger.info("DatabaseQueue: suspend skipped because already suspended")
-				return
+			case .active:
+				state.lifecycleGeneration += 1
+				state.lifecycleState = .suspended
+				state.resumeCompletions.removeAll()
+				serialDispatchQueue.suspend()
+				state.database.close()
+			case .resuming:
+				// The serial queue is still suspended while the database is reopening.
+				// Advancing the generation makes that in-flight reopen stale.
+				state.lifecycleGeneration += 1
+				state.lifecycleState = .suspended
+				state.resumeCompletions.removeAll()
 			}
-
-			state.isSuspended = true
-			serialDispatchQueue.suspend()
-			state.database.close()
 		}
-		#endif
 	}
 
-	/// Open the SQLite database. Allow database calls again.
-	/// iOS only — does nothing on macOS.
-	public func resume() {
-		#if os(iOS)
-		Self.logger.info("DatabaseQueue: resuming")
-		state.withLock { state in
-			guard state.isSuspended else {
+	/// Open the SQLite database away from the caller's thread, then allow queued database calls again.
+	/// iOS only — on macOS the optional completion is called immediately.
+	public func resume(completion: (@Sendable () -> Void)? = nil) {
+		guard supportsSuspension else {
+			completion?()
+			return
+		}
+
+		let action = state.withLock { state -> ResumeAction in
+			switch state.lifecycleState {
+			case .active:
 				Self.logger.info("DatabaseQueue: resume skipped because already resumed")
-				return
+				return .completeImmediately
+			case .resuming:
+				if let completion {
+					state.resumeCompletions.append(completion)
+				}
+				return .alreadyResuming
+			case .suspended:
+				Self.logger.info("DatabaseQueue: scheduling resume")
+				let generation = state.lifecycleGeneration
+				state.lifecycleState = .resuming(generation)
+				if let completion {
+					state.resumeCompletions.append(completion)
+				}
+				return .start(ResumeRequest(database: state.database, generation: generation))
+			}
+		}
+
+		switch action {
+		case .completeImmediately:
+			completion?()
+			return
+		case .alreadyResuming:
+			return
+		case .start(let request):
+			resumeDispatchQueue.async { [self, request] in
+				performResume(request)
+			}
+		}
+	}
+
+	private func performResume(_ request: ResumeRequest) {
+		let startTime = CFAbsoluteTimeGetCurrent()
+		databaseOpener(request.database)
+
+		let result = state.withLock { state -> ResumeResult in
+			guard case .resuming(let generation) = state.lifecycleState,
+				  generation == request.generation,
+				  state.lifecycleGeneration == request.generation else {
+				return ResumeResult(didResume: false, completions: [])
 			}
 
-			state.isSuspended = false
-			openDatabase(state.database)
+			state.lifecycleState = .active
+			let completions = state.resumeCompletions
+			state.resumeCompletions.removeAll()
 			serialDispatchQueue.resume()
+			return ResumeResult(didResume: true, completions: completions)
 		}
-		#endif
+
+		guard result.didResume else {
+			request.database.close()
+			Self.logger.info("DatabaseQueue: discarded stale resume")
+			return
+		}
+
+		let duration = CFAbsoluteTimeGetCurrent() - startTime
+		Self.logger.info("DatabaseQueue: resume completed in \(duration, format: .fixed(precision: 3)) seconds")
+		for completion in result.completions {
+			completion()
+		}
 	}
 
 	// MARK: - Make Database Calls
@@ -95,24 +197,24 @@ public final class DatabaseQueue: Sendable {
 	/// the DatabaseBlock *and* depending on how many other calls have been
 	/// scheduled on the queue. Use sparingly — prefer async versions.
 	public func runInDatabaseSync(_ databaseBlock: DatabaseBlock) {
-		guard enqueueDatabaseCall(databaseBlock) else {
+		guard let lifecycleGeneration = enqueueDatabaseCall(databaseBlock) else {
 			return
 		}
 		serialDispatchQueue.sync {
 			self.state.withLock { state in
-				self._runInDatabase(&state, databaseBlock, false)
+				self._runInDatabase(&state, databaseBlock, false, lifecycleGeneration)
 			}
 		}
 	}
 
 	/// Run a DatabaseBlock asynchronously.
 	public func runInDatabase(_ databaseBlock: @escaping DatabaseBlock) {
-		guard enqueueDatabaseCall(databaseBlock) else {
+		guard let lifecycleGeneration = enqueueDatabaseCall(databaseBlock) else {
 			return
 		}
 		serialDispatchQueue.async {
 			self.state.withLock { state in
-				self._runInDatabase(&state, databaseBlock, false)
+				self._runInDatabase(&state, databaseBlock, false, lifecycleGeneration)
 			}
 		}
 	}
@@ -122,12 +224,12 @@ public final class DatabaseQueue: Sendable {
 	/// Nevertheless, it’s best to avoid this because it will block the main thread —
 	/// prefer the async `runInTransaction` instead.
 	public func runInTransactionSync(_ databaseBlock: @escaping DatabaseBlock) {
-		guard enqueueDatabaseCall(databaseBlock) else {
+		guard let lifecycleGeneration = enqueueDatabaseCall(databaseBlock) else {
 			return
 		}
 		serialDispatchQueue.sync {
 			self.state.withLock { state in
-				self._runInDatabase(&state, databaseBlock, true)
+				self._runInDatabase(&state, databaseBlock, true, lifecycleGeneration)
 			}
 		}
 	}
@@ -135,12 +237,12 @@ public final class DatabaseQueue: Sendable {
 	/// Run a DatabaseBlock wrapped in a transaction asynchronously.
 	/// Transactions help performance significantly when updating the database.
 	public func runInTransaction(_ databaseBlock: @escaping DatabaseBlock) {
-		guard enqueueDatabaseCall(databaseBlock) else {
+		guard let lifecycleGeneration = enqueueDatabaseCall(databaseBlock) else {
 			return
 		}
 		serialDispatchQueue.async {
 			self.state.withLock { state in
-				self._runInDatabase(&state, databaseBlock, true)
+				self._runInDatabase(&state, databaseBlock, true, lifecycleGeneration)
 			}
 		}
 	}
@@ -214,19 +316,26 @@ public final class DatabaseQueue: Sendable {
 
 private extension DatabaseQueue {
 
-	func enqueueDatabaseCall(_ databaseBlock: DatabaseBlock) -> Bool {
-		#if os(iOS)
-		let isSuspended = state.withLock { $0.isSuspended }
-		if isSuspended {
+	func enqueueDatabaseCall(_ databaseBlock: DatabaseBlock) -> Int? {
+		let lifecycleGeneration = state.withLock { state -> Int? in
+			guard supportsSuspension else {
+				return state.lifecycleGeneration
+			}
+			switch state.lifecycleState {
+			case .active, .resuming:
+				return state.lifecycleGeneration
+			case .suspended:
+				return nil
+			}
+		}
+		if lifecycleGeneration == nil {
 			Self.logger.debug("DatabaseQueue: skipped call because queue is suspended")
 			databaseBlock(.failure(.isSuspended))
-			return false
 		}
-		#endif
-		return true
+		return lifecycleGeneration
 	}
 
-	private func _runInDatabase(_ state: inout State, _ databaseBlock: DatabaseBlock, _ useTransaction: Bool) {
+	private func _runInDatabase(_ state: inout State, _ databaseBlock: DatabaseBlock, _ useTransaction: Bool, _ lifecycleGeneration: Int) {
 		precondition(!state.isCallingDatabase)
 
 		state.isCallingDatabase = true
@@ -235,21 +344,22 @@ private extension DatabaseQueue {
 		}
 
 		autoreleasepool {
-			if state.isSuspended {
+			guard case .active = state.lifecycleState,
+				  state.lifecycleGeneration == lifecycleGeneration else {
 				databaseBlock(.failure(.isSuspended))
-			} else {
-				if useTransaction {
-					state.database.beginTransaction()
-				}
-				databaseBlock(.success(state.database))
-				if useTransaction {
-					state.database.commit()
-				}
+				return
+			}
+			if useTransaction {
+				state.database.beginTransaction()
+			}
+			databaseBlock(.success(state.database))
+			if useTransaction {
+				state.database.commit()
 			}
 		}
 	}
 
-	func openDatabase(_ database: FMDatabase) {
+	static func openDatabase(_ database: FMDatabase) {
 		database.open()
 		database.executeStatements("PRAGMA synchronous = 1;")
 		database.setShouldCacheStatements(true)

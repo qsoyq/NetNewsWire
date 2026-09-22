@@ -203,7 +203,7 @@ private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> 
 		if AccountManager.shared.isSuspended {
 			NotificationActionLog.log(.info, operation: "Lifecycle", message: "Resuming databases; refreshInProgress=\(AccountManager.shared.refreshInProgress); isWaitingForSyncTasks=\(isWaitingForSyncTasks)")
 			AccountManager.shared.resumeAll()
-			Self.logger.info("Application processing resumed.")
+			Self.logger.info("Application database resume scheduled.")
 		}
 	}
 

@@ -278,12 +278,25 @@ import ErrorLog
 	}
 
 	public func resumeAll() {
+		let startTime = CFAbsoluteTimeGetCurrent()
+		let accounts = self.accounts
+		let accountCount = accounts.count
+		var pendingDatabaseResumes = accountCount
 		isSuspended = false
 		for account in accounts {
-			account.resumeDatabaseAndDelegate()
+			account.resumeDatabaseAndDelegate {
+				pendingDatabaseResumes -= 1
+				if pendingDatabaseResumes == 0 {
+					let duration = CFAbsoluteTimeGetCurrent() - startTime
+					Self.logger.info("Resumed databases for \(accountCount) accounts in \(duration, format: .fixed(precision: 3)) seconds")
+				}
+			}
 		}
 		for account in accounts {
 			account.resume()
+		}
+		if accountCount == 0 {
+			Self.logger.info("Resumed databases for 0 accounts")
 		}
 	}
 
@@ -661,4 +674,3 @@ private struct AccountSpecifier {
 		return NSString(string: folderPath).appendingPathComponent(accountDataFileName)
 	}
 }
-

@@ -47,6 +47,7 @@ public struct ArticleChanges: Sendable {
 	private let operationQueue = MainThreadOperationQueue()
 	private let retentionStyle: RetentionStyle
 	private let accountID: String
+	private var resumeGeneration = 0
 
 	nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "ArticlesDatabase")
 
@@ -360,15 +361,25 @@ public struct ArticleChanges: Sendable {
 	/// Any pending calls will complete first.
 	@MainActor public func suspend() {
 		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
+		resumeGeneration += 1
 		operationQueue.suspend()
 		queue.suspend()
 	}
 
 	/// Open the database and allow for running database calls again.
-	@MainActor public func resume() {
+	@MainActor public func resume(completion: (@MainActor @Sendable () -> Void)? = nil) {
 		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
-		queue.resume()
-		operationQueue.resume()
+		resumeGeneration += 1
+		let generation = resumeGeneration
+		queue.resume { [weak self] in
+			Task { @MainActor in
+				guard let self, self.resumeGeneration == generation else {
+					return
+				}
+				self.operationQueue.resume()
+				completion?()
+			}
+		}
 	}
 #endif
 

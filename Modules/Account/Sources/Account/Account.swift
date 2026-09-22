@@ -518,9 +518,11 @@ public enum FetchType {
 
 	/// Re-open the SQLite database and allow database calls.
 	/// Call this *before* calling resume.
-	public func resumeDatabaseAndDelegate() {
+	public func resumeDatabaseAndDelegate(completion: (@MainActor @Sendable () -> Void)? = nil) {
 		#if os(iOS)
-		database.resume()
+		database.resume(completion: completion)
+		#else
+		completion?()
 		#endif
 		delegate.resume(account: self)
 	}
