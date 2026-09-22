@@ -124,19 +124,11 @@ struct FavoriteFolderRecord: Codable, Equatable, Sendable {
 extension FavoriteFeedsFolder: ArticleFetcher {
 
 	func fetchArticles() throws -> Set<Article> {
-		var articles = Set<Article>()
-		for alias in aliases {
-			articles.formUnion(try alias.fetchArticles())
-		}
-		return articles
+		try FavoriteFeedsController.shared.fetchArticles(for: aliases)
 	}
 
 	func fetchArticlesAsync() async throws -> Set<Article> {
-		var articles = Set<Article>()
-		for alias in aliases {
-			articles.formUnion(try await alias.fetchArticlesAsync())
-		}
-		return articles
+		try await FavoriteFeedsController.shared.fetchArticlesAsync(for: aliases)
 	}
 
 	func fetchUnreadArticles() throws -> Set<Article> {

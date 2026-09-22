@@ -792,6 +792,21 @@ public enum FetchType {
 		}
 	}
 
+	/// Fetches articles for the given feeds in SQLite-safe batches.
+	///
+	/// Callers that already know the feed IDs should use this rather than issuing one
+	/// fetch per feed. This preserves the unread-count validation performed by the
+	/// other aggregate fetch paths.
+	public func fetchArticles(feedIDs: Set<String>) throws -> Set<Article> {
+		let feeds = Set(feedIDs.compactMap { existingFeed(withFeedID: $0) })
+		var articles = Set<Article>()
+		for feedIDBatch in Self.articleFetchFeedIDBatches(feedIDs) {
+			articles.formUnion(try database.fetchArticles(feedIDs: feedIDBatch))
+		}
+		validateUnreadCountsAfterFetchingUnreadArticles(feeds: feeds, articles: articles)
+		return articles
+	}
+
 	public func fetchArticlesAsync(_ fetchType: FetchType) async throws -> Set<Article> {
 		switch fetchType {
 		case .starred(let limit):
@@ -815,6 +830,17 @@ public enum FetchType {
 		case .searchWithArticleIDs(let searchString, let articleIDs):
 			return try await _fetchArticlesMatchingWithArticleIDsAsync(searchString: searchString, articleIDs: articleIDs)
 		}
+	}
+
+	/// Asynchronously fetches articles for the given feeds in SQLite-safe batches.
+	public func fetchArticlesAsync(feedIDs: Set<String>) async throws -> Set<Article> {
+		let feeds = Set(feedIDs.compactMap { existingFeed(withFeedID: $0) })
+		var articles = Set<Article>()
+		for feedIDBatch in Self.articleFetchFeedIDBatches(feedIDs) {
+			articles.formUnion(try await database.fetchArticlesAsync(feedIDs: feedIDBatch))
+		}
+		validateUnreadCountsAfterFetchingUnreadArticles(feeds: feeds, articles: articles)
+		return articles
 	}
 
 	public func fetchUnreadCountForStarredArticlesAsync() async throws -> Int? {
@@ -1135,6 +1161,20 @@ public enum FetchType {
 // MARK: - Fetching Articles (Private)
 
 private extension Account {
+
+	static let maximumFeedIDsPerArticleFetch = 900
+
+	static func articleFetchFeedIDBatches(_ feedIDs: Set<String>) -> [Set<String>] {
+		let feedIDArray = Array(feedIDs)
+		guard !feedIDArray.isEmpty else {
+			return []
+		}
+
+		return stride(from: 0, to: feedIDArray.count, by: maximumFeedIDsPerArticleFetch).map { start in
+			let end = min(start + maximumFeedIDsPerArticleFetch, feedIDArray.count)
+			return Set(feedIDArray[start..<end])
+		}
+	}
 
 	// MARK: - Credential Errors
 

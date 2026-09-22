@@ -348,17 +348,25 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 	}
 
 	func fetchArticles() throws -> Set<Article> {
+		try fetchArticles(for: aliases)
+	}
+
+	func fetchArticles(for aliases: [FavoriteFeedAlias]) throws -> Set<Article> {
 		var articles = Set<Article>()
-		for feed in resolvedFeeds() {
-			articles.formUnion(try feed.fetchArticles())
+		for (account, feedIDs) in feedIDsByAccount(for: aliases) {
+			articles.formUnion(try account.fetchArticles(feedIDs: feedIDs))
 		}
 		return articles
 	}
 
 	func fetchArticlesAsync() async throws -> Set<Article> {
+		try await fetchArticlesAsync(for: aliases)
+	}
+
+	func fetchArticlesAsync(for aliases: [FavoriteFeedAlias]) async throws -> Set<Article> {
 		var articles = Set<Article>()
-		for feed in resolvedFeeds() {
-			articles.formUnion(try await feed.fetchArticlesAsync())
+		for (account, feedIDs) in feedIDsByAccount(for: aliases) {
+			articles.formUnion(try await account.fetchArticlesAsync(feedIDs: feedIDs))
 		}
 		return articles
 	}
@@ -402,6 +410,23 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 }
 
 private extension FavoriteFeedsController {
+
+	func feedIDsByAccount(for aliases: [FavoriteFeedAlias]) -> [(Account, Set<String>)] {
+		var feedIDsByAccountID = [String: Set<String>]()
+		for alias in aliases {
+			guard let feed = alias.feed else {
+				continue
+			}
+			feedIDsByAccountID[feed.accountID, default: []].insert(feed.feedID)
+		}
+
+		return feedIDsByAccountID.compactMap { accountID, feedIDs in
+			guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
+				return nil
+			}
+			return (account, feedIDs)
+		}
+	}
 
 	static func loadKeys(from defaults: UserDefaults, storageKey: String) -> Set<FavoriteFeedKey> {
 		guard let data = defaults.data(forKey: storageKey) else {
