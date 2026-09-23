@@ -567,7 +567,7 @@ private extension AppDelegate {
 			let matchingCount = matchingNotifications.count
 			let parsedCount = groupReferences.count
 
-			Task { @MainActor [weak self] in
+			Task { @MainActor [weak self = self] in
 				guard let self else {
 					completion()
 					return

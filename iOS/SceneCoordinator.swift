@@ -2495,34 +2495,14 @@ private extension SceneCoordinator {
 		}
 
 		fetchUnsortedArticlesAsync(for: [timelineFeed]) { [weak self] (unsortedArticles) in
-			// Merge articles by articleID. For any unique articleID in current articles, add to unsortedArticles.
 			guard let strongSelf = self else {
 				return
 			}
 			let mergeInterval = PerformanceDiagnosticLog.begin("Timeline merge", details: "fetched_count=\(unsortedArticles.count) existing_count=\(strongSelf.articles.count)")
-			let hidingRead = strongSelf.isReadArticlesFiltered
-			let unsortedArticleIDs = unsortedArticles.articleIDs()
-			var updatedArticles = unsortedArticles
-			var skippedReadCount = 0
-			let displayedArticleID = strongSelf.currentArticle?.articleID
-			let displayedAccountID = strongSelf.currentArticle?.accountID
-			for article in strongSelf.articles {
-				if !unsortedArticleIDs.contains(article.articleID) {
-					let isDisplayedArticle = article.articleID == displayedArticleID && article.accountID == displayedAccountID
-					if hidingRead && article.status.read && !isDisplayedArticle {
-						skippedReadCount += 1
-						continue
-					}
-					updatedArticles.insert(article)
-				}
-				if article.account?.existingFeed(withFeedID: article.feedID) == nil {
-					updatedArticles.remove(article)
-				}
+			let updatedArticles = TimelineArticleMerger.merge(fetchedArticles: unsortedArticles, existingArticles: strongSelf.articles) { article in
+				article.account?.existingFeed(withFeedID: article.feedID) != nil
 			}
-			if skippedReadCount > 0 {
-				NotificationActionLog.log(.debug, operation: "Timeline hide-read", message: "Merge skipped \(skippedReadCount) read articles")
-			}
-			PerformanceDiagnosticLog.end(mergeInterval, details: "result_count=\(updatedArticles.count) skipped_read=\(skippedReadCount)")
+			PerformanceDiagnosticLog.end(mergeInterval, details: "result_count=\(updatedArticles.count)")
 
 			strongSelf.replaceArticles(with: updatedArticles, animated: animated)
 			completion?()

@@ -20,6 +20,20 @@ struct TimelineArticleID: Hashable, Sendable {
 	}
 }
 
+struct TimelineArticleMerger {
+
+	static func merge(fetchedArticles: Set<Article>, existingArticles: [Article], canRetainExistingArticle: (Article) -> Bool) -> Set<Article> {
+		let fetchedArticleIDs = Set(fetchedArticles.map(TimelineArticleID.init))
+		var mergedArticles = fetchedArticles
+
+		for article in existingArticles where !fetchedArticleIDs.contains(TimelineArticleID(article)) && canRetainExistingArticle(article) {
+			mergedArticles.insert(article)
+		}
+
+		return mergedArticles
+	}
+}
+
 // Serializes UI commits while retaining only the latest model when interaction defers an update.
 struct TimelineSnapshotState {
 	private(set) var identifiers = [TimelineArticleID]()

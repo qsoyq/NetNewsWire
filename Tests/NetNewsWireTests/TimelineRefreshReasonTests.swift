@@ -29,6 +29,46 @@ final class TimelineRefreshReasonTests: XCTestCase {
 		XCTAssertEqual(TimelineArticleID(first), TimelineArticleID(equivalent))
 	}
 
+	func testForegroundMergeRetainsExistingReadArticleMissingFromUnreadFetch() {
+		let readArticle = makeArticle(accountID: "account", articleID: "read", read: true)
+		let fetchedUnreadArticle = makeArticle(accountID: "account", articleID: "unread")
+
+		let merged = TimelineArticleMerger.merge(fetchedArticles: Set([fetchedUnreadArticle]), existingArticles: [readArticle, fetchedUnreadArticle]) { _ in true }
+
+		XCTAssertEqual(Set(merged.map(TimelineArticleID.init)), Set([TimelineArticleID(readArticle), TimelineArticleID(fetchedUnreadArticle)]))
+	}
+
+	func testForegroundMergePrefersFreshlyFetchedArticleWithSameIdentity() throws {
+		let existingArticle = makeArticle(accountID: "account", articleID: "same")
+		let fetchedArticle = makeArticle(accountID: "account", articleID: "same")
+
+		let merged = TimelineArticleMerger.merge(fetchedArticles: Set([fetchedArticle]), existingArticles: [existingArticle]) { _ in true }
+
+		let onlyArticle = try XCTUnwrap(merged.first)
+		XCTAssertEqual(merged.count, 1)
+		XCTAssertTrue(onlyArticle === fetchedArticle)
+	}
+
+	func testForegroundMergeKeepsMatchingArticleIDsFromDifferentAccounts() {
+		let first = makeArticle(accountID: "account-1", articleID: "shared-id")
+		let second = makeArticle(accountID: "account-2", articleID: "shared-id")
+
+		let merged = TimelineArticleMerger.merge(fetchedArticles: [], existingArticles: [first, second]) { _ in true }
+
+		XCTAssertEqual(Set(merged.map(TimelineArticleID.init)), Set([TimelineArticleID(first), TimelineArticleID(second)]))
+	}
+
+	func testForegroundMergeDropsExistingArticleWhoseFeedWasDeleted() {
+		let retained = makeArticle(accountID: "account", articleID: "retained", feedID: "active-feed", read: true)
+		let removed = makeArticle(accountID: "account", articleID: "removed", feedID: "deleted-feed", read: true)
+
+		let merged = TimelineArticleMerger.merge(fetchedArticles: [], existingArticles: [retained, removed]) { article in
+			article.feedID != "deleted-feed"
+		}
+
+		XCTAssertEqual(Set(merged.map(TimelineArticleID.init)), Set([TimelineArticleID(retained)]))
+	}
+
 	func testUnchangedLargeTimelineSkipsSnapshotAndStatusDoesNotChangeIdentity() {
 		let identifiers = (0..<11_000).map { TimelineArticleID(accountID: "account", articleID: String($0)) }
 		var state = TimelineSnapshotState()
@@ -64,11 +104,11 @@ final class TimelineRefreshReasonTests: XCTestCase {
 		XCTAssertFalse(state.requiresSnapshot(latest))
 	}
 
-	private func makeArticle(accountID: String, articleID: String) -> Article {
+	private func makeArticle(accountID: String, articleID: String, feedID: String = "feed", read: Bool = false) -> Article {
 		Article(
 			accountID: accountID,
 			articleID: articleID,
-			feedID: "feed",
+			feedID: feedID,
 			uniqueID: articleID,
 			title: nil,
 			contentHTML: nil,
@@ -81,7 +121,7 @@ final class TimelineRefreshReasonTests: XCTestCase {
 			datePublished: nil,
 			dateModified: nil,
 			authors: nil,
-			status: ArticleStatus(articleID: articleID, read: false, dateArrived: Date())
+			status: ArticleStatus(articleID: articleID, read: read, dateArrived: Date())
 		)
 	}
 }

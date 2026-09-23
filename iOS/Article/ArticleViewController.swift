@@ -637,7 +637,7 @@ extension ArticleViewController: UIContextMenuInteractionDelegate {
 
 		return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
 			let title = NSLocalizedString("Go to Feed", comment: "Go to Feed")
-			let action = UIAction(title: title, image: Assets.Images.openInSidebar) { [weak self] _ in
+			let action = UIAction(title: title, image: Assets.Images.openInSidebar) { [weak self = self] _ in
 				self?.coordinator.discloseFeed(feed, animations: [.scroll, .navigation])
 			}
 			return UIMenu(title: "", children: [action])
