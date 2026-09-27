@@ -39,7 +39,26 @@ struct TimelineSnapshotState {
 	private(set) var identifiers = [TimelineArticleID]()
 	private(set) var isApplying = false
 	private(set) var needsUpdate = false
+	private(set) var pendingScrollResetRevision: Int?
 	private var hasSnapshot = false
+
+	mutating func requestScrollReset(revision: Int) {
+		pendingScrollResetRevision = revision
+	}
+
+	mutating func cancelScrollReset() {
+		pendingScrollResetRevision = nil
+	}
+
+	mutating func consumeScrollReset(appliedRevision: Int?, currentRevision: Int, isInteracting: Bool, isPreparing: Bool) -> Bool {
+		guard let revision = pendingScrollResetRevision,
+			  !isInteracting, !isPreparing, !isApplying, !needsUpdate,
+			  appliedRevision == currentRevision, currentRevision >= revision else {
+			return false
+		}
+		pendingScrollResetRevision = nil
+		return true
+	}
 
 	mutating func requestUpdate(isInteracting: Bool) -> Bool {
 		needsUpdate = true

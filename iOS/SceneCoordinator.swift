@@ -165,6 +165,7 @@ struct SidebarItemNode: Hashable, Sendable {
 	private var exceptionArticleFetcher: ArticleFetcher?
 	private(set) var timelineFeed: SidebarItem? {
 		didSet {
+			mainTimelineViewController?.cancelPendingScrollReset()
 			mainTimelineViewController?.updateNavigationBarTitle(timelineFeed?.nameForDisplay ?? "")
 			updateNavigationBarSubtitles(nil)
 			updateTimelineSortDirection()
@@ -1733,8 +1734,10 @@ private extension SceneCoordinator {
 
 	func markAboveAsReadAndRemoveFromTimeline(_ articles: [Article]) {
 		let removalCandidates = Set(articles)
+		let sidebarItemID = timelineFeed?.sidebarItemID
 		markArticlesWithUndo(articles, statusKey: .read, flag: true, statusChangeHandler: { [weak self] _, statusKey, flag in
-			self?.applyExplicitAboveReadStatusChange(removalCandidates, statusKey: statusKey, flag: flag)
+			guard let self, self.timelineFeed?.sidebarItemID == sidebarItemID else { return }
+			self.applyExplicitAboveReadStatusChange(removalCandidates, statusKey: statusKey, flag: flag)
 		})
 	}
 
@@ -1757,9 +1760,10 @@ private extension SceneCoordinator {
 			let removedCount = articles.count - remaining.count
 			if removedCount > 0 {
 				NotificationActionLog.log(.info, operation: "Timeline explicit hide-read", message: "Removed \(removedCount) articles marked above as read from timeline")
-				replaceArticles(with: remaining, animated: true)
+				replaceArticles(with: remaining, animated: true, resetScroll: true)
 			}
 		} else {
+			mainTimelineViewController?.cancelPendingScrollReset()
 			fetchAndMergeArticlesAsync(animated: true) {
 				self.mainTimelineViewController?.reinitializeArticles(resetScroll: false)
 			}
@@ -2461,9 +2465,9 @@ private extension SceneCoordinator {
 		}
 	}
 
-	func replaceArticles(with sortedArticles: ArticleArray, animated: Bool) {
+	func replaceArticles(with sortedArticles: ArticleArray, animated: Bool, resetScroll: Bool = false) {
 		invalidateTimelinePreparation()
-		commitArticles(sortedArticles, prepared: nil, animated: animated)
+		commitArticles(sortedArticles, prepared: nil, animated: animated, resetScroll: resetScroll)
 	}
 
 	func invalidateTimelinePreparation() {
@@ -2472,7 +2476,7 @@ private extension SceneCoordinator {
 		timelinePreparationTask = nil
 	}
 
-	func commitArticles(_ sortedArticles: ArticleArray, prepared: TimelinePreparedArticles?, animated: Bool) {
+	func commitArticles(_ sortedArticles: ArticleArray, prepared: TimelinePreparedArticles?, animated: Bool, resetScroll: Bool = false) {
 		let didChange = articles != sortedArticles
 		let updateInterval = PerformanceDiagnosticLog.begin("Timeline model update", details: "old_count=\(articles.count) new_count=\(sortedArticles.count) animated=\(animated)")
 		defer {
@@ -2494,7 +2498,7 @@ private extension SceneCoordinator {
 
 			updateShowNamesAndIcons()
 			updateUnreadCount()
-			mainTimelineViewController?.reloadArticles(animated: animated)
+			mainTimelineViewController?.reloadArticles(animated: animated, resetScroll: resetScroll)
 		}
 	}
 

@@ -104,6 +104,80 @@ final class TimelineRefreshReasonTests: XCTestCase {
 		XCTAssertFalse(state.requiresSnapshot(latest))
 	}
 
+	func testAboveReadDeletionResetsScrollOnlyAfterReplacementSnapshotFinishes() {
+		var state = TimelineSnapshotState()
+		let original = (0..<30).map { TimelineArticleID(accountID: "account", articleID: String($0)) }
+		state.beginApply(original)
+		state.finishApply()
+		state.requestScrollReset(revision: 2)
+		XCTAssertTrue(state.requestUpdate(isInteracting: false))
+		state.beginApply(Array(original.dropFirst(20)))
+
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+		state.finishApply()
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 1, currentRevision: 2, isInteracting: false, isPreparing: false))
+		XCTAssertTrue(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+		XCTAssertEqual(state.identifiers.first?.articleID, "20")
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+	}
+
+	func testScrollResetSurvivesGestureAndBackgroundPreparation() {
+		var state = TimelineSnapshotState()
+		state.requestScrollReset(revision: 2)
+		XCTAssertFalse(state.requestUpdate(isInteracting: true))
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: true, isPreparing: false))
+		XCTAssertTrue(state.requestUpdate(isInteracting: false))
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: true, isPreparing: false))
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: true))
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: nil, currentRevision: 2, isInteracting: false, isPreparing: false))
+		XCTAssertTrue(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+	}
+
+	func testScrollResetWaitsForLatestModelWhenAnotherUpdateArrivesDuringApply() {
+		var state = TimelineSnapshotState()
+		state.requestScrollReset(revision: 2)
+		state.beginApply([TimelineArticleID(accountID: "account", articleID: "first")])
+		XCTAssertFalse(state.requestUpdate(isInteracting: false))
+		state.finishApply()
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 3, currentRevision: 3, isInteracting: false, isPreparing: false))
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 3, isInteracting: false, isPreparing: false))
+		XCTAssertTrue(state.requestUpdate(isInteracting: false))
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 3, isInteracting: false, isPreparing: false))
+		XCTAssertTrue(state.consumeScrollReset(appliedRevision: 3, currentRevision: 3, isInteracting: false, isPreparing: false))
+	}
+
+	func testConsecutiveAboveReadActionsCoalesceResetIntoLatestRevision() {
+		var state = TimelineSnapshotState()
+		state.requestScrollReset(revision: 2)
+		state.requestScrollReset(revision: 3)
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+		XCTAssertTrue(state.consumeScrollReset(appliedRevision: 3, currentRevision: 3, isInteracting: false, isPreparing: false))
+		XCTAssertNil(state.pendingScrollResetRevision)
+	}
+
+	func testFeedChangeOrUndoCancelsDeferredScrollResetEvenIfRevisionIsUnchanged() {
+		var state = TimelineSnapshotState()
+		state.requestScrollReset(revision: 2)
+		state.cancelScrollReset()
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+	}
+
+	func testRemovingAllArticlesCanResetEmptySnapshot() {
+		var state = TimelineSnapshotState()
+		state.requestScrollReset(revision: 2)
+		state.beginApply([])
+		state.finishApply()
+		XCTAssertTrue(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+	}
+
+	func testOrdinarySnapshotUpdatesDoNotRequestScrollReset() {
+		var state = TimelineSnapshotState()
+		XCTAssertTrue(state.requestUpdate(isInteracting: false))
+		state.beginApply([TimelineArticleID(accountID: "account", articleID: "unread")])
+		state.finishApply()
+		XCTAssertFalse(state.consumeScrollReset(appliedRevision: 2, currentRevision: 2, isInteracting: false, isPreparing: false))
+	}
+
 	private func makeArticle(accountID: String, articleID: String, feedID: String = "feed", read: Bool = false) -> Article {
 		Article(
 			accountID: accountID,

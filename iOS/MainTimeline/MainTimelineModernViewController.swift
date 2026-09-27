@@ -44,6 +44,7 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	private var preparedSnapshotRevision: Int?
 	private var pendingSnapshotCompletions: [() -> Void]?
 	private var snapshotState = TimelineSnapshotState()
+	private var appliedSnapshotRevision: Int?
 	private var pendingUpdateCheckScheduled = false
 	private var needsVisibleCellReload = false
 	private var isInteractingWithTimeline: Bool {
@@ -338,12 +339,21 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 		restoreSelectionIfNecessary(adjustScroll: false)
 	}
 
-	func reloadArticles(animated: Bool) {
+	func reloadArticles(animated: Bool, resetScroll: Bool = false) {
 		Self.logger.debug("MainTimelineModernViewController: reloadArticles")
 		guard isViewLoaded else {
 			return
 		}
+		if resetScroll {
+			let revision = coordinator?.articlesRevision ?? 0
+			snapshotState.requestScrollReset(revision: revision)
+			PerformanceDiagnosticLog.event(operation: "Timeline scroll reset", message: "requested revision=\(revision)")
+		}
 		applyChanges(animated: animated)
+	}
+
+	func cancelPendingScrollReset() {
+		snapshotState.cancelScrollReset()
 	}
 
 	func updateArticleSelection(animations: Animations) {
@@ -1106,20 +1116,22 @@ extension MainTimelineModernViewController {
 		let updatedArticlesByID = prepared.articlesByID
 		if !snapshotState.requiresSnapshot(identifiers) {
 			articlesByID = updatedArticlesByID
+			appliedSnapshotRevision = revision
 			reloadVisibleCells()
 			PerformanceDiagnosticLog.event(operation: "Timeline snapshot apply", message: "skipped reason=unchanged article_count=\(identifiers.count)")
 			completions.forEach { $0() }
+			applyPendingScrollResetIfNeeded()
 			return
 		}
 		// Keep old items resolvable until UIKit finishes removing their cells.
 		previousArticlesByID = articlesByID
 		articlesByID = updatedArticlesByID
-		applySnapshot(identifiers: identifiers, animated: wasDeferred ? false : animated, completions: [{ [weak self] in
+		applySnapshot(identifiers: identifiers, revision: revision, animated: wasDeferred ? false : animated, completions: [{ [weak self] in
 			self?.previousArticlesByID.removeAll()
 		}] + completions)
 	}
 
-	private func applySnapshot(identifiers: [TimelineArticleID], animated: Bool, completions: [() -> Void]) {
+	private func applySnapshot(identifiers: [TimelineArticleID], revision: Int, animated: Bool, completions: [() -> Void]) {
 		guard let dataSource else {
 			completions.forEach { $0() }
 			return
@@ -1138,8 +1150,12 @@ extension MainTimelineModernViewController {
 			self?.restoreSelectionIfNecessary(adjustScroll: false)
 			completions.forEach { $0() }
 			self?.snapshotState.finishApply()
+			self?.appliedSnapshotRevision = revision
 			self?.needsVisibleCellReload = true
 			self?.applyPendingSnapshotIfNeeded()
+			if self?.snapshotState.pendingScrollResetRevision != nil {
+				self?.schedulePendingUpdateCheck()
+			}
 		}
 	}
 
@@ -1152,6 +1168,24 @@ extension MainTimelineModernViewController {
 			needsVisibleCellReload = false
 			reloadVisibleCells()
 		}
+		applyPendingScrollResetIfNeeded()
+	}
+
+	private func applyPendingScrollResetIfNeeded() {
+		guard snapshotState.pendingScrollResetRevision != nil else { return }
+		guard isReadArticlesFiltered else {
+			cancelPendingScrollReset()
+			return
+		}
+		// A newer model or another gesture may arrive while UIKit applies the deletion.
+		guard let collectionView, let revision = coordinator?.articlesRevision,
+			  snapshotState.consumeScrollReset(appliedRevision: appliedSnapshotRevision, currentRevision: revision,
+				isInteracting: isInteractingWithTimeline, isPreparing: snapshotPreparationTask != nil) else { return }
+		collectionView.layoutIfNeeded()
+		let previousOffset = collectionView.contentOffset.y
+		collectionView.setContentOffset(CGPoint(x: collectionView.contentOffset.x, y: -collectionView.adjustedContentInset.top), animated: false)
+		timelineMiddleIndexPath = collectionView.middleVisibleRow()
+		PerformanceDiagnosticLog.event(operation: "Timeline scroll reset", message: "applied revision=\(revision) previous_y=\(previousOffset) current_y=\(collectionView.contentOffset.y)")
 	}
 
 	private func schedulePendingUpdateCheck() {
@@ -1161,7 +1195,7 @@ extension MainTimelineModernViewController {
 			guard let self else { return }
 			self.pendingUpdateCheckScheduled = false
 			self.applyPendingSnapshotIfNeeded()
-			if self.snapshotState.needsUpdate || self.needsVisibleCellReload {
+			if self.snapshotState.needsUpdate || self.needsVisibleCellReload || self.snapshotState.pendingScrollResetRevision != nil {
 				self.schedulePendingUpdateCheck()
 			}
 		}
