@@ -11,6 +11,7 @@ import ErrorLog
 final class ArticleMediaSaver {
 
 	typealias Result = ArticleMediaSaveState.Result
+	private static let imageSaveConcurrency = 8
 
 	private enum SaveError: Error {
 		case invalidSource
@@ -22,6 +23,7 @@ final class ArticleMediaSaver {
 		configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
 		configuration.httpShouldSetCookies = false
 		configuration.httpCookieAcceptPolicy = .never
+		configuration.httpMaximumConnectionsPerHost = imageSaveConcurrency
 		return URLSession(configuration: configuration)
 	}()
 
@@ -45,7 +47,7 @@ final class ArticleMediaSaver {
 	}
 
 	func saveImages(sources: [String], iconData: Data?, skippedCount: Int, progress: @escaping @MainActor (Int, Int) -> Void) async -> Result {
-		await save(sources: sources, skippedCount: skippedCount, mediaType: "image", prepareFile: {
+		await save(sources: sources, skippedCount: skippedCount, mediaType: "image", concurrency: Self.imageSaveConcurrency, prepareFile: {
 			try await self.imageFile(for: $0, iconData: iconData)
 		}, saveFile: { try await self.saveImage(at: $0) }, progress: progress)
 	}
@@ -59,41 +61,74 @@ final class ArticleMediaSaver {
 
 private extension ArticleMediaSaver {
 
-	func save(sources: [String], skippedCount: Int, mediaType: String,
-		prepareFile: @MainActor (String) async throws -> ArticleMediaFile,
-		saveFile: @MainActor (URL) async throws -> Void,
+	func save(sources: [String], skippedCount: Int, mediaType: String, concurrency: Int = 1,
+		prepareFile: @escaping @MainActor @Sendable (String) async throws -> ArticleMediaFile,
+		saveFile: @escaping @MainActor @Sendable (URL) async throws -> Void,
 		progress: @MainActor (Int, Int) -> Void) async -> Result {
-		var state = ArticleMediaSaveState(requestedCount: sources.count, skippedCount: skippedCount)
-
-		while let position = state.startNextItem(isCancelled: Task.isCancelled) {
-			let source = sources[position - 1]
-			ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) begin: \(ArticleMediaLog.urlDescription(source, level: .debug))")
-			ArticleMediaSaveStage.update("\(mediaType):\(position)/\(sources.count):preparing")
-			do {
-				let file = try await prepareFile(source)
-				defer { try? FileManager.default.removeItem(at: file.url) }
-				try Task.checkCancellation()
-				ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) prepared \(file.byteCount) bytes; type \(file.typeIdentifier)")
-				ArticleMediaSaveStage.update("\(mediaType):\(position)/\(sources.count):saving \(file.byteCount) bytes \(file.typeIdentifier)")
-				state.startPhotoLibrarySave()
-				try await saveFile(file.url)
-				// A cancelled task still waits for PhotoKit; its success must remain in the result.
-				state.finishCurrentItem(.saved)
-				ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) saved to the photo library")
-			} catch {
-				if !state.isSavingToPhotoLibrary && (Task.isCancelled || ArticleMediaSaveState.isCancellation(error)) {
-					state.cancelRemainingItems()
-					ArticleMediaLog.log(.info, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) cancelled before saving")
-					break
+		var result = Result(requestedCount: sources.count, skippedCount: skippedCount)
+		var completedCount = 0
+		await withTaskGroup(of: ArticleMediaSaveState.Outcome?.self) { group in
+			var nextIndex = 0
+			var activeCount = 0
+			while true {
+				while activeCount < concurrency && nextIndex < sources.count && !Task.isCancelled && !group.isCancelled {
+					let index = nextIndex
+					let added = group.addTaskUnlessCancelled {
+						await self.saveItem(source: sources[index], position: index + 1, total: sources.count,
+							mediaType: mediaType, prepareFile: prepareFile, saveFile: saveFile)
+					}
+					guard added else { break }
+					nextIndex += 1
+					activeCount += 1
 				}
-				let isSkipped = !state.isSavingToPhotoLibrary && error is ArticleMediaFile.PreparationError
-				state.finishCurrentItem(isSkipped ? .skipped : .failed)
-				ArticleMediaLog.log(.warning, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) \(isSkipped ? "skipped" : "failed"): \(error.localizedDescription)")
+				guard let outcome = await group.next() else { break }
+				activeCount -= 1
+				if let outcome {
+					switch outcome {
+					case .saved: result.savedCount += 1
+					case .failed: result.failedCount += 1
+					case .skipped: result.skippedCount += 1
+					}
+					completedCount += 1
+					progress(completedCount, sources.count)
+				} else {
+					result.wasCancelled = true
+					group.cancelAll()
+				}
 			}
-			progress(position, sources.count)
 		}
+		result.wasCancelled = result.wasCancelled || Task.isCancelled
+		result.cancelledCount = result.requestedCount - completedCount
+		return result
+	}
 
-		return state.result
+	func saveItem(source: String, position: Int, total: Int, mediaType: String,
+		prepareFile: @MainActor (String) async throws -> ArticleMediaFile,
+		saveFile: @MainActor (URL) async throws -> Void) async -> ArticleMediaSaveState.Outcome? {
+		var isSavingToPhotoLibrary = false
+		do {
+			try Task.checkCancellation()
+			ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(total) begin: \(ArticleMediaLog.urlDescription(source, level: .debug))")
+			ArticleMediaSaveStage.update("\(mediaType):\(position)/\(total):preparing")
+			let file = try await prepareFile(source)
+			defer { try? FileManager.default.removeItem(at: file.url) }
+			try Task.checkCancellation()
+			ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(total) prepared \(file.byteCount) bytes; type \(file.typeIdentifier)")
+			ArticleMediaSaveStage.update("\(mediaType):\(position)/\(total):saving \(file.byteCount) bytes \(file.typeIdentifier)")
+			isSavingToPhotoLibrary = true
+			try await saveFile(file.url)
+			// PhotoKit cannot be cancelled; retain its actual outcome even after cancellation.
+			ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(total) saved to the photo library")
+			return .saved
+		} catch {
+			if !isSavingToPhotoLibrary && (Task.isCancelled || ArticleMediaSaveState.isCancellation(error)) {
+				ArticleMediaLog.log(.info, operation: "Save all", message: "\(mediaType) \(position)/\(total) cancelled before saving")
+				return nil
+			}
+			let isSkipped = !isSavingToPhotoLibrary && error is ArticleMediaFile.PreparationError
+			ArticleMediaLog.log(.warning, operation: "Save all", message: "\(mediaType) \(position)/\(total) \(isSkipped ? "skipped" : "failed"): \(error.localizedDescription)")
+			return isSkipped ? .skipped : .failed
+		}
 	}
 
 	static func describe(_ status: PHAuthorizationStatus) -> String {

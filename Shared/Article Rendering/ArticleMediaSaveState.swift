@@ -10,7 +10,7 @@ struct ArticleMediaSaveState: Sendable {
 		var wasCancelled = false
 	}
 
-	enum Outcome {
+	enum Outcome: Sendable {
 		case saved
 		case failed
 		case skipped
