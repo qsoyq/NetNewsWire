@@ -600,24 +600,24 @@ private extension SettingsViewController {
 		let freshRSSAccounts = AccountManager.shared.activeAccounts.filter { ArticleContentCacheRebuilder.supports($0.type) }
 		guard !freshRSSAccounts.isEmpty else {
 			presentRebuildArticleContentResult(
-				title: NSLocalizedString("Rebuild Article Content", comment: "Rebuild article content title"),
+				title: NSLocalizedString("Refresh Feed Data", comment: "Refresh feed data title"),
 				message: NSLocalizedString("No FreshRSS account is active.", comment: "No FreshRSS account")
 			)
 			return
 		}
 
-		let title = NSLocalizedString("Rebuild Unread Article Content", comment: "Rebuild unread article content title")
-		let message = NSLocalizedString("This deletes locally cached HTML for unread and starred FreshRSS articles, then downloads that content again in parallel.\n\nFeed folders and favorite feeds are not changed. Read articles are left alone so the download stays small.\n\nKeep the app in the foreground until it finishes. Switching away only gets about 30 extra seconds. You do not need to pull to refresh afterwards.", comment: "Rebuild unread article content message")
+		let title = NSLocalizedString("Refresh Feed Data", comment: "Refresh feed data title")
+		let message = NSLocalizedString("Refresh FreshRSS feed addresses, names, home pages and icons, then update unread and starred article content.\n\nFolders, favorites and article statuses are kept.\n\nKeep the app in the foreground until it finishes.", comment: "Refresh feed data confirmation")
 		let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
 		alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel))
-		alert.addAction(UIAlertAction(title: NSLocalizedString("Rebuild", comment: "Rebuild article content"), style: .destructive) { [weak self] _ in
+		alert.addAction(UIAlertAction(title: NSLocalizedString("Refresh", comment: "Refresh feed data action"), style: .default) { [weak self] _ in
 			self?.rebuildUnreadArticleContent()
 		})
 		present(alert, animated: true)
 	}
 
 	func rebuildUnreadArticleContent() {
-		let progressAlert = UIAlertController(title: NSLocalizedString("Rebuilding Article Content", comment: "Rebuilding article content progress title"), message: NSLocalizedString("Downloading unread and starred articles…", comment: "Rebuilding article content progress message"), preferredStyle: .alert)
+		let progressAlert = UIAlertController(title: NSLocalizedString("Refreshing Feed Data", comment: "Refresh feed data progress title"), message: NSLocalizedString("Refreshing feed information…", comment: "Refresh feed metadata progress"), preferredStyle: .alert)
 		present(progressAlert, animated: true)
 
 		UIApplication.shared.isIdleTimerDisabled = true
@@ -641,15 +641,15 @@ private extension SettingsViewController {
 
 			let summaries: [ArticleContentCacheRebuildSummary]
 			do {
-				summaries = try await ArticleContentCacheRebuilder.rebuildUnreadAndStarredContent(in: Array(AccountManager.shared.activeAccounts)) { message in
+				summaries = try await ArticleContentCacheRebuilder.refreshFeedData(in: Array(AccountManager.shared.activeAccounts)) { message in
 					progressAlert.message = message
 				}
 			} catch is CancellationError {
 				ArticleContentCacheLog.log(.warning, operation: "Rebuild", message: "Rebuild cancelled")
 				progressAlert.dismiss(animated: true) {
 					self.presentRebuildArticleContentResult(
-						title: NSLocalizedString("Rebuild Interrupted", comment: "Rebuild article content interrupted title"),
-						message: NSLocalizedString("The download did not finish. Keep the app in the foreground and try again. Feed folders and favorite feeds were not changed.", comment: "Rebuild article content interrupted message")
+						title: NSLocalizedString("Refresh Interrupted", comment: "Refresh feed data interrupted title"),
+						message: NSLocalizedString("The refresh did not finish. Existing article content, folders and favorites were kept. Keep the app in the foreground and try again.", comment: "Refresh feed data interrupted message")
 					)
 				}
 				return
@@ -657,8 +657,8 @@ private extension SettingsViewController {
 				ArticleContentCacheLog.log(.error, operation: "Rebuild", message: error.localizedDescription)
 				progressAlert.dismiss(animated: true) {
 					self.presentRebuildArticleContentResult(
-						title: NSLocalizedString("Rebuild Failed", comment: "Rebuild article content failed title"),
-						message: String.localizedStringWithFormat(NSLocalizedString("Local unread and starred article content may be incomplete: %@\n\nKeep the app open and try again. Feed folders and favorite feeds were not changed.", comment: "Rebuild article content failed message"), error.localizedDescription)
+						title: NSLocalizedString("Refresh Failed", comment: "Refresh feed data failed title"),
+						message: String.localizedStringWithFormat(NSLocalizedString("Some feed data could not be refreshed: %@\n\nExisting article content, folders and favorites were kept. Try again with the app open.", comment: "Refresh feed data failed message"), error.localizedDescription)
 					)
 				}
 				return
@@ -666,7 +666,10 @@ private extension SettingsViewController {
 
 			ArticleContentCacheLog.log(.warning, operation: "Rebuild", message: summaries.map { "\($0.accountName): rebuilt \($0.rebuiltCount), downloaded \($0.downloadedCount) (unread \($0.unreadCount), starred \($0.starredCount))" }.joined(separator: "; "))
 			progressAlert.dismiss(animated: true) {
-				self.presentRebuildArticleContentResult(title: NSLocalizedString("Rebuild Complete", comment: "Rebuild article content complete title"), message: self.rebuildArticleContentResultMessage(summaries))
+				let title = summaries.contains { $0.incompleteFeedCount > 0 }
+					? NSLocalizedString("Refresh Incomplete", comment: "Refresh feed data incomplete title")
+					: NSLocalizedString("Refresh Complete", comment: "Refresh feed data complete title")
+				self.presentRebuildArticleContentResult(title: title, message: self.rebuildArticleContentResultMessage(summaries))
 			}
 		}
 	}
@@ -675,13 +678,15 @@ private extension SettingsViewController {
 		if summaries.isEmpty {
 			return NSLocalizedString("No FreshRSS account is active.", comment: "No FreshRSS account")
 		}
-		let rebuiltCount = summaries.reduce(0) { $0 + $1.rebuiltCount }
-		if rebuiltCount == 0 {
-			return NSLocalizedString("No unread or starred articles needed rebuilding. Read articles were left unchanged.", comment: "No articles rebuilt")
-		}
+		let feedCount = summaries.reduce(0) { $0 + $1.refreshedFeedCount }
 		let names = summaries.map { $0.accountName }.joined(separator: ", ")
 		let downloadedCount = summaries.reduce(0) { $0 + $1.downloadedCount }
-		return String.localizedStringWithFormat(NSLocalizedString("Rebuilt %ld unread and starred articles in %@ and downloaded %ld entries.\n\nRead articles were left unchanged. Feed folders and favorite feeds were not changed.", comment: "Rebuild article content result"), rebuiltCount, names, downloadedCount)
+		var message = String.localizedStringWithFormat(NSLocalizedString("Refreshed %ld feeds and %ld unread or starred articles in %@.\n\nFolders, favorites and article statuses were kept.", comment: "Refresh feed data result"), feedCount, downloadedCount, names)
+		let incompleteCount = summaries.reduce(0) { $0 + $1.incompleteFeedCount }
+		if incompleteCount > 0 {
+			message += "\n\n" + String.localizedStringWithFormat(NSLocalizedString("The server did not provide all feed information for %ld feeds. Existing values were kept where available.", comment: "Incomplete feed metadata result"), incompleteCount)
+		}
+		return message
 	}
 
 	func presentRebuildArticleContentResult(title: String, message: String) {

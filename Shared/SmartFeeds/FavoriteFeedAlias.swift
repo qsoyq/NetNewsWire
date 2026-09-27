@@ -17,9 +17,10 @@ import Account
 @MainActor final class FavoriteFeedAlias: PseudoFeed {
 
 	let key: FavoriteFeedKey
+	private weak var sourceAccount: Account?
 
 	var feed: Feed? {
-		AccountManager.shared.existingAccount(accountID: key.accountID)?.existingFeed(withFeedID: key.feedID)
+		sourceAccount?.existingFeed(withFeedID: key.feedID)
 	}
 
 	var account: Account? {
@@ -61,7 +62,12 @@ import Account
 
 	init(key: FavoriteFeedKey, feed: Feed?) {
 		self.key = key
+		self.sourceAccount = feed?.account
 		self.unreadCount = feed?.unreadCount ?? 0
+	}
+
+	func updateSourceFeed(_ feed: Feed?) {
+		sourceAccount = feed?.account
 	}
 
 	func syncUnreadCount() {

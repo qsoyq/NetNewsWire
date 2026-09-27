@@ -5,25 +5,16 @@
 
 import Foundation
 import Photos
-import ImageIO
-import UniformTypeIdentifiers
 import ErrorLog
 
 @MainActor
 final class ArticleMediaSaver {
 
-	struct Result {
-		let requestedCount: Int
-		var savedCount = 0
-		var failedCount = 0
-		var skippedCount: Int
-	}
+	typealias Result = ArticleMediaSaveState.Result
 
 	private enum SaveError: Error {
 		case invalidSource
-		case unsupportedVideo
 		case unsuccessfulResponse
-		case undecodableImage
 	}
 
 	private let session: URLSession = {
@@ -33,6 +24,10 @@ final class ArticleMediaSaver {
 		configuration.httpCookieAcceptPolicy = .never
 		return URLSession(configuration: configuration)
 	}()
+
+	deinit {
+		session.invalidateAndCancel()
+	}
 
 	func authorize() async -> Bool {
 		let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
@@ -50,78 +45,56 @@ final class ArticleMediaSaver {
 	}
 
 	func saveImages(sources: [String], iconData: Data?, skippedCount: Int, progress: @escaping @MainActor (Int, Int) -> Void) async -> Result {
-		var result = Result(requestedCount: sources.count, skippedCount: skippedCount)
-
-		for (index, source) in sources.enumerated() {
-			let position = index + 1
-			ArticleMediaLog.log(.debug, operation: "Save all", message: "Image \(position)/\(sources.count) begin: \(ArticleMediaLog.urlDescription(source, level: .debug))")
-			ArticleMediaSaveStage.update("image:\(position)/\(sources.count):fetching")
-			do {
-				let data = try await imageData(for: source, iconData: iconData)
-				let type = Self.imageTypeDescription(data)
-				ArticleMediaLog.log(.debug, operation: "Save all", message: "Image \(position)/\(sources.count) fetched \(data.count) bytes; type \(type)")
-				ArticleMediaSaveStage.update("image:\(position)/\(sources.count):saving \(data.count) bytes \(type)")
-
-				let fileURL = try Self.writeTemporaryImage(data, typeIdentifier: type)
-				defer { try? FileManager.default.removeItem(at: fileURL) }
-
-				try await saveImage(at: fileURL)
-				result.savedCount += 1
-				ArticleMediaLog.log(.debug, operation: "Save all", message: "Image \(position)/\(sources.count) saved to the photo library")
-			} catch SaveError.undecodableImage {
-				result.skippedCount += 1
-				ArticleMediaLog.log(.warning, operation: "Save all", message: "Image \(position)/\(sources.count) is not a decodable image; skipped (\(ArticleMediaLog.urlDescription(source, level: .warning)))")
-			} catch {
-				result.failedCount += 1
-				ArticleMediaLog.log(.warning, operation: "Save all", message: "Image \(position)/\(sources.count) failed: \(error.localizedDescription)")
-			}
-			progress(position, sources.count)
-		}
-
-		return result
+		await save(sources: sources, skippedCount: skippedCount, mediaType: "image", prepareFile: {
+			try await self.imageFile(for: $0, iconData: iconData)
+		}, saveFile: { try await self.saveImage(at: $0) }, progress: progress)
 	}
 
 	func saveVideos(sources: [String], skippedCount: Int, progress: @escaping @MainActor (Int, Int) -> Void) async -> Result {
-		var result = Result(requestedCount: sources.count, skippedCount: skippedCount)
-
-		for (index, source) in sources.enumerated() {
-			let position = index + 1
-			ArticleMediaLog.log(.debug, operation: "Save all", message: "Video \(position)/\(sources.count) begin: \(ArticleMediaLog.urlDescription(source, level: .debug))")
-			ArticleMediaSaveStage.update("video:\(position)/\(sources.count):downloading")
-			var downloadedURL: URL?
-			defer {
-				if let downloadedURL {
-					try? FileManager.default.removeItem(at: downloadedURL)
-				}
-			}
-			do {
-				let fileURL = try await downloadVideo(source)
-				downloadedURL = fileURL
-				let size = Self.fileSize(at: fileURL)
-				ArticleMediaLog.log(.debug, operation: "Save all", message: "Video \(position)/\(sources.count) downloaded \(size) bytes")
-
-				let videoURL = try Self.moveTemporaryVideo(fileURL)
-				downloadedURL = videoURL
-				ArticleMediaSaveStage.update("video:\(position)/\(sources.count):saving \(size) bytes")
-
-				try await saveVideo(at: videoURL)
-				result.savedCount += 1
-				ArticleMediaLog.log(.debug, operation: "Save all", message: "Video \(position)/\(sources.count) saved to the photo library")
-			} catch SaveError.unsupportedVideo {
-				result.skippedCount += 1
-				ArticleMediaLog.log(.warning, operation: "Save all", message: "Video \(position)/\(sources.count) is a streaming playlist; skipped (\(ArticleMediaLog.urlDescription(source, level: .warning)))")
-			} catch {
-				result.failedCount += 1
-				ArticleMediaLog.log(.warning, operation: "Save all", message: "Video \(position)/\(sources.count) failed: \(error.localizedDescription)")
-			}
-			progress(position, sources.count)
-		}
-
-		return result
+		await save(sources: sources, skippedCount: skippedCount, mediaType: "video", prepareFile: {
+			try await self.downloadVideo($0)
+		}, saveFile: { try await self.saveVideo(at: $0) }, progress: progress)
 	}
 }
 
 private extension ArticleMediaSaver {
+
+	func save(sources: [String], skippedCount: Int, mediaType: String,
+		prepareFile: @MainActor (String) async throws -> ArticleMediaFile,
+		saveFile: @MainActor (URL) async throws -> Void,
+		progress: @MainActor (Int, Int) -> Void) async -> Result {
+		var state = ArticleMediaSaveState(requestedCount: sources.count, skippedCount: skippedCount)
+
+		while let position = state.startNextItem(isCancelled: Task.isCancelled) {
+			let source = sources[position - 1]
+			ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) begin: \(ArticleMediaLog.urlDescription(source, level: .debug))")
+			ArticleMediaSaveStage.update("\(mediaType):\(position)/\(sources.count):preparing")
+			do {
+				let file = try await prepareFile(source)
+				defer { try? FileManager.default.removeItem(at: file.url) }
+				try Task.checkCancellation()
+				ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) prepared \(file.byteCount) bytes; type \(file.typeIdentifier)")
+				ArticleMediaSaveStage.update("\(mediaType):\(position)/\(sources.count):saving \(file.byteCount) bytes \(file.typeIdentifier)")
+				state.startPhotoLibrarySave()
+				try await saveFile(file.url)
+				// A cancelled task still waits for PhotoKit; its success must remain in the result.
+				state.finishCurrentItem(.saved)
+				ArticleMediaLog.log(.debug, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) saved to the photo library")
+			} catch {
+				if !state.isSavingToPhotoLibrary && (Task.isCancelled || ArticleMediaSaveState.isCancellation(error)) {
+					state.cancelRemainingItems()
+					ArticleMediaLog.log(.info, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) cancelled before saving")
+					break
+				}
+				let isSkipped = !state.isSavingToPhotoLibrary && error is ArticleMediaFile.PreparationError
+				state.finishCurrentItem(isSkipped ? .skipped : .failed)
+				ArticleMediaLog.log(.warning, operation: "Save all", message: "\(mediaType) \(position)/\(sources.count) \(isSkipped ? "skipped" : "failed"): \(error.localizedDescription)")
+			}
+			progress(position, sources.count)
+		}
+
+		return state.result
+	}
 
 	static func describe(_ status: PHAuthorizationStatus) -> String {
 		switch status {
@@ -134,83 +107,65 @@ private extension ArticleMediaSaver {
 		}
 	}
 
-	/// The image's uniform type identifier, or an empty string when the data is not a decodable image.
-	///
-	/// PhotoKit aborts the process with an Objective-C exception when it is handed data it cannot
-	/// treat as an image, and that exception cannot be caught in Swift, so undecodable data must be
-	/// rejected here. SVG, HTML error pages, and empty responses all fail this check.
-	static func imageTypeDescription(_ data: Data) -> String {
-		guard !data.isEmpty,
-			let source = CGImageSourceCreateWithData(data as CFData, nil),
-			CGImageSourceGetCount(source) > 0,
-			let type = CGImageSourceGetType(source) else {
-			return ""
+	func imageFile(for source: String, iconData: Data?) async throws -> ArticleMediaFile {
+		try Task.checkCancellation()
+		let prefix = source.prefix(32).lowercased()
+		if prefix.hasPrefix("nnwimageicon:"), let iconData {
+			return try await Self.prepareFile { try ArticleMediaFile.image(data: iconData) }
 		}
-		return type as String
-	}
-
-	static func fileSize(at fileURL: URL) -> Int {
-		let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-		return (attributes?[.size] as? Int) ?? 0
-	}
-
-	/// Writes the data to a temporary file whose extension matches its type, because PhotoKit infers
-	/// the resource type from the file extension.
-	static func writeTemporaryImage(_ data: Data, typeIdentifier: String) throws -> URL {
-		guard !typeIdentifier.isEmpty else {
-			throw SaveError.undecodableImage
-		}
-		let fileURL = temporaryFileURL(typeIdentifier: typeIdentifier)
-		try data.write(to: fileURL, options: .atomic)
-		return fileURL
-	}
-
-	static func moveTemporaryVideo(_ fileURL: URL) throws -> URL {
-		let typeIdentifier = UTType(filenameExtension: fileURL.pathExtension)?.identifier
-			?? UTType.mpeg4Movie.identifier
-		let destination = temporaryFileURL(typeIdentifier: typeIdentifier)
-		try FileManager.default.moveItem(at: fileURL, to: destination)
-		return destination
-	}
-
-	static func temporaryFileURL(typeIdentifier: String) -> URL {
-		let fileExtension = UTType(typeIdentifier)?.preferredFilenameExtension ?? "dat"
-		return FileManager.default.temporaryDirectory
-			.appendingPathComponent(UUID().uuidString)
-			.appendingPathExtension(fileExtension)
-	}
-
-	func imageData(for source: String, iconData: Data?) async throws -> Data {
-		if source.lowercased().hasPrefix("nnwimageicon:"), let iconData {
-			return iconData
-		}
-		if source.lowercased().hasPrefix("data:image/") {
-			return try dataURLData(source)
+		if prefix.hasPrefix("data:image/") {
+			return try await Self.prepareFile {
+				try ArticleMediaFile.image(data: Self.dataURLData(source))
+			}
 		}
 
-		guard let url = URL(string: source), url.scheme == "http" || url.scheme == "https" else {
-			throw SaveError.invalidSource
-		}
-
-		let (data, response) = try await session.data(from: url)
-		try validate(response)
-		return data
-	}
-
-	func downloadVideo(_ source: String) async throws -> URL {
 		guard let url = URL(string: source), url.scheme == "http" || url.scheme == "https" else {
 			throw SaveError.invalidSource
 		}
 
 		let (fileURL, response) = try await session.download(from: url)
+		defer { try? FileManager.default.removeItem(at: fileURL) }
+		try Task.checkCancellation()
 		try validate(response)
-		if response.mimeType?.lowercased().contains("mpegurl") == true {
-			throw SaveError.unsupportedVideo
-		}
-		return fileURL
+		return try await Self.prepareFile { try ArticleMediaFile.image(downloadedURL: fileURL) }
 	}
 
-	func dataURLData(_ source: String) throws -> Data {
+	func downloadVideo(_ source: String) async throws -> ArticleMediaFile {
+		try Task.checkCancellation()
+		guard let url = URL(string: source), url.scheme == "http" || url.scheme == "https" else {
+			throw SaveError.invalidSource
+		}
+
+		let (fileURL, response) = try await session.download(from: url)
+		defer { try? FileManager.default.removeItem(at: fileURL) }
+		try Task.checkCancellation()
+		try validate(response)
+		let mimeType = response.mimeType
+		return try await Self.prepareFile {
+			try ArticleMediaFile.video(downloadedURL: fileURL, sourceURL: url, mimeType: mimeType)
+		}
+	}
+
+	nonisolated static func prepareFile(_ prepare: @escaping @Sendable () throws -> ArticleMediaFile) async throws -> ArticleMediaFile {
+		let task = Task.detached(priority: .utility) {
+			try Task.checkCancellation()
+			let file = try prepare()
+			do {
+				try Task.checkCancellation()
+				return file
+			} catch {
+				try? FileManager.default.removeItem(at: file.url)
+				throw error
+			}
+		}
+		return try await withTaskCancellationHandler {
+			try await task.value
+		} onCancel: {
+			task.cancel()
+		}
+	}
+
+	nonisolated static func dataURLData(_ source: String) throws -> Data {
 		guard let commaIndex = source.firstIndex(of: ",") else {
 			throw SaveError.invalidSource
 		}

@@ -10,14 +10,16 @@ import Foundation
 import Articles
 import RSCore
 
-/// Rebuilds locally cached article HTML for FreshRSS accounts without touching
-/// feeds, folders, or favorite-feed bookmarks.
+/// Refreshes feed metadata and cached article HTML for FreshRSS accounts while
+/// retaining folder relationships, favorites and article statuses.
 ///
-/// Only unread and starred article rows are deleted. Read articles keep their
-/// cached HTML so a rebuild does not re-download the entire 90-day window.
+/// Only unread and starred articles are requested. Existing rows remain available
+/// if a request fails or the task is cancelled.
 public struct ArticleContentCacheRebuildSummary: Equatable, Sendable {
 	public let accountID: String
 	public let accountName: String
+	public let refreshedFeedCount: Int
+	public let incompleteFeedCount: Int
 	public let unreadCount: Int
 	public let starredCount: Int
 	public let rebuiltCount: Int
@@ -46,20 +48,22 @@ public enum ArticleContentCacheRebuilder {
 		articleIDs.chunked(into: contentsBatchSize)
 	}
 
-	/// Deletes local HTML for unread and starred articles, then downloads that
-	/// content again. Statuses, feeds, and folders stay in place.
+	/// Downloads fresh HTML for unread and starred articles and updates their
+	/// existing rows. Statuses, feeds, and folders stay in place.
 	@MainActor
-	public static func rebuildUnreadAndStarredContent(
+	public static func refreshFeedData(
 		in accounts: [Account],
 		progress: (@MainActor (String) -> Void)? = nil
 	) async throws -> [ArticleContentCacheRebuildSummary] {
 		var summaries = [ArticleContentCacheRebuildSummary]()
 		for account in accounts where supports(account.type) && account.isActive {
+			try Task.checkCancellation()
+			progress?("\(account.nameForDisplay): refreshing feed information…")
+			let metadata = try await account.refreshFeedMetadata()
 			let unreadIDs = try await account.fetchUnreadArticleIDsAsync()
 			let starredIDs = try await account.fetchStarredArticleIDsAsync()
 			let articleIDs = articleIDsToRebuild(unreadIDs: unreadIDs, starredIDs: starredIDs)
-			progress?("\(account.nameForDisplay): clearing \(articleIDs.count) cached articles…")
-			try await account.delete(articleIDs: articleIDs)
+			progress?("\(account.nameForDisplay): refreshing \(articleIDs.count) cached articles…")
 			var downloadedCount = 0
 			if !articleIDs.isEmpty {
 				downloadedCount = try await account.rebuildArticleContent(articleIDs: articleIDs) { completed, total in
@@ -69,6 +73,8 @@ public enum ArticleContentCacheRebuilder {
 			summaries.append(ArticleContentCacheRebuildSummary(
 				accountID: account.accountID,
 				accountName: account.nameForDisplay,
+				refreshedFeedCount: metadata.updatedCount,
+				incompleteFeedCount: metadata.incompleteCount,
 				unreadCount: unreadIDs.count,
 				starredCount: starredIDs.count,
 				rebuiltCount: articleIDs.count,

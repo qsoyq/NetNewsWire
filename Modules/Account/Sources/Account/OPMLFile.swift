@@ -43,14 +43,16 @@ import RSParser
 	}
 
 	func save() {
-		guard !account.isDeleted else { return }
-		let opmlDocumentString = opmlDocument()
-
 		do {
-			try opmlDocumentString.write(to: fileURL, atomically: true, encoding: .utf8)
+			try saveImmediately()
 		} catch let error as NSError {
 			Self.logger.error("OPML save to disk failed: \(error.localizedDescription)")
 		}
+	}
+
+	func saveImmediately() throws {
+		guard !account.isDeleted else { return }
+		try opmlDocument().write(to: fileURL, atomically: true, encoding: .utf8)
 	}
 }
 

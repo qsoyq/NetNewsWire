@@ -3,7 +3,11 @@
 BUNDLE_LOADER = $(TEST_HOST)
 COMBINE_HIDPI_IMAGES = YES
 INFOPLIST_FILE = Tests/NetNewsWire-iOSTests/Info.plist
-LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @loader_path/../Frameworks
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks @loader_path/Frameworks
 PRODUCT_BUNDLE_IDENTIFIER = $(ORGANIZATION_IDENTIFIER).NetNewsWire-iOSTests
 PRODUCT_NAME = $(TARGET_NAME)
+PRODUCT_MODULE_NAME = NetNewsWire_iOSTests
+SDKROOT = iphoneos
 SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+TARGETED_DEVICE_FAMILY = 1,2
+TEST_HOST = $(BUILT_PRODUCTS_DIR)/NetNewsWire.app/NetNewsWire

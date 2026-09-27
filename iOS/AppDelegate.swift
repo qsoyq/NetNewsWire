@@ -19,20 +19,6 @@ import ErrorLog
 
 @MainActor var appDelegate: AppDelegate!
 
-private struct NotificationArticleReference: Hashable, Sendable {
-	let accountID: String
-	let articleID: String
-}
-
-private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> NotificationArticleReference? {
-	guard let articlePathUserInfo = userInfo[UserInfoKey.articlePath] as? [AnyHashable: Any],
-		  let accountID = articlePathUserInfo[ArticlePathKey.accountID] as? String,
-		  let articleID = articlePathUserInfo[ArticlePathKey.articleID] as? String else {
-		return nil
-	}
-	return NotificationArticleReference(accountID: accountID, articleID: articleID)
-}
-
 @main
 @MainActor final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate, UnreadCountProvider {
 
@@ -276,9 +262,11 @@ private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> 
 
 			switch response.actionIdentifier {
 			case UserNotificationManager.ActionIdentifier.markAsRead:
-				handleMarkAsRead(userInfo: userInfo)
+				completesImmediately = false
+				handleMarkAsRead(userInfo: userInfo) { wrappedCompletionHandler.value() }
 			case UserNotificationManager.ActionIdentifier.markAsStarred:
-				handleMarkAsStarred(userInfo: userInfo)
+				completesImmediately = false
+				handleMarkAsStarred(userInfo: userInfo) { wrappedCompletionHandler.value() }
 			case UserNotificationManager.ActionIdentifier.markGroupAsRead:
 				completesImmediately = false
 				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Received group action")
@@ -288,7 +276,8 @@ private func notificationArticleReference(from userInfo: [AnyHashable: Any]) -> 
 			case UNNotificationDismissActionIdentifier:
 				// Only mark the article represented by this notification. The feed's
 				// threadIdentifier is for grouping and must not be used for status changes.
-				handleMarkAsRead(userInfo: userInfo)
+				completesImmediately = false
+				handleMarkAsRead(userInfo: userInfo) { wrappedCompletionHandler.value() }
 			default:
 				if let sceneDelegate = response.targetScene?.delegate as? SceneDelegate {
 					sceneDelegate.handle(response)
@@ -545,174 +534,81 @@ private extension AppDelegate {
 // MARK: - Handle Notification Actions
 
 private extension AppDelegate {
-	func handleMarkAsRead(userInfo: [AnyHashable: Any]) {
-		handleStatusNotification(userInfo: userInfo, statusKey: .read)
+	func handleMarkAsRead(userInfo: [AnyHashable: Any], completion: @escaping @Sendable () -> Void) {
+		handleStatusNotification(userInfo: userInfo, statusKey: .read, completion: completion)
 	}
 
-	func handleMarkAsStarred(userInfo: [AnyHashable: Any]) {
-		handleStatusNotification(userInfo: userInfo, statusKey: .starred)
+	func handleMarkAsStarred(userInfo: [AnyHashable: Any], completion: @escaping @Sendable () -> Void) {
+		handleStatusNotification(userInfo: userInfo, statusKey: .starred, completion: completion)
 	}
 
 	func handleMarkAsReadForNotificationGroup(response: UNNotificationResponse, completion: @escaping @Sendable () -> Void) {
-		let selectedNotification = response.notification
-		let threadIdentifier = selectedNotification.request.content.threadIdentifier
-		let selectedReference = notificationArticleReference(from: selectedNotification.request.content.userInfo)
-
-		NotificationActionLog.log(.info, operation: "Mark group as read", message: "Action received; threadIdentifier=\(threadIdentifier); selectedArticleID=\(selectedReference?.articleID ?? "nil"); appState=\(UIApplication.shared.applicationState.rawValue); refreshInProgress=\(AccountManager.shared.refreshInProgress); isSuspended=\(AccountManager.shared.isSuspended); isWaitingForSyncTasks=\(isWaitingForSyncTasks)")
-
+		let selected = UserNotificationManager.snapshot(response.notification)
 		UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
-			let matchingNotifications = notifications.filter { $0.request.content.threadIdentifier == threadIdentifier }
-			let groupReferences = matchingNotifications.compactMap { notificationArticleReference(from: $0.request.content.userInfo) }
-			let snapshotCount = notifications.count
-			let matchingCount = matchingNotifications.count
-			let parsedCount = groupReferences.count
-
-			Task { @MainActor [weak self = self] in
+			let group = NotificationArticleGroup.select(from: notifications.map(UserNotificationManager.snapshot), selected: selected)
+			Task { @MainActor [weak self] in
 				guard let self else {
 					completion()
 					return
 				}
-
-				NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Delivered snapshot count=\(snapshotCount); matchingThread=\(matchingCount); parsedReferences=\(parsedCount)")
-
-				var references = Set(groupReferences)
-				if let selectedReference {
-					references.insert(selectedReference)
-				}
-
-				let feedReferences = self.unreadArticleReferences(accountID: selectedReference?.accountID, feedID: threadIdentifier)
-				if !feedReferences.isEmpty {
-					references.formUnion(feedReferences)
-				}
-
-				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Resolved \(references.count) article references (snapshot=\(groupReferences.count), selected=\(selectedReference == nil ? 0 : 1), feedUnread=\(feedReferences.count))")
-				self.markAsRead(articleReferences: references, threadIdentifier: threadIdentifier, completion: completion)
+				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Resolved delivered notification count=\(group.count)")
+				self.markNotificationArticles(Set(group.compactMap(\.article)), statusKey: .read, notifications: group, completion: completion)
 			}
 		}
 	}
 
-	private func unreadArticleReferences(accountID: String?, feedID: String) -> Set<NotificationArticleReference> {
-		guard !feedID.isEmpty, let accountID, let account = AccountManager.shared.existingAccount(accountID: accountID) else {
-			NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Skipped feed unread lookup; accountID=\(accountID ?? "nil"); feedID=\(feedID)")
-			return []
-		}
-
-		resumeDatabaseProcessingIfNecessary()
-
-		guard let feed = account.existingFeed(withFeedID: feedID) else {
-			NotificationActionLog.log(.warning, operation: "Mark group as read", message: "No feed with feedID \(feedID) in account \(accountID)")
-			return []
-		}
-
-		do {
-			let articles = try account.fetchArticles(.feed(feed))
-			let unread = articles.filter { !$0.status.read }
-			NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Feed lookup returned articles=\(articles.count); unread=\(unread.count)")
-			return Set(unread.map { NotificationArticleReference(accountID: accountID, articleID: $0.articleID) })
-		} catch {
-			NotificationActionLog.log(.warning, operation: "Mark group as read", message: "Feed unread lookup failed: \(error.localizedDescription)")
-			return []
-		}
-	}
-
-	private func markAsRead(articleReferences: Set<NotificationArticleReference>, threadIdentifier: String, completion: @escaping @Sendable () -> Void) {
+	private func markNotificationArticles(_ articleReferences: Set<NotificationArticleReference>, statusKey: ArticleStatus.Key, notifications: [DeliveredArticleNotification] = [], completion: @escaping @Sendable () -> Void) {
 		guard !articleReferences.isEmpty else {
-			NotificationActionLog.log(.info, operation: "Mark group as read", message: "No article references to mark")
-			removeDeliveredNotifications(forThreadIdentifier: threadIdentifier)
 			completion()
 			return
 		}
 		resumeDatabaseProcessingIfNecessary()
-
-		var articles = Set<Article>()
-		let referencesByAccount = Dictionary(grouping: articleReferences, by: \.accountID)
-		for (accountID, references) in referencesByAccount {
-			guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
-				Self.logger.error("No account with accountID \(accountID) found from group status notification")
-				NotificationActionLog.log(.warning, operation: "Mark group as read", message: "No account with accountID \(accountID)")
-				continue
-			}
-
-			let articleIDs = Set(references.map(\.articleID))
-			do {
-				let accountArticles = try account.fetchArticles(.articleIDs(articleIDs))
-				NotificationActionLog.log(.debug, operation: "Mark group as read", message: "Fetched \(accountArticles.count) of \(articleIDs.count) articles from account \(accountID)")
-				articles.formUnion(accountArticles)
-			} catch {
-				Self.logger.error("Unable to fetch articles for group status notification")
-				NotificationActionLog.log(.warning, operation: "Mark group as read", message: "Unable to fetch articles for account \(accountID): \(error.localizedDescription)")
-			}
-		}
-
-		NotificationActionLog.log(.info, operation: "Mark group as read", message: "Marking \(articles.count) articles read")
-
-		markArticles(articles, statusKey: .read, flag: true) { [weak self] in
-			Task { @MainActor in
-				guard let self else {
-					completion()
-					return
-				}
-				self.removeDeliveredNotifications(forThreadIdentifier: threadIdentifier)
-				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Local mark completed; releasing notification callback before background wait")
-				completion()
-				self.beginArticleStatusSync(reason: "mark-group-as-read")
-				await AccountManager.shared.syncArticleStatusAll()
-				self.endArticleStatusSync(reason: "mark-group-as-read")
-				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Status sync finished; preparing accounts for background")
-				self.prepareAccountsForBackground()
-			}
-		}
-	}
-
-	private func removeDeliveredNotifications(forThreadIdentifier threadIdentifier: String) {
-		guard !threadIdentifier.isEmpty else {
-			return
-		}
-		UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
-			let identifiers = notifications
-				.filter { $0.request.content.threadIdentifier == threadIdentifier }
-				.map(\.request.identifier)
-			guard !identifiers.isEmpty else {
-				return
-			}
-			UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
-			Task { @MainActor in
-				NotificationActionLog.log(.info, operation: "Mark group as read", message: "Removed \(identifiers.count) delivered notifications for thread")
-			}
-		}
-	}
-
-	private func handleStatusNotification(userInfo: [AnyHashable: Any], statusKey: ArticleStatus.Key) {
-		guard let articlePathUserInfo = userInfo[UserInfoKey.articlePath] as? [AnyHashable: Any],
-			let accountID = articlePathUserInfo[ArticlePathKey.accountID] as? String,
-			let articleID = articlePathUserInfo[ArticlePathKey.articleID] as? String else {
-				return
-		}
-
-		resumeDatabaseProcessingIfNecessary()
-
-		guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
-			assertionFailure("Expected account with \(accountID)")
-			Self.logger.error("No account with accountID \(accountID) found from status notification")
-			return
-		}
-
-		guard let singleArticleSet = try? account.fetchArticles(.articleIDs([articleID])) else {
-			assertionFailure("Expected article with \(articleID)")
-			Self.logger.error("No article with articleID found \(articleID) from status notification")
-			return
-		}
-
-		assert(singleArticleSet.count == 1)
-		account.markArticles(singleArticleSet, statusKey: statusKey, flag: true) { _ in }
-
+		beginArticleStatusSync(reason: "notification-action")
+		waitForSyncTasksToFinish()
 		Task { @MainActor in
-			self.beginArticleStatusSync(reason: "status-notification")
-			try? await account.syncArticleStatus()
-			self.endArticleStatusSync(reason: "status-notification")
-			prepareAccountsForBackground()
-			suspendApplication()
+			defer {
+				self.endArticleStatusSync(reason: "notification-action")
+				if UIApplication.shared.applicationState == .background {
+					self.encodeWidgetDataIfPossible()
+					self.waitForSyncTasksToFinish()
+				}
+			}
+			var markedReferences = Set<NotificationArticleReference>()
+			var accountsToSync = [Account]()
+			for (accountID, references) in Dictionary(grouping: articleReferences, by: \.accountID) {
+				guard let account = AccountManager.shared.existingAccount(accountID: accountID) else { continue }
+				do {
+					let articles = try await account.fetchArticlesAsync(.articleIDs(Set(references.map(\.articleID))))
+					try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+						account.markArticles(articles, statusKey: statusKey, flag: true) { continuation.resume(with: $0) }
+					}
+					markedReferences.formUnion(articles.map { NotificationArticleReference(accountID: $0.accountID, articleID: $0.articleID) })
+					accountsToSync.append(account)
+				} catch {
+					NotificationActionLog.log(.warning, operation: "Notification status", message: "Local update failed: \(error.localizedDescription)")
+				}
+			}
+			if statusKey == .read {
+				let identifiers = NotificationArticleGroup.identifiersToRemove(from: notifications, marked: markedReferences)
+				UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+			}
+			completion()
+			for account in accountsToSync {
+				do {
+					try await account.syncArticleStatus()
+				} catch {
+					NotificationActionLog.log(.warning, operation: "Notification status", message: "Remote sync failed: \(error.localizedDescription)")
+				}
+			}
 		}
+	}
+
+	private func handleStatusNotification(userInfo: [AnyHashable: Any], statusKey: ArticleStatus.Key, completion: @escaping @Sendable () -> Void) {
+		guard let reference = UserNotificationManager.articleReference(from: userInfo) else {
+			completion()
+			return
+		}
+		markNotificationArticles([reference], statusKey: statusKey, completion: completion)
 	}
 }
 

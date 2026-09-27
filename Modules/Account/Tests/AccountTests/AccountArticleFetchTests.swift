@@ -5,6 +5,7 @@
 
 import XCTest
 import Articles
+import RSParser
 @testable import Account
 
 @MainActor final class AccountArticleFetchTests: XCTestCase {
@@ -83,5 +84,32 @@ import Articles
 		let unread = try await account.fetchUnreadArticlesAsync(feedIDs: feedIDs)
 		XCTAssertEqual(unread.articleIDs(), expectedIDs)
 		XCTAssertEqual(feed.unreadCount, 300)
+	}
+
+	func testRefreshingExistingContentPreservesArticleAndReadStatus() async throws {
+		let feedID = "feed/0"
+		let feed = account.createFeed(with: feedID, url: "https://example.com/feed", feedID: feedID, homePageURL: nil)
+		account.addFeedToTreeAtTopLevel(feed)
+		let original = try XCTUnwrap(FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 1)[feedID]?.first)
+		_ = try await account.database.updateAsync(feedIDsAndItems: [feedID: [original]], defaultRead: false)
+		let originalArticles = try await account.fetchArticlesAsync(feedIDs: [feedID])
+		let article = try XCTUnwrap(originalArticles.first)
+		_ = try await account.updateAsync(articles: [article], statusKey: .read, flag: true)
+
+		let refreshed = ParsedItem(
+			syncServiceID: original.syncServiceID, uniqueID: original.uniqueID, feedURL: original.feedURL,
+			url: original.url, externalURL: original.externalURL, title: original.title, language: original.language,
+			contentHTML: "Refreshed HTML", contentText: original.contentText, markdown: original.markdown,
+			summary: original.summary, imageURL: original.imageURL, bannerImageURL: original.bannerImageURL,
+			datePublished: original.datePublished, dateModified: original.dateModified, authors: original.authors,
+			tags: original.tags, attachments: original.attachments
+		)
+		_ = try await account.database.updateAsync(feedIDsAndItems: [feedID: [refreshed]], defaultRead: true)
+
+		let updatedArticles = try await account.fetchArticlesAsync(feedIDs: [feedID])
+		let updated = try XCTUnwrap(updatedArticles.first)
+		XCTAssertEqual(updated.articleID, article.articleID)
+		XCTAssertEqual(updated.contentHTML, "Refreshed HTML")
+		XCTAssertTrue(updated.status.read)
 	}
 }

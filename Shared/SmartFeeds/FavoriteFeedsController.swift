@@ -98,12 +98,23 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 	let ungroupedFolder = FavoriteFeedsFolder.ungrouped()
 
 	private let defaults: UserDefaults
+	private let accountsProvider: @MainActor () -> [Account]
+	private let unreadCountQueue: CoalescingQueue
 	private let storageKey = "favoriteFeedKeys"
 	private let foldersStorageKey = "favoriteFeedFolders"
 	private var keys = Set<FavoriteFeedKey>()
 	private var folderRecords = [FavoriteFolderRecord]()
 	private var aliasesByKey = [FavoriteFeedKey: FavoriteFeedAlias]()
 	private var userFoldersByID = [UUID: FavoriteFeedsFolder]()
+	private var foldersNeedRebuild = true
+	private var isRebuildingFolders = false
+	private var sortedAliasesCache: [FavoriteFeedAlias]?
+	private var sortedUserFoldersCache: [FavoriteFeedsFolder]?
+	private var nodesByIdentifier = [SidebarItemIdentifier: PseudoFeed]()
+	private var foldersByKey = [FavoriteFeedKey: [FavoriteFeedsFolder]]()
+	private var countedUnreadCounts = [FavoriteFeedKey: Int]()
+	private var pendingUnreadKeys = Set<FavoriteFeedKey>()
+	private var structureGeneration = 0
 
 	var hasFavorites: Bool {
 		pruneInvalidKeys()
@@ -112,9 +123,14 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 
 	var aliases: [FavoriteFeedAlias] {
 		rebuildFolders()
-		return aliasesByKey.values.sorted {
+		if let sortedAliasesCache {
+			return sortedAliasesCache
+		}
+		let sorted = aliasesByKey.values.sorted {
 			$0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending
 		}
+		sortedAliasesCache = sorted
+		return sorted
 	}
 
 	var userFolders: [FavoriteFeedsFolder] {
@@ -132,8 +148,12 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		return items
 	}
 
-	private init(defaults: UserDefaults = .standard) {
+	init(defaults: UserDefaults = .standard,
+		 accountsProvider: @escaping @MainActor () -> [Account] = { AccountManager.shared.accounts },
+		 unreadCountQueue: CoalescingQueue = .standard) {
 		self.defaults = defaults
+		self.accountsProvider = accountsProvider
+		self.unreadCountQueue = unreadCountQueue
 		self.keys = Self.loadKeys(from: defaults, storageKey: storageKey)
 		self.folderRecords = Self.loadFolders(from: defaults, storageKey: foldersStorageKey)
 
@@ -143,26 +163,20 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		NotificationCenter.default.addObserver(self, selector: #selector(userDidDeleteAccount(_:)), name: .UserDidDeleteAccount, object: nil)
 
 		rebuildFolders()
-		updateAllUnreadCount()
+	}
+
+	deinit {
+		NotificationCenter.default.removeObserver(self)
 	}
 
 	func find(by identifier: SidebarItemIdentifier) -> PseudoFeed? {
 		rebuildFolders()
-		if allFeed.sidebarItemID == identifier {
-			return allFeed
-		}
-		if ungroupedFolder.sidebarItemID == identifier {
-			return ungroupedFolder
-		}
-		if let folder = userFoldersByID.values.first(where: { $0.sidebarItemID == identifier }) {
-			return folder
-		}
-		return aliasesByKey.values.first { $0.sidebarItemID == identifier }
+		return nodesByIdentifier[identifier]
 	}
 
 	func folder(containing alias: FavoriteFeedAlias) -> FavoriteFeedsFolder? {
 		rebuildFolders()
-		if let folder = sortedUserFolders().first(where: { $0.contains(alias) }) {
+		if let folder = foldersContaining(alias.key).first {
 			return folder
 		}
 		if ungroupedFolder.contains(alias) {
@@ -188,8 +202,7 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		if let folder, folder.isUserFolder {
 			add(key, to: folder)
 		}
-		rebuildFolders()
-		updateAllUnreadCount()
+		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 	}
 
@@ -243,8 +256,7 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 			saveFolders()
 		}
 		if keysChanged || foldersChanged {
-			rebuildFolders()
-			updateAllUnreadCount()
+			invalidateAndRebuildFolders()
 			NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 		}
 
@@ -264,8 +276,7 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 			}
 			add(key, to: folder)
 		}
-		rebuildFolders()
-		updateAllUnreadCount()
+		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 	}
 
@@ -300,7 +311,7 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		let record = FavoriteFolderRecord(id: UUID(), name: uniqueFolderName(from: name), feedKeys: [])
 		folderRecords.append(record)
 		saveFolders()
-		rebuildFolders()
+		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 		return userFoldersByID[record.id] ?? FavoriteFeedsFolder.user(id: record.id, name: record.name)
 	}
@@ -312,7 +323,7 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		}
 		folderRecords[index].name = uniqueFolderName(from: name, excluding: id)
 		saveFolders()
-		rebuildFolders()
+		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 	}
 
@@ -323,8 +334,7 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		folderRecords.removeAll { $0.id == id }
 		userFoldersByID[id] = nil
 		saveFolders()
-		rebuildFolders()
-		updateAllUnreadCount()
+		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 	}
 
@@ -337,13 +347,13 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		} else {
 			removeFromAllFolders(alias.key)
 		}
-		rebuildFolders()
+		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 	}
 
 	func resolvedFeeds() -> [Feed] {
 		rebuildFolders()
-		return aliases.compactMap { $0.feed }
+		return aliasesByKey.values.compactMap { $0.feed }
 	}
 
 	func fetchArticles() throws -> Set<Article> {
@@ -379,12 +389,55 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 	}
 
 	@objc func unreadCountDidChange(_ note: Notification) {
-		if let feed = note.object as? Feed {
-			let key = FavoriteFeedKey(feed: feed)
-			aliasesByKey[key]?.syncUnreadCount()
+		guard let feed = note.object as? Feed, keys.contains(FavoriteFeedKey(feed: feed)) else {
+			return
 		}
-		updateFolderUnreadCounts()
-		updateAllUnreadCount()
+		rebuildFolders()
+		let key = FavoriteFeedKey(feed: feed)
+		guard let alias = aliasesByKey[key], alias.feed === feed else {
+			return
+		}
+		let generation = structureGeneration
+		let previousCount = alias.unreadCount
+		alias.syncUnreadCount()
+		guard generation == structureGeneration, aliasesByKey[key] === alias else {
+			return
+		}
+		let change = alias.unreadCount - previousCount
+		guard change != 0 else {
+			return
+		}
+		pendingUnreadKeys.insert(key)
+		unreadCountQueue.add(self, #selector(updatePendingUnreadCounts))
+	}
+
+	@objc private func updatePendingUnreadCounts() {
+		let changedKeys = pendingUnreadKeys
+		pendingUnreadKeys.removeAll(keepingCapacity: true)
+		let generation = structureGeneration
+		// Folder membership may overlap, but the total counts each feed only once.
+		var affectedFolders = [String: FavoriteFeedsFolder]()
+		for key in changedKeys {
+			for folder in foldersByKey[key] ?? [] {
+				affectedFolders[folder.folderID] = folder
+			}
+		}
+		for folder in affectedFolders.values {
+			guard generation == structureGeneration else {
+				return
+			}
+			folder.syncUnreadCount()
+		}
+		guard generation == structureGeneration else {
+			return
+		}
+		var totalChange = 0
+		for key in changedKeys {
+			let count = aliasesByKey[key]?.unreadCount ?? 0
+			totalChange += count - (countedUnreadCounts[key] ?? 0)
+			countedUnreadCounts[key] = count
+		}
+		allFeed.unreadCount += totalChange
 	}
 
 	@objc func displayNameDidChange(_ note: Notification) {
@@ -392,8 +445,12 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 			return
 		}
 		let key = FavoriteFeedKey(feed: feed)
-		guard let alias = aliasesByKey[key] else {
+		guard let alias = aliasesByKey[key], alias.feed === feed else {
 			return
+		}
+		sortedAliasesCache = nil
+		for folder in foldersByKey[key] ?? [] {
+			folder.invalidateAliasSort()
 		}
 		alias.postDisplayNameDidChangeNotification()
 	}
@@ -402,12 +459,10 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		let oldKeys = keys
 		pruneInvalidKeys()
 		if oldKeys != keys {
-			rebuildFolders()
-			updateAllUnreadCount()
+			invalidateAndRebuildFolders()
 			NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 		} else {
-			rebuildFolders()
-			updateAllUnreadCount()
+			invalidateAndRebuildFolders()
 		}
 	}
 
@@ -451,8 +506,9 @@ private extension FavoriteFeedsController {
 			feedIDsByAccountID[feed.accountID, default: []].insert(feed.feedID)
 		}
 
+		let accountsByID = Dictionary(uniqueKeysWithValues: accountsProvider().map { ($0.accountID, $0) })
 		return feedIDsByAccountID.compactMap { accountID, feedIDs in
-			guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
+			guard let account = accountsByID[accountID] else {
 				return nil
 			}
 			return (account, feedIDs)
@@ -499,18 +555,19 @@ private extension FavoriteFeedsController {
 		}
 		saveKeys()
 		saveFolders()
-		rebuildFolders()
-		updateAllUnreadCount()
+		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 	}
 
 	func pruneInvalidKeys() {
-		guard !AccountManager.shared.accounts.isEmpty else {
+		let accounts = accountsProvider()
+		guard !accounts.isEmpty else {
 			return
 		}
+		let accountsByID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.accountID, $0) })
 
 		let validKeys = keys.filter { key in
-			guard let account = AccountManager.shared.existingAccount(accountID: key.accountID) else {
+			guard let account = accountsByID[key.accountID] else {
 				return false
 			}
 			return account.existingFeed(withFeedID: key.feedID) != nil
@@ -518,6 +575,7 @@ private extension FavoriteFeedsController {
 
 		if validKeys != keys {
 			keys = validKeys
+			foldersNeedRebuild = true
 			saveKeys()
 		}
 
@@ -528,18 +586,20 @@ private extension FavoriteFeedsController {
 		}
 		if prunedFolders != folderRecords {
 			folderRecords = prunedFolders
+			foldersNeedRebuild = true
 			saveFolders()
 		}
 	}
 
 	func rebuildAliases() {
 		pruneInvalidKeys()
+		let accountsByID = Dictionary(uniqueKeysWithValues: accountsProvider().map { ($0.accountID, $0) })
 
 		var nextAliases = [FavoriteFeedKey: FavoriteFeedAlias]()
 		for key in keys {
-			let feed = AccountManager.shared.existingAccount(accountID: key.accountID)?.existingFeed(withFeedID: key.feedID)
+			let feed = accountsByID[key.accountID]?.existingFeed(withFeedID: key.feedID)
 			if let existing = aliasesByKey[key] {
-				existing.syncUnreadCount()
+				existing.updateSourceFeed(feed)
 				nextAliases[key] = existing
 			} else {
 				nextAliases[key] = FavoriteFeedAlias(key: key, feed: feed)
@@ -549,26 +609,34 @@ private extension FavoriteFeedsController {
 	}
 
 	func rebuildFolders() {
+		guard foldersNeedRebuild, !isRebuildingFolders else { return }
+		isRebuildingFolders = true
+		structureGeneration += 1
+		let generation = structureGeneration
+		pendingUnreadKeys.removeAll(keepingCapacity: true)
+		sortedAliasesCache = nil
+		sortedUserFoldersCache = nil
 		rebuildAliases()
 
 		var groupedKeys = Set<FavoriteFeedKey>()
 		var nextFolders = [UUID: FavoriteFeedsFolder]()
 		var normalizedRecords = [FavoriteFolderRecord]()
+		var renamedFolders = [FavoriteFeedsFolder]()
 		for record in folderRecords {
 			var normalized = record
 			normalized.feedKeys = record.feedKeys.filter { keys.contains($0) }
 			groupedKeys.formUnion(normalized.feedKeys)
 			normalizedRecords.append(normalized)
-			let folderAliases = normalized.feedKeys.compactMap { aliasesByKey[$0] }.sorted {
-				$0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending
-			}
+			let folderAliases = normalized.feedKeys.compactMap { aliasesByKey[$0] }
 			if let existing = userFoldersByID[record.id] {
-				existing.updateName(normalized.name)
-				existing.replaceAliases(folderAliases)
+				if existing.updateName(normalized.name, notify: false) {
+					renamedFolders.append(existing)
+				}
+				existing.replaceAliases(folderAliases, updateUnreadCount: false)
 				nextFolders[record.id] = existing
 			} else {
 				let folder = FavoriteFeedsFolder.user(id: record.id, name: normalized.name)
-				folder.replaceAliases(folderAliases)
+				folder.replaceAliases(folderAliases, updateUnreadCount: false)
 				nextFolders[record.id] = folder
 			}
 		}
@@ -578,10 +646,55 @@ private extension FavoriteFeedsController {
 			saveFolders()
 		}
 
-		let ungroupedAliases = aliasesByKey.values.filter { !groupedKeys.contains($0.key) }.sorted {
-			$0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending
+		let ungroupedAliases = aliasesByKey.values.filter { !groupedKeys.contains($0.key) }
+		ungroupedFolder.replaceAliases(ungroupedAliases, updateUnreadCount: false)
+		rebuildIndexes()
+		foldersNeedRebuild = false
+		isRebuildingFolders = false
+
+		// Publish a complete structure before count/name notifications can reenter.
+		for alias in Array(aliasesByKey.values) {
+			guard generation == structureGeneration else { return }
+			alias.syncUnreadCount()
 		}
-		ungroupedFolder.replaceAliases(ungroupedAliases)
+		for folder in [ungroupedFolder] + sortedUserFolders() {
+			guard generation == structureGeneration else { return }
+			folder.syncUnreadCount()
+		}
+		guard generation == structureGeneration else { return }
+		updateAllUnreadCount()
+		for folder in renamedFolders {
+			guard generation == structureGeneration else { return }
+			folder.postDisplayNameDidChangeNotification()
+		}
+	}
+
+	func rebuildIndexes() {
+		nodesByIdentifier.removeAll(keepingCapacity: true)
+		foldersByKey.removeAll(keepingCapacity: true)
+		let folders = [ungroupedFolder] + sortedUserFolders()
+		var nodes: [PseudoFeed] = [allFeed]
+		for folder in folders {
+			nodes.append(folder)
+		}
+		for alias in aliasesByKey.values {
+			nodes.append(alias)
+		}
+		for node in nodes {
+			if let identifier = node.sidebarItemID {
+				nodesByIdentifier[identifier] = node
+			}
+		}
+		for folder in folders {
+			for alias in folder.aliases {
+				foldersByKey[alias.key, default: []].append(folder)
+			}
+		}
+	}
+
+	func invalidateAndRebuildFolders() {
+		foldersNeedRebuild = true
+		rebuildFolders()
 	}
 
 	func add(_ key: FavoriteFeedKey, to folder: FavoriteFeedsFolder, save: Bool = true) {
@@ -614,24 +727,23 @@ private extension FavoriteFeedsController {
 	}
 
 	func foldersContaining(_ key: FavoriteFeedKey) -> [FavoriteFeedsFolder] {
-		sortedUserFolders().filter { $0.contains(key) }
+		(foldersByKey[key] ?? []).filter(\.isUserFolder)
 	}
 
 	func sortedUserFolders() -> [FavoriteFeedsFolder] {
-		folderRecords.compactMap { userFoldersByID[$0.id] }.sorted {
+		if let sortedUserFoldersCache {
+			return sortedUserFoldersCache
+		}
+		let sorted = folderRecords.compactMap { userFoldersByID[$0.id] }.sorted {
 			$0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending
 		}
-	}
-
-	func updateFolderUnreadCounts() {
-		ungroupedFolder.syncUnreadCount()
-		for folder in userFoldersByID.values {
-			folder.syncUnreadCount()
-		}
+		sortedUserFoldersCache = sorted
+		return sorted
 	}
 
 	func updateAllUnreadCount() {
-		allFeed.unreadCount = aliasesByKey.values.reduce(0) { $0 + $1.unreadCount }
+		countedUnreadCounts = aliasesByKey.mapValues(\.unreadCount)
+		allFeed.unreadCount = countedUnreadCounts.values.reduce(0, +)
 	}
 
 	func uniqueFolderName(from proposed: String, excluding excludedID: UUID? = nil) -> String {

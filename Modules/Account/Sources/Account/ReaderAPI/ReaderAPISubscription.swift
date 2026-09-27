@@ -79,6 +79,10 @@ struct ReaderAPISubscription: Codable, Sendable {
 			return feedID.stripping(prefix: "feed/")
 		}
 	}
+
+	var hasCompleteMetadata: Bool {
+		feedURL != nil && name?.isEmpty == false && homePageURL != nil && iconURL != nil
+	}
 }
 
 struct ReaderAPICategory: Codable, Sendable {

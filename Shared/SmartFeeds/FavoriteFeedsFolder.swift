@@ -29,7 +29,20 @@ struct FavoriteFolderRecord: Codable, Equatable, Sendable {
 
 	private(set) var isUserFolder: Bool
 	private(set) var name: String
-	private(set) var aliases: [FavoriteFeedAlias] = []
+	private var unsortedAliases: [FavoriteFeedAlias] = []
+	private var sortedAliases: [FavoriteFeedAlias]?
+	private var aliasKeys = Set<FavoriteFeedKey>()
+
+	var aliases: [FavoriteFeedAlias] {
+		if let sortedAliases {
+			return sortedAliases
+		}
+		let sorted = unsortedAliases.sorted {
+			$0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending
+		}
+		sortedAliases = sorted
+		return sorted
+	}
 
 	var account: Account? {
 		nil
@@ -91,33 +104,45 @@ struct FavoriteFolderRecord: Codable, Equatable, Sendable {
 		self.containerID = ContainerIdentifier.favoriteFeedsFolder(folderID)
 	}
 
-	func updateName(_ name: String) {
+	@discardableResult
+	func updateName(_ name: String, notify: Bool = true) -> Bool {
 		guard self.name != name else {
-			return
+			return false
 		}
 		self.name = name
-		postDisplayNameDidChangeNotification()
+		if notify {
+			postDisplayNameDidChangeNotification()
+		}
+		return true
 	}
 
-	func replaceAliases(_ aliases: [FavoriteFeedAlias]) {
-		self.aliases = aliases
-		syncUnreadCount()
+	func replaceAliases(_ aliases: [FavoriteFeedAlias], updateUnreadCount: Bool = true) {
+		self.unsortedAliases = aliases
+		invalidateAliasSort()
+		self.aliasKeys = Set(aliases.map(\.key))
+		if updateUnreadCount {
+			syncUnreadCount()
+		}
+	}
+
+	func invalidateAliasSort() {
+		sortedAliases = nil
 	}
 
 	func syncUnreadCount() {
-		unreadCount = aliases.reduce(0) { $0 + $1.unreadCount }
+		unreadCount = unsortedAliases.reduce(0) { $0 + $1.unreadCount }
 	}
 
 	func contains(_ feed: Feed) -> Bool {
-		aliases.contains { $0.key == FavoriteFeedKey(feed: feed) }
+		aliasKeys.contains(FavoriteFeedKey(feed: feed))
 	}
 
 	func contains(_ alias: FavoriteFeedAlias) -> Bool {
-		aliases.contains { $0.key == alias.key }
+		aliasKeys.contains(alias.key)
 	}
 
 	func contains(_ key: FavoriteFeedKey) -> Bool {
-		aliases.contains { $0.key == key }
+		aliasKeys.contains(key)
 	}
 }
 

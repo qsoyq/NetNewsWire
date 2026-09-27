@@ -14,7 +14,7 @@ import RSWeb
 import Articles
 
 final class FeedSettingsDatabase: Sendable {
-	enum Column: String {
+	enum Column: String, CaseIterable {
 		case feedID
 		case homePageURL
 		case iconURL
@@ -91,6 +91,49 @@ final class FeedSettingsDatabase: Sendable {
 	func ensureFeedExists(_ feedURL: String, feedID: String) {
 		serialDispatchQueue.async {
 			self.database.executeUpdate("INSERT OR IGNORE INTO feedSettings (feedURL, feedID) VALUES (?, ?);", withArgumentsIn: [feedURL, feedID])
+		}
+	}
+
+	func copySettings(from oldURL: String, to newURL: String, feedID: String) async throws {
+		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+			serialDispatchQueue.async {
+				let database = self.database
+				guard let rows = database.executeQuery("SELECT feedID FROM feedSettings WHERE feedURL = ?;", withArgumentsIn: [newURL]) else {
+					continuation.resume(throwing: AccountError.invalidResponse)
+					return
+				}
+				let conflicting = rows.next() && rows.string(forColumn: "feedID") != feedID
+				rows.close()
+				guard !conflicting else {
+					continuation.resume(throwing: AccountError.createErrorAlreadySubscribed)
+					return
+				}
+				let columns = Column.allCases.map(\.rawValue).joined(separator: ", ")
+				let sql = "INSERT OR REPLACE INTO feedSettings (feedURL, \(columns)) SELECT ?, \(columns) FROM feedSettings WHERE feedURL = ? AND feedID = ?;"
+				guard database.executeUpdate(sql, withArgumentsIn: [newURL, oldURL, feedID]), database.changes() == 1 else {
+					continuation.resume(throwing: AccountError.invalidResponse)
+					return
+				}
+				continuation.resume()
+			}
+		}
+	}
+
+	func removeSettings(for feedURL: String, feedID: String) async throws {
+		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+			serialDispatchQueue.async {
+				guard self.database.executeUpdate("DELETE FROM feedSettings WHERE feedURL = ? AND feedID = ?;", withArgumentsIn: [feedURL, feedID]) else {
+					continuation.resume(throwing: AccountError.invalidResponse)
+					return
+				}
+				continuation.resume()
+			}
+		}
+	}
+
+	func flushWrites() async {
+		await withCheckedContinuation { continuation in
+			serialDispatchQueue.async { continuation.resume() }
 		}
 	}
 

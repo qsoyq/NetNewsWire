@@ -23,6 +23,16 @@ import RSCore
 
 	init() {
 		NotificationCenter.default.addObserver(self, selector: #selector(handleLowMemory(_:)), name: .lowMemory, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(feedSettingDidChange(_:)), name: .feedSettingDidChange, object: nil)
+	}
+
+	@objc private func feedSettingDidChange(_ notification: Notification) {
+		guard let feed = notification.object as? Feed, let id = feed.sidebarItemID,
+			let key = notification.userInfo?[Feed.SettingUserInfoKey] as? Feed.SettingKey,
+			[.url, .homePageURL, .iconURL, .faviconURL].contains(key) else { return }
+		feedIconImageCache[id] = nil
+		faviconImageCache[id] = nil
+		smartFeedIconImageCache.removeAll()
 	}
 
 	@objc func handleLowMemory(_ notification: Notification) {

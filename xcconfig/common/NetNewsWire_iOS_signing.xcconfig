@@ -1,0 +1,7 @@
+// Signing values migrated from the iOS app and extension build configurations.
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Development
+CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = Apple Development
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM = 4W75A6P6GG
+PROVISIONING_PROFILE_SPECIFIER =

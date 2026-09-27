@@ -10,7 +10,7 @@ import RSWeb
 import Articles
 
 @MainActor final class FeedSettings {
-	private let feedURL: String
+	private var feedURL: String
 	let feedID: String
 	private let database: FeedSettingsDatabase
 	weak var feed: Feed?
@@ -180,5 +180,19 @@ import Articles
 
 	private func postSettingDidChange(_ key: Feed.SettingKey) {
 		feed?.postFeedSettingDidChangeNotification(key)
+	}
+
+	func updateURLBinding(_ url: String) {
+		feedURL = url
+	}
+
+	func clearURLDependentCaches() {
+		homePageURL = nil
+		conditionalGetInfo = nil
+		cacheControlInfo = nil
+		contentHash = nil
+		lastCheckDate = nil
+		iconURL = nil
+		faviconURL = nil
 	}
 }

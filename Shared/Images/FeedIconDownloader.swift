@@ -53,15 +53,24 @@ extension Notification.Name {
 	@objc func feedSettingDidChange(_ notification: Notification) {
 		guard let feed = notification.object as? Feed,
 			  let key = notification.userInfo?[Feed.SettingUserInfoKey] as? Feed.SettingKey,
-			  key == .faviconURL else {
+			  [.url, .homePageURL, .iconURL, .faviconURL].contains(key) else {
 			return
 		}
 		cache[feed] = nil
+		waitingForFeedURLs = waitingForFeedURLs.filter { $0.value !== feed }
+		if let homePageURL = feed.homePageURL { homePagesWithNoIconURL.remove(homePageURL) }
 		feedURLToIconURLCache[feed.url] = nil
+		if let oldURL = notification.userInfo?[Feed.SettingOldURLUserInfoKey] as? String {
+			feedURLToIconURLCache[oldURL] = nil
+		}
 		feedURLToIconURLCacheDirty = true
 	}
 
 	func icon(for feed: Feed) -> IconImage? {
+		let metadata = [feed.url, feed.homePageURL ?? "", feed.iconURL ?? "", feed.faviconURL ?? ""]
+		@MainActor func isCurrentMetadata() -> Bool {
+			metadata == [feed.url, feed.homePageURL ?? "", feed.iconURL ?? "", feed.faviconURL ?? ""]
+		}
 
 		if let cachedImage = cache[feed] {
 			return cachedImage
@@ -82,6 +91,7 @@ extension Notification.Name {
 				return
 			}
 			icon(forHomePageURL: homePageURL, feed: feed) { image, iconURL in
+				guard isCurrentMetadata() else { return }
 				if self.cache[feed] != nil {
 					return // already cached
 				}
@@ -97,6 +107,7 @@ extension Notification.Name {
 			if let faviconURL = feed.faviconURL {
 				icon(forURL: faviconURL, feed: feed) { (image) in
 					Task { @MainActor in
+						guard isCurrentMetadata() else { return }
 						if self.cache[feed] != nil {
 							return // already cached
 						}
@@ -118,6 +129,7 @@ extension Notification.Name {
 			if let iconURL = feed.iconURL {
 				icon(forURL: iconURL, feed: feed) { (image) in
 					Task { @MainActor in
+						guard isCurrentMetadata() else { return }
 						if self.cache[feed] != nil {
 							return // already cached
 						}
@@ -138,6 +150,7 @@ extension Notification.Name {
 		if let previouslyFoundIconURL = feedURLToIconURLCache[feed.url] {
 			icon(forURL: previouslyFoundIconURL, feed: feed) { image in
 				MainActor.assumeIsolated {
+					guard isCurrentMetadata() else { return }
 					if self.cache[feed] != nil {
 						return // already cached
 					}

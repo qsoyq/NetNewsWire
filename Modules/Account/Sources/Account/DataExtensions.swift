@@ -16,8 +16,10 @@ public extension Notification.Name {
 
 public extension Feed {
 	static let SettingUserInfoKey = "feedSetting"
+	static let SettingOldURLUserInfoKey = "oldFeedURL"
 
 	enum SettingKey {
+		case url
 		case feedID
 		case homePageURL
 		case iconURL
@@ -46,8 +48,9 @@ extension Feed {
 		authors = Author.authorsWithParsedAuthors(parsedFeed.authors)
 	}
 
-	func postFeedSettingDidChangeNotification(_ key: Feed.SettingKey) {
-		let userInfo: [String: Feed.SettingKey] = [Feed.SettingUserInfoKey: key]
+	func postFeedSettingDidChangeNotification(_ key: Feed.SettingKey, oldURL: String? = nil) {
+		var userInfo: [String: Any] = [Feed.SettingUserInfoKey: key]
+		if let oldURL { userInfo[Feed.SettingOldURLUserInfoKey] = oldURL }
 		NotificationCenter.default.post(name: .feedSettingDidChange, object: self, userInfo: userInfo)
 	}
 }

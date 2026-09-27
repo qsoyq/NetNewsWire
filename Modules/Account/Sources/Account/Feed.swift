@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import os
 import RSCore
 import RSWeb
 import Articles
@@ -14,7 +15,8 @@ import Articles
 @MainActor public final class Feed: SidebarItem, Renamable, Hashable {
 	nonisolated public let feedID: String
 	nonisolated public let accountID: String
-	nonisolated public let url: String
+	private let feedURL: OSAllocatedUnfairLock<String>
+	nonisolated public var url: String { feedURL.withLock { $0 } }
 	nonisolated public let sidebarItemID: SidebarItemIdentifier?
 
 	public weak var account: Account?
@@ -261,12 +263,17 @@ import Articles
 		self.feedID = feedID
 		self.sidebarItemID = SidebarItemIdentifier.feed(accountID, feedID)
 
-		self.url = url
+		self.feedURL = OSAllocatedUnfairLock(initialState: url)
 		self.settings = settings
 		self.settings.feed = self
 	}
 
 	// MARK: - API
+
+	func updateURLBinding(_ url: String) {
+		feedURL.withLock { $0 = url }
+		settings.updateURLBinding(url)
+	}
 
 	public func dropConditionalGetInfo() {
 		conditionalGetInfo = nil
@@ -295,7 +302,8 @@ extension Feed: OPMLRepresentable {
 		// https://github.com/brentsimmons/NetNewsWire/issues/527
 		// Don’t use nameForDisplay because that can result in a feed name "Untitled" written to disk,
 		// which NetNewsWire may take later to be the actual name.
-		var nameToUse = editedName
+		// Internal OPML persists the server name; the local override already lives in FeedSettings.
+		var nameToUse = allowCustomAttributes ? name : editedName
 		if nameToUse == nil {
 			nameToUse = name
 		}

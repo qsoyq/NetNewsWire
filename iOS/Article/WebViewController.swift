@@ -71,6 +71,11 @@ final class WebViewController: UIViewController {
 	private var mediaContextTargetState: MediaContextTargetState?
 	private var didConfigureContextMenuForCurrentPress = false
 	private var mediaSaveProgressAlert: UIAlertController?
+	private var mediaSaveTask: Task<Void, Never>?
+	private var mediaSaveBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+	private var isConfirmingMediaSave = false
+	private var pendingMediaSaveResult: (title: String, message: String)?
+	private var isMediaSaveResultPresentationScheduled = false
 	private var articleImageLoadTracker: ArticleImageLoadTracker?
 	private var articleImageSummaryTask: Task<Void, Never>?
 
@@ -116,12 +121,18 @@ final class WebViewController: UIViewController {
 		NotificationCenter.default.addObserver(self, selector: #selector(avatarDidBecomeAvailable(_:)), name: .AvatarDidBecomeAvailable, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(faviconDidBecomeAvailable(_:)), name: .FaviconDidBecomeAvailable, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(currentArticleThemeDidChangeNotification(_:)), name: .CurrentArticleThemeDidChangeNotification, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(presentPendingMediaSaveResult), name: UIApplication.didBecomeActiveNotification, object: nil)
 
 		// Configure the tap zones
 		configureTopShowBarsView()
 		configureBottomShowBarsView()
 
 		loadWebView()
+	}
+
+	override func viewDidAppear(_ animated: Bool) {
+		super.viewDidAppear(animated)
+		presentPendingMediaSaveResult()
 	}
 
 	// MARK: Notifications
@@ -848,9 +859,10 @@ private extension WebViewController {
 	}
 
 	private func confirmSaveAllMedia(for mediaContextTarget: MediaContextTarget) {
-		guard let webView else {
+		guard let webView, mediaSaveTask == nil, !isConfirmingMediaSave, !ArticleMediaSaveStage.isActive else {
 			return
 		}
+		isConfirmingMediaSave = true
 
 		webView.evaluateJavaScript("collectMediaForSaving('\(mediaContextTarget.rawValue)')") { [weak self] result, error in
 			guard let self,
@@ -858,12 +870,14 @@ private extension WebViewController {
 				let result = result as? String,
 				let data = result.data(using: .utf8),
 				let snapshot = try? JSONDecoder().decode(MediaSnapshot.self, from: data) else {
+				self?.isConfirmingMediaSave = false
 				self?.logMediaEvent(.warning, operation: "Save all", message: "Could not read the media list from the article (error: \(error?.localizedDescription ?? "none"))")
 				self?.presentMediaSaveResult(title: NSLocalizedString("Unable to Save Media", comment: "Unable to save media title"), message: NSLocalizedString("The article media could not be read.", comment: "Unable to read article media"))
 				return
 			}
 
 			guard !snapshot.urls.isEmpty else {
+				self.isConfirmingMediaSave = false
 				self.logMediaEvent(.warning, operation: "Save all", message: "No supported \(mediaContextTarget.rawValue) media found; skipped \(snapshot.skipped) items")
 				self.presentMediaSaveResult(title: NSLocalizedString("No Media to Save", comment: "No media to save title"), message: NSLocalizedString("No supported media was found on this page.", comment: "No supported article media"))
 				return
@@ -873,8 +887,11 @@ private extension WebViewController {
 			let title = mediaContextTarget == .image ? NSLocalizedString("Save All Images", comment: "Save all article images") : NSLocalizedString("Save All Videos", comment: "Save all article videos")
 			let message = String.localizedStringWithFormat(NSLocalizedString("Save %ld %@ to your photo library?", comment: "Confirm saving all article media"), snapshot.urls.count, mediaName)
 			let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-			alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel))
+			alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel) { [weak self] _ in
+				self?.isConfirmingMediaSave = false
+			})
 			alert.addAction(UIAlertAction(title: NSLocalizedString("Save", comment: "Save"), style: .default) { [weak self] _ in
+				self?.isConfirmingMediaSave = false
 				self?.saveMedia(snapshot: snapshot, type: mediaContextTarget)
 			})
 			self.present(alert, animated: true)
@@ -882,7 +899,10 @@ private extension WebViewController {
 	}
 
 	private func saveMedia(snapshot: MediaSnapshot, type: MediaContextTarget) {
-		Task { @MainActor [weak self] in
+		guard mediaSaveTask == nil, !ArticleMediaSaveStage.isActive else {
+			return
+		}
+		mediaSaveTask = Task { @MainActor [weak self] in
 			guard let self else {
 				return
 			}
@@ -890,36 +910,61 @@ private extension WebViewController {
 		}
 	}
 
-	/// Performs a batch save, reporting every step it reaches.
-	///
-	/// This runs inside a single method with one top-level catch so an unexpected failure is logged
-	/// rather than silently swallowed. The stage marker is also kept up to date, because the error
-	/// log is written asynchronously and its last messages are lost if the process terminates during
-	/// the save.
 	private func performMediaSave(snapshot: MediaSnapshot, type: MediaContextTarget) async {
-		ArticleMediaSaveStage.begin(type: type.rawValue, requestedCount: snapshot.urls.count)
-		logMediaEvent(.debug, operation: "Save all", message: "Saving \(snapshot.urls.count) \(type.rawValue) media; \(snapshot.skipped) skipped; sources: \(snapshot.urls.map { ArticleMediaLog.urlDescription($0, level: .debug) })")
-
-		let saver = ArticleMediaSaver()
-		ArticleMediaSaveStage.update("authorizing")
-		guard await saver.authorize() else {
-			ArticleMediaSaveStage.finish()
-			logMediaEvent(.warning, operation: "Photo Library", message: "Add-only Photos permission was not granted")
-			presentMediaSaveResult(title: NSLocalizedString("Photo Library Access Required", comment: "Photo library access required title"), message: NSLocalizedString("Allow NetNewsWire to add media to your photo library and try again.", comment: "Photo library access required message"))
+		defer { mediaSaveTask = nil }
+		guard ArticleMediaSaveStage.begin(type: type.rawValue, requestedCount: snapshot.urls.count) else {
 			return
 		}
-		logMediaEvent(.debug, operation: "Save all", message: "Add-only Photos permission is granted")
-
-		let iconData = type == .image ? renderedArticleIconData() : nil
-		if type == .image {
-			logMediaEvent(.debug, operation: "Save all", message: iconData == nil ? "No feed icon data available for an nnwImageIcon source" : "Feed icon data is \(iconData?.count ?? 0) bytes")
+		defer {
+			ArticleMediaSaveStage.finish()
+			endMediaSaveBackgroundTask()
 		}
+		mediaSaveBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "SaveArticleMedia") { [weak self] in
+			self?.cancelMediaSave(reason: "background time expired")
+			self?.endMediaSaveBackgroundTask()
+		}
+		logMediaEvent(.debug, operation: "Save all", message: "Saving \(snapshot.urls.count) \(type.rawValue) media; \(snapshot.skipped) skipped; sources: \(snapshot.urls.map { ArticleMediaLog.urlDescription($0, level: .debug) })")
+		let iconData = type == .image ? renderedArticleIconData() : nil
 
 		let mediaName = type == .image ? NSLocalizedString("Images", comment: "Saving images title") : NSLocalizedString("Videos", comment: "Saving videos title")
 		let progressAlert = UIAlertController(title: String.localizedStringWithFormat(NSLocalizedString("Saving %@", comment: "Saving article media title"), mediaName), message: nil, preferredStyle: .alert)
+		progressAlert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel"), style: .cancel) { [weak self] _ in
+			self?.cancelMediaSave(reason: "user")
+		})
 		mediaSaveProgressAlert = progressAlert
+		if let confirmation = presentedViewController as? UIAlertController {
+			await dismissMediaSaveAlert(confirmation)
+		}
 		ArticleMediaSaveStage.update("presenting progress")
-		present(progressAlert, animated: true)
+		if viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive {
+			await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+				present(progressAlert, animated: true) { continuation.resume() }
+			}
+		}
+
+		let saver = ArticleMediaSaver()
+		ArticleMediaSaveStage.update("authorizing")
+		let authorized: Bool
+		if Task.isCancelled {
+			authorized = false
+		} else {
+			authorized = await saver.authorize()
+		}
+		guard authorized || Task.isCancelled else {
+			logMediaEvent(.warning, operation: "Photo Library", message: "Add-only Photos permission was not granted")
+			await dismissMediaSaveAlert(progressAlert)
+			mediaSaveProgressAlert = nil
+			pendingMediaSaveResult = (NSLocalizedString("Photo Library Access Required", comment: "Photo library access required title"), NSLocalizedString("Allow NetNewsWire to add media to your photo library and try again.", comment: "Photo library access required message"))
+			presentPendingMediaSaveResult()
+			return
+		}
+		if authorized {
+			logMediaEvent(.debug, operation: "Save all", message: "Add-only Photos permission is granted")
+		}
+
+		if type == .image {
+			logMediaEvent(.debug, operation: "Save all", message: iconData == nil ? "No feed icon data available for an nnwImageIcon source" : "Feed icon data is \(iconData?.count ?? 0) bytes")
+		}
 
 		let progress: @MainActor (Int, Int) -> Void = { [weak self] current, total in
 			self?.mediaSaveProgressAlert?.message = String.localizedStringWithFormat(NSLocalizedString("Saving %ld of %ld", comment: "Article media saving progress"), current, total)
@@ -933,12 +978,70 @@ private extension WebViewController {
 		}
 
 		ArticleMediaSaveStage.update("finalizing")
-		progressAlert.dismiss(animated: true) { [weak self] in
-			ArticleMediaSaveStage.finish()
-			self?.logMediaEvent(result.failedCount > 0 ? .warning : .info, operation: "Save all", message: "Saved \(result.savedCount) of \(result.requestedCount); failed \(result.failedCount); skipped \(result.skippedCount)")
-			self?.mediaSaveProgressAlert = nil
-			self?.presentMediaSaveResult(title: NSLocalizedString("Media Saved", comment: "Article media saved title"), message: self?.mediaSaveResultMessage(result) ?? "")
+		endMediaSaveBackgroundTask()
+		await dismissMediaSaveAlert(progressAlert)
+		mediaSaveProgressAlert = nil
+		logMediaEvent(result.failedCount > 0 ? .warning : .info, operation: "Save all", message: "Saved \(result.savedCount) of \(result.requestedCount); failed \(result.failedCount); skipped \(result.skippedCount); cancelled \(result.cancelledCount)")
+		let title = result.wasCancelled ? NSLocalizedString("Media Save Cancelled", comment: "Article media save cancelled title") : NSLocalizedString("Media Saved", comment: "Article media saved title")
+		pendingMediaSaveResult = (title, mediaSaveResultMessage(result))
+		presentPendingMediaSaveResult()
+	}
+
+	private func cancelMediaSave(reason: String) {
+		guard let mediaSaveTask, !mediaSaveTask.isCancelled else {
+			return
 		}
+		ArticleMediaSaveStage.cancel(reason: reason)
+		logMediaEvent(.info, operation: "Save all", message: "Cancellation requested: \(reason)")
+		mediaSaveTask.cancel()
+	}
+
+	private func endMediaSaveBackgroundTask() {
+		guard mediaSaveBackgroundTask != .invalid else {
+			return
+		}
+		let identifier = mediaSaveBackgroundTask
+		mediaSaveBackgroundTask = .invalid
+		UIApplication.shared.endBackgroundTask(identifier)
+	}
+
+	private func dismissMediaSaveAlert(_ alert: UIAlertController) async {
+		if alert.isBeingDismissed, let transition = alert.transitionCoordinator {
+			await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+				var didResume = false
+				func resumeOnce() {
+					guard !didResume else { return }
+					didResume = true
+					continuation.resume()
+				}
+				// UIKit may call completion even when registering alongside animation returns false.
+				if !transition.animate(alongsideTransition: nil, completion: { _ in resumeOnce() }) {
+					resumeOnce()
+				}
+			}
+		} else if alert.presentingViewController != nil {
+			await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+				alert.dismiss(animated: true) { continuation.resume() }
+			}
+		}
+	}
+
+	@objc private func presentPendingMediaSaveResult() {
+		guard let result = pendingMediaSaveResult,
+			viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive else {
+			return
+		}
+		guard presentedViewController == nil, !isBeingDismissed, !isBeingPresented else {
+			guard !isMediaSaveResultPresentationScheduled else { return }
+			isMediaSaveResultPresentationScheduled = true
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+				self?.isMediaSaveResultPresentationScheduled = false
+				self?.presentPendingMediaSaveResult()
+			}
+			return
+		}
+		pendingMediaSaveResult = nil
+		presentMediaSaveResult(title: result.title, message: result.message)
 	}
 
 	func renderedArticleIconData() -> Data? {
@@ -958,6 +1061,9 @@ private extension WebViewController {
 		}
 		if result.skippedCount > 0 {
 			components.append(String.localizedStringWithFormat(NSLocalizedString("%ld skipped.", comment: "Article media skipped count"), result.skippedCount))
+		}
+		if result.cancelledCount > 0 {
+			components.append(String.localizedStringWithFormat(NSLocalizedString("%ld cancelled.", comment: "Article media cancelled count"), result.cancelledCount))
 		}
 		return components.joined(separator: " ")
 	}

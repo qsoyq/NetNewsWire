@@ -1,0 +1,4 @@
+#include "./NetNewsWire_iOSwidgetextension_target.xcconfig"
+#include "./common/NetNewsWire_iOS_signing.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = com.qsoyq-uk.NetNewsWire.iOS-DEBUG.SpringboardWidgets

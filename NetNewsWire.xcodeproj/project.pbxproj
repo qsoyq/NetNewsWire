@@ -15,6 +15,10 @@
 		27B86EEB25A53AAB00264340 /* Account in Frameworks */ = {isa = PBXBuildFile; productRef = 51BC2F4A24D343A500E90810 /* Account */; };
 		4679674625E599C100844E8D /* Articles in Frameworks */ = {isa = PBXBuildFile; productRef = 4679674525E599C100844E8D /* Articles */; };
 		4679674725E599C100844E8D /* Articles in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 4679674525E599C100844E8D /* Articles */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		518B2EE82351B3DD00400001 /* Articles in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EEB2351B3DD00400001 /* Articles */; };
+		518B2EE92351B3DD00400001 /* RSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EEC2351B3DD00400001 /* RSCore */; };
+		518B2EEA2351B3DD00400001 /* Account in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EED2351B3DD00400001 /* Account */; };
+		518B2EF02351B3DD00400001 /* Account in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EEF2351B3DD00400001 /* Account */; };
 		510C416924E5CDE3008226FD /* NetNewsWire Share Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 510C415C24E5CDE3008226FD /* NetNewsWire Share Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		511B148924E5DBDD00C919BD /* Account in Frameworks */ = {isa = PBXBuildFile; productRef = 511B148824E5DBDD00C919BD /* Account */; };
 		5131463E235A7BBE00387FDC /* NetNewsWire iOS Intents Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 51314637235A7BBE00387FDC /* NetNewsWire iOS Intents Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -351,6 +355,24 @@
 			);
 			target = 849C64701ED37A5D003D8FC0 /* NetNewsWireTests */;
 		};
+		518B2EEE2351B3DD00400001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"NetNewsWire-iOSTests/Info.plist",
+				NetNewsWireTests/Info.plist,
+				NetNewsWireTests/SharingTests.swift,
+				NetNewsWireTests/ScriptingTests/AppleScriptXCTestCase.swift,
+				"NetNewsWireTests/ScriptingTests/NSAppleEventDescriptor+UserRecordFields.swift",
+				NetNewsWireTests/ScriptingTests/ScriptingTests.swift,
+				NetNewsWireTests/ScriptingTests/scripts/testFeedExists.applescript,
+				NetNewsWireTests/ScriptingTests/scripts/testGenericScript.applescript,
+				NetNewsWireTests/ScriptingTests/scripts/testGetURL.applescript,
+				NetNewsWireTests/ScriptingTests/scripts/testNameAndUrlOfEveryFeed.applescript,
+				NetNewsWireTests/ScriptingTests/scripts/testNameOfAuthors.applescript,
+				NetNewsWireTests/ScriptingTests/scripts/testNameOfEveryFolder.applescript,
+			);
+			target = 518B2ED12351B3DD00400001 /* NetNewsWire-iOSTests */;
+		};
 		84719F392DB9C60500EEF332 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -503,7 +525,7 @@
 		840A1F092E41337800CFCCFC /* Technotes */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Technotes; sourceTree = "<group>"; };
 		842E249F2DB9F9B800FF7DD8 /* Mac */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (842E25332DB9F9B800FF7DD8 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 842E25342DB9F9B800FF7DD8 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, 842E25352DB9F9B800FF7DD8 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 842E25362DB9F9B800FF7DD8 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Mac; sourceTree = "<group>"; };
 		8448F1F62D1E36BF0048BA50 /* Widget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (8448F2052D1E36BF0048BA50 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Widget; sourceTree = "<group>"; };
-		84719F0E2DB9C52B00EEF332 /* Tests */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (84719F272DB9C52B00EEF332 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Tests; sourceTree = "<group>"; };
+		84719F0E2DB9C52B00EEF332 /* Tests */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (84719F272DB9C52B00EEF332 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 518B2EEE2351B3DD00400001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Tests; sourceTree = "<group>"; };
 		84719F372DB9C60400EEF332 /* xcconfig */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (84719F392DB9C60500EEF332 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (common, ); path = xcconfig; sourceTree = "<group>"; };
 		84A6CFB52D1B4EC500F23315 /* iOS */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (84A6D03F2D1B4EC500F23315 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 84A6D0402D1B4EC500F23315 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 84A6D0412D1B4EC500F23315 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = iOS; sourceTree = "<group>"; };
 		84CB35042DB9B5E2002AC251 /* Modules */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Modules; sourceTree = "<group>"; };
@@ -552,6 +574,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				518B2EE82351B3DD00400001 /* Articles in Frameworks */,
+				518B2EE92351B3DD00400001 /* RSCore in Frameworks */,
+				518B2EEA2351B3DD00400001 /* Account in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -607,6 +632,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				518B2EF02351B3DD00400001 /* Account in Frameworks */,
 				848E84D22DB7495C0023F3BA /* RSCore in Frameworks */,
 				4679674625E599C100844E8D /* Articles in Frameworks */,
 			);
@@ -775,7 +801,15 @@
 			dependencies = (
 				518B2ED82351B3DD00400001 /* PBXTargetDependency */,
 			);
+			fileSystemSynchronizedGroups = (
+				84719F0E2DB9C52B00EEF332 /* Tests */,
+			);
 			name = "NetNewsWire-iOSTests";
+			packageProductDependencies = (
+				518B2EEB2351B3DD00400001 /* Articles */,
+				518B2EEC2351B3DD00400001 /* RSCore */,
+				518B2EED2351B3DD00400001 /* Account */,
+			);
 			productName = "NetNewsWire-iOSTests";
 			productReference = 518B2ED22351B3DD00400001 /* NetNewsWire-iOSTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -907,6 +941,7 @@
 			packageProductDependencies = (
 				4679674525E599C100844E8D /* Articles */,
 				848E84D12DB7495C0023F3BA /* RSCore */,
+				518B2EEF2351B3DD00400001 /* Account */,
 			);
 			productName = NetNewsWireTests;
 			productReference = 849C64711ED37A5D003D8FC0 /* NetNewsWireTests.xctest */;
@@ -1340,26 +1375,16 @@
 		176814022564BB2D00D98635 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSwidgetextension_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSwidgetextension_debug.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS-DEBUG.SpringboardWidgets";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Debug;
 		};
 		176814032564BB2D00D98635 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSwidgetextension_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSwidgetextension_release.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS.SpringboardWidgets";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Release;
 		};
@@ -1382,52 +1407,32 @@
 		51314640235A7BBE00387FDC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSintentextension_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSintentextension_debug.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS-DEBUG.IntentsExtension";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Debug;
 		};
 		51314642235A7BBE00387FDC /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSintentextension_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSintentextension_release.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS.IntentsExtension";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Release;
 		};
 		513C5CF2232571C2003D4054 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSshareextension_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSshareextension_debug.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS-DEBUG.Share-Extension";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Debug;
 		};
 		513C5CF3232571C2003D4054 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSshareextension_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSshareextension_release.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS.Share-Extension";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Release;
 		};
@@ -1466,26 +1471,16 @@
 		840D61A42029031E009BC708 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSapp_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSapp_debug.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS-DEBUG";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Debug;
 		};
 		840D61A52029031E009BC708 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 84719F372DB9C60400EEF332 /* xcconfig */;
-			baseConfigurationReferenceRelativePath = NetNewsWire_iOSapp_target.xcconfig;
+			baseConfigurationReferenceRelativePath = NetNewsWire_iOSapp_release.xcconfig;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 4W75A6P6GG;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.qsoyq-uk.NetNewsWire.iOS";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Release;
 		};
@@ -1716,6 +1711,22 @@
 			productName = Account;
 		};
 		516B695E24D2F33B00B5702F /* Account */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Account;
+		};
+		518B2EEB2351B3DD00400001 /* Articles */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Articles;
+		};
+		518B2EEC2351B3DD00400001 /* RSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RSCore;
+		};
+		518B2EED2351B3DD00400001 /* Account */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Account;
+		};
+		518B2EEF2351B3DD00400001 /* Account */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Account;
 		};

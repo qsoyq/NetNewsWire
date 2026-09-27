@@ -1,0 +1,11 @@
+{
+  "subscriptions": [
+    {
+      "id": "feed/1",
+      "title": "Remote Name",
+      "categories": [],
+      "url": "https://new.example/feed",
+      "htmlUrl": "https://new.example/"
+    }
+  ]
+}

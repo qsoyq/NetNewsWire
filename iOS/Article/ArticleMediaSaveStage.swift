@@ -16,20 +16,33 @@ import RSCore
 enum ArticleMediaSaveStage {
 
 	private static let fileName = "MediaSaveStage.txt"
+	private(set) static var isActive = false
+	private static var currentStage: String?
 
 	private static var fileURL: URL {
 		AppConfig.dataFolder.appendingPathComponent(fileName)
 	}
 
-	static func begin(type: String, requestedCount: Int) {
+	static func begin(type: String, requestedCount: Int) -> Bool {
+		guard !isActive else {
+			return false
+		}
+		isActive = true
 		write("\(type):started:\(requestedCount)")
+		return true
 	}
 
 	static func update(_ stage: String) {
 		write(stage)
 	}
 
+	static func cancel(reason: String) {
+		write("cancelling:\(reason):\(currentStage ?? "unknown")")
+	}
+
 	static func finish() {
+		isActive = false
+		currentStage = nil
 		try? FileManager.default.removeItem(at: fileURL)
 	}
 
@@ -47,6 +60,7 @@ enum ArticleMediaSaveStage {
 private extension ArticleMediaSaveStage {
 
 	static func write(_ stage: String) {
+		currentStage = stage
 		guard let data = stage.data(using: .utf8) else {
 			return
 		}

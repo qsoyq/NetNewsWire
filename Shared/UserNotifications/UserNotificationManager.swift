@@ -53,10 +53,9 @@ import os
 	}
 
 	@objc func statusesDidChange(_ note: Notification) {
+		guard let account = note.object as? Account else { return }
 		if let statuses = note.userInfo?[Account.UserInfoKey.statuses] as? Set<ArticleStatus>, !statuses.isEmpty {
-			let identifiers = statuses.filter({ $0.read }).map { "articleID:\($0.articleID)" }
-			Self.logger.debug("UserNotificationManager: removing \(identifiers.count) delivered notifications from statuses")
-			UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+			removeNotifications(articleIDs: Set(statuses.filter { $0.read }.map(\.articleID)), accountID: account.accountID)
 			return
 		}
 
@@ -65,14 +64,40 @@ import os
 		   let flag = note.userInfo?[Account.UserInfoKey.statusFlag] as? Bool,
 		   statusKey == .read,
 		   flag == true {
-			let identifiers = articleIDs.map { "articleID:\($0)" }
-			Self.logger.debug("UserNotificationManager: removing \(identifiers.count) delivered notifications from articleIDs")
-			UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+			removeNotifications(articleIDs: articleIDs, accountID: account.accountID)
 		}
+	}
+
+	nonisolated static func articleReference(from userInfo: [AnyHashable: Any]) -> NotificationArticleReference? {
+		guard let path = userInfo[UserInfoKey.articlePath] as? [AnyHashable: Any],
+			let accountID = path[ArticlePathKey.accountID] as? String,
+			let articleID = path[ArticlePathKey.articleID] as? String else { return nil }
+		return NotificationArticleReference(accountID: accountID, articleID: articleID)
+	}
+
+	nonisolated static func snapshot(_ notification: UNNotification) -> DeliveredArticleNotification {
+		DeliveredArticleNotification(
+			requestIdentifier: notification.request.identifier,
+			threadIdentifier: notification.request.content.threadIdentifier,
+			article: articleReference(from: notification.request.content.userInfo)
+		)
 	}
 }
 
 private extension UserNotificationManager {
+
+	func removeNotifications(articleIDs: Set<String>, accountID: String) {
+		guard !articleIDs.isEmpty else { return }
+		// Read back identities so legacy article-only identifiers are also removed without crossing accounts.
+		UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+			let identifiers = notifications.compactMap { notification -> String? in
+				guard let article = Self.articleReference(from: notification.request.content.userInfo),
+					article.accountID == accountID, articleIDs.contains(article.articleID) else { return nil }
+				return notification.request.identifier
+			}
+			UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+		}
+	}
 
 	func sendNotification(feed: Feed, article: Article) {
 		let content = UNMutableNotificationContent()
@@ -82,7 +107,7 @@ private extension UserNotificationManager {
 			content.subtitle = ArticleStringFormatter.shared.truncatedTitle(article)
 		}
 		content.body = ArticleStringFormatter.shared.truncatedSummary(article)
-		content.threadIdentifier = feed.feedID
+		content.threadIdentifier = NotificationArticleReference.threadIdentifier(accountID: article.accountID, feedID: feed.feedID)
 		content.sound = UNNotificationSound.default
 		content.userInfo = [UserInfoKey.articlePath: article.pathUserInfo]
 		content.categoryIdentifier = Self.notificationCategory
@@ -90,7 +115,8 @@ private extension UserNotificationManager {
 			content.attachments.append(attachment)
 		}
 
-		let request = UNNotificationRequest.init(identifier: "articleID:\(article.articleID)", content: content, trigger: nil)
+		let identifier = NotificationArticleReference(accountID: article.accountID, articleID: article.articleID).notificationIdentifier
+		let request = UNNotificationRequest.init(identifier: identifier, content: content, trigger: nil)
 		UNUserNotificationCenter.current().add(request)
 	}
 

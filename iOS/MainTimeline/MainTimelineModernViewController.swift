@@ -36,6 +36,12 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	private var isToolbarProgressViewShowing = false
 	private var dataSource: UICollectionViewDiffableDataSource<Int, TimelineArticleID>?
 	private var articlesByID = [TimelineArticleID: Article]()
+	private var previousArticlesByID = [TimelineArticleID: Article]()
+	private var snapshotPreparationTask: Task<Void, Never>?
+	private var snapshotPreparationState = TimelinePreparationState()
+	private var snapshotPreparationRevision: Int?
+	private var preparedSnapshot: TimelinePreparedArticles?
+	private var preparedSnapshotRevision: Int?
 	private var pendingSnapshotCompletions: [() -> Void]?
 	private var snapshotState = TimelineSnapshotState()
 	private var pendingUpdateCheckScheduled = false
@@ -119,7 +125,7 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	}
 
 	private func article(for identifier: TimelineArticleID) -> Article? {
-		articlesByID[identifier]
+		articlesByID[identifier] ?? previousArticlesByID[identifier]
 	}
 
 	private func article(at indexPath: IndexPath, dataSource: UICollectionViewDiffableDataSource<Int, TimelineArticleID>) -> Article? {
@@ -1064,12 +1070,40 @@ extension MainTimelineModernViewController {
 		pendingSnapshotCompletions = nil
 
 		let currentArticles = articles ?? ArticleArray()
-		var updatedArticlesByID = [TimelineArticleID: Article](minimumCapacity: currentArticles.count)
-		let identifiers = currentArticles.map { article in
-			let identifier = TimelineArticleID(article)
-			updatedArticlesByID[identifier] = article
-			return identifier
+		let revision = coordinator?.articlesRevision ?? 0
+		let prepared: TimelinePreparedArticles
+		if currentArticles.isEmpty {
+			prepared = TimelinePreparedArticles(articles: [], identifiers: [], articlesByID: [:])
+		} else if let model = coordinator?.preparedTimelineArticles {
+			prepared = model
+		} else if preparedSnapshotRevision == revision, let model = preparedSnapshot {
+			prepared = model
+		} else {
+			pendingSnapshotCompletions = completions
+			if snapshotPreparationRevision == revision, snapshotPreparationTask != nil { return }
+			snapshotPreparationTask?.cancel()
+			let generation = snapshotPreparationState.invalidate()
+			snapshotPreparationRevision = revision
+			let worker = Task.detached(priority: .userInitiated) { try TimelinePreparedArticles.map(currentArticles) }
+			snapshotPreparationTask = Task { @MainActor [weak self] in
+				do {
+					let model = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+					guard !Task.isCancelled, let self, self.snapshotPreparationState.isCurrent(generation) else { return }
+					self.snapshotPreparationTask = nil
+					if self.coordinator?.articlesRevision == revision {
+						self.preparedSnapshot = model
+						self.preparedSnapshotRevision = revision
+					}
+					self.applyChanges(animated: animated)
+				} catch { }
+			}
+			return
 		}
+		snapshotPreparationState.invalidate()
+		snapshotPreparationTask?.cancel()
+		snapshotPreparationTask = nil
+		let identifiers = prepared.identifiers
+		let updatedArticlesByID = prepared.articlesByID
 		if !snapshotState.requiresSnapshot(identifiers) {
 			articlesByID = updatedArticlesByID
 			reloadVisibleCells()
@@ -1078,9 +1112,10 @@ extension MainTimelineModernViewController {
 			return
 		}
 		// Keep old items resolvable until UIKit finishes removing their cells.
-		articlesByID.merge(updatedArticlesByID) { _, new in new }
+		previousArticlesByID = articlesByID
+		articlesByID = updatedArticlesByID
 		applySnapshot(identifiers: identifiers, animated: wasDeferred ? false : animated, completions: [{ [weak self] in
-			self?.articlesByID = updatedArticlesByID
+			self?.previousArticlesByID.removeAll()
 		}] + completions)
 	}
 

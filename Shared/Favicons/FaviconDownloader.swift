@@ -69,6 +69,18 @@ extension Notification.Name {
 		NotificationCenter.default.addObserver(self, selector: #selector(didLoadFavicon(_:)), name: .DidLoadFavicon, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(htmlMetadataIsAvailable(_:)), name: .htmlMetadataAvailable, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(handleLowMemory(_:)), name: .lowMemory, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(feedSettingDidChange(_:)), name: .feedSettingDidChange, object: nil)
+	}
+
+	@objc private func feedSettingDidChange(_ notification: Notification) {
+		guard let feed = notification.object as? Feed,
+			let key = notification.userInfo?[Feed.SettingUserInfoKey] as? Feed.SettingKey,
+			[.url, .homePageURL, .iconURL, .faviconURL].contains(key) else { return }
+		cache[feed] = nil
+		if let homePageURL = feed.homePageURL {
+			homePageToFaviconURLCache[homePageURL] = nil
+			homePageURLsWithNoFaviconURLCache.remove(homePageURL)
+		}
 	}
 
 	// MARK: - API

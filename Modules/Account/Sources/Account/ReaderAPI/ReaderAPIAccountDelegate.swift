@@ -192,34 +192,45 @@ final class ReaderAPIAccountDelegate: AccountDelegate {
 		let chunks = ArticleContentCacheRebuilder.contentRequestChunks(articleIDs: Array(articleIDs))
 		refreshProgress.addTasks(chunks.count)
 		progress?(0, chunks.count)
+		var completedChunks = 0
+		defer {
+			while completedChunks < chunks.count {
+				refreshProgress.completeTask()
+				completedChunks += 1
+			}
+		}
 
 		var downloadedCount = 0
 		var firstError: Error?
-		var start = 0
 		let concurrency = ArticleContentCacheRebuilder.maxConcurrentContentRequests
-
-		while start < chunks.count {
-			try Task.checkCancellation()
-			let end = min(start + concurrency, chunks.count)
-			let wave = Array(chunks[start..<end])
-
-			do {
-				let waveEntries = try await retrieveEntriesConcurrently(wave)
-				for entries in waveEntries {
-					downloadedCount += entries.count
-					await processEntries(account: account, entries: entries)
-					refreshProgress.completeTask()
-				}
-			} catch {
-				for _ in 0..<wave.count {
-					refreshProgress.completeTask()
-				}
-				Self.logger.error("ReaderAPIAccountDelegate: refreshArticleContent — wave failed: \(error.localizedDescription)")
-				firstError = firstError ?? error
+		try await withThrowingTaskGroup(of: RebuildBatchResult.self) { group in
+			var nextChunk = 0
+			while nextChunk < min(concurrency, chunks.count) {
+				let chunk = chunks[nextChunk]
+				group.addTask { await self.retrieveRebuildBatch(chunk) }
+				nextChunk += 1
 			}
-
-			start = end
-			progress?(min(start, chunks.count), chunks.count)
+			while let batch = try await group.next() {
+				try Task.checkCancellation()
+				do {
+					let entries = try batch.result.get()
+					downloadedCount += try await updateRebuiltEntries(account: account, entries: entries, requestedIDs: batch.articleIDs)
+				} catch is CancellationError {
+					throw CancellationError()
+				} catch {
+					try Task.checkCancellation()
+					Self.logger.error("ReaderAPIAccountDelegate: refreshArticleContent — batch failed: \(error.localizedDescription)")
+					firstError = firstError ?? error
+				}
+				refreshProgress.completeTask()
+				completedChunks += 1
+				progress?(completedChunks, chunks.count)
+				if nextChunk < chunks.count {
+					let chunk = chunks[nextChunk]
+					group.addTask { await self.retrieveRebuildBatch(chunk) }
+					nextChunk += 1
+				}
+			}
 		}
 
 		if let firstError {
@@ -228,18 +239,32 @@ final class ReaderAPIAccountDelegate: AccountDelegate {
 		return downloadedCount
 	}
 
+	private struct RebuildBatchResult: Sendable {
+		let articleIDs: Set<String>
+		let result: Result<[ReaderAPIEntry], Error>
+	}
 
-	func retrieveEntriesConcurrently(_ chunks: [[String]]) async throws -> [[ReaderAPIEntry]] {
-		guard !chunks.isEmpty else {
-			return []
+	@MainActor private func retrieveRebuildBatch(_ articleIDs: [String]) async -> RebuildBatchResult {
+		do {
+			try Task.checkCancellation()
+			guard let entries = try await caller.retrieveEntries(articleIDs: articleIDs, using: rebuildTransport) else {
+				throw ReaderAPIAccountDelegateError.invalidResponse
+			}
+			return RebuildBatchResult(articleIDs: Set(articleIDs), result: .success(entries))
+		} catch {
+			return RebuildBatchResult(articleIDs: Set(articleIDs), result: .failure(error))
 		}
-		if chunks.count == 1 {
-			return [try await caller.retrieveEntries(articleIDs: chunks[0], using: rebuildTransport) ?? []]
+	}
+
+	@MainActor func updateRebuiltEntries(account: Account, entries: [ReaderAPIEntry], requestedIDs: Set<String>) async throws -> Int {
+		let requestedEntries = entries.filter { requestedIDs.contains($0.uniqueID(variant: variant)) && $0.summary.content != nil }
+		let parsedItems = mapEntriesToParsedItems(account: account, entries: requestedEntries)
+		let feedIDsAndItems = Dictionary(grouping: parsedItems, by: \.feedURL).mapValues { Set($0) }
+		try await account.updateAsync(feedIDsAndItems: feedIDsAndItems, defaultRead: true)
+		guard Set(parsedItems.compactMap(\.syncServiceID)) == requestedIDs else {
+			throw ReaderAPIAccountDelegateError.invalidResponse
 		}
-		let mid = chunks.count / 2
-		async let left = retrieveEntriesConcurrently(Array(chunks[..<mid]))
-		async let right = retrieveEntriesConcurrently(Array(chunks[mid...]))
-		return try await left + right
+		return parsedItems.count
 	}
 
 	@MainActor func syncArticleStatus(for account: Account) async throws {
@@ -640,7 +665,9 @@ private extension ReaderAPIAccountDelegate {
 
 			BatchUpdate.shared.perform {
 				self.syncFolders(account, tags)
-				self.syncFeeds(account, subscriptions)
+			}
+			try await self.syncFeeds(account, subscriptions)
+			BatchUpdate.shared.perform {
 				self.syncFeedFolderRelationship(account, subscriptions)
 			}
 		} catch {
@@ -696,13 +723,18 @@ private extension ReaderAPIAccountDelegate {
 		}
 	}
 
-	@MainActor func syncFeeds(_ account: Account, _ subscriptions: [ReaderAPISubscription]?) {
+}
+
+extension ReaderAPIAccountDelegate {
+
+	@MainActor func syncFeeds(_ account: Account, _ subscriptions: [ReaderAPISubscription]?) async throws {
 		Self.logger.debug("ReaderAPIAccountDelegate: syncFeeds — subscriptions.count \(subscriptions?.count ?? -1)")
 
 		guard let subscriptions = subscriptions else { return }
 		assert(Thread.isMainThread)
 
-		let subFeedIds = subscriptions.map { $0.feedID }
+		let subFeedIds = Set(subscriptions.map(\.feedID))
+		let existingFeeds = Dictionary(uniqueKeysWithValues: account.flattenedFeeds().map { ($0.feedID, $0) })
 
 		// Remove any feeds that are no longer in the subscriptions
 		if let folders = account.folders {
@@ -723,19 +755,79 @@ private extension ReaderAPIAccountDelegate {
 
 		// Add any feeds we don't have and update any we do
 		for subscription in subscriptions {
-			if let feed = account.existingFeed(withFeedID: subscription.feedID) {
-				feed.name = subscription.name
-				feed.editedName = nil
-				feed.homePageURL = subscription.homePageURL
-				feed.faviconURL = subscription.iconURL
+			if let feed = existingFeeds[subscription.feedID] {
+				if variant == .freshRSS {
+					try await applySubscriptionMetadata(subscription, to: feed, account: account)
+				} else {
+					feed.name = subscription.name
+					feed.editedName = nil
+					feed.homePageURL = subscription.homePageURL
+					feed.faviconURL = subscription.iconURL
+				}
 			} else {
+				if variant == .freshRSS, !Account.isValidFeedURL(subscription.url) {
+					throw ReaderAPIAccountDelegateError.invalidResponse
+				}
 				let feed = account.createFeed(with: subscription.name, url: subscription.url, feedID: subscription.feedID, homePageURL: subscription.homePageURL)
 				feed.externalID = subscription.feedID
 				feed.faviconURL = subscription.iconURL
 				account.addFeedToTreeAtTopLevel(feed)
 			}
 		}
+		if variant == .freshRSS { try await account.persistFeedMetadata() }
 	}
+
+	@MainActor func refreshFeedMetadata(for account: Account) async throws -> (updatedCount: Int, incompleteCount: Int) {
+		retrieveCredentialsIfNeeded(account)
+		guard let subscriptions = try await caller.retrieveSubscriptions() else {
+			throw ReaderAPIAccountDelegateError.invalidResponse
+		}
+		let count = try await updateExistingFeedMetadata(account: account, subscriptions: subscriptions)
+		let feedIDs = Set(account.flattenedFeeds().map(\.feedID))
+		let incomplete = subscriptions.filter { feedIDs.contains($0.feedID) && !$0.hasCompleteMetadata }.count
+		return (count, incomplete)
+	}
+
+	@MainActor func updateExistingFeedMetadata(account: Account, subscriptions: [ReaderAPISubscription]) async throws -> Int {
+		var count = 0
+		var firstError: Error?
+		let subscriptionsByID = Dictionary(grouping: subscriptions, by: \.feedID)
+		for feed in account.flattenedFeeds() {
+			try Task.checkCancellation()
+			guard let records = subscriptionsByID[feed.feedID], records.count == 1, let subscription = records.first else {
+				firstError = firstError ?? ReaderAPIAccountDelegateError.invalidResponse
+				continue
+			}
+			do {
+				try await applySubscriptionMetadata(subscription, to: feed, account: account)
+				count += 1
+			} catch is CancellationError {
+				throw CancellationError()
+			} catch {
+				firstError = firstError ?? error
+			}
+		}
+		try await account.persistFeedMetadata()
+		if let firstError { throw firstError }
+		return count
+	}
+
+	@MainActor private func applySubscriptionMetadata(_ subscription: ReaderAPISubscription, to feed: Feed, account: Account) async throws {
+		let url = subscription.url.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard Account.isValidFeedURL(url),
+			subscription.homePageURL.map(Account.isValidFeedURL) != false,
+			subscription.iconURL.map(Account.isValidFeedURL) != false else {
+			throw ReaderAPIAccountDelegateError.invalidResponse
+		}
+		try await account.updateURL(url, for: feed)
+		if let name = subscription.name, !name.isEmpty { feed.name = name }
+		if let homePageURL = subscription.homePageURL { feed.homePageURL = homePageURL }
+		if let iconURL = subscription.iconURL { feed.faviconURL = iconURL }
+	}
+
+}
+
+private extension ReaderAPIAccountDelegate {
 
 	func syncFeedFolderRelationship(_ account: Account, _ subscriptions: [ReaderAPISubscription]?) {
 		Self.logger.debug("ReaderAPIAccountDelegate: syncFeedFolderRelationship — subscriptions.count \(subscriptions?.count ?? -1)")

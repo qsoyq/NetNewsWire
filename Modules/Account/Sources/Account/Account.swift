@@ -472,6 +472,13 @@ public enum FetchType {
 		return try await readerDelegate.refreshArticleContent(for: self, articleIDs: articleIDs, progress: progress)
 	}
 
+	func refreshFeedMetadata() async throws -> (updatedCount: Int, incompleteCount: Int) {
+		guard type == .freshRSS, let readerDelegate = delegate as? ReaderAPIAccountDelegate else {
+			throw AccountError.invalidParameter
+		}
+		return try await readerDelegate.refreshFeedMetadata(for: self)
+	}
+
 	// MARK: - Syncing Article Status
 
 	public func sendArticleStatus() async throws {
@@ -686,6 +693,43 @@ public enum FetchType {
 		feed.name = name
 		feed.homePageURL = homePageURL
 		return feed
+	}
+
+	func updateURL(_ url: String, for feed: Feed) async throws {
+		guard feed.account === self, Self.isValidFeedURL(url) else { throw AccountError.invalidParameter }
+		let oldURL = feed.url
+		guard oldURL != url else { return }
+		if let conflicting = existingFeed(withURL: url), conflicting.feedID != feed.feedID {
+			throw AccountError.createErrorAlreadySubscribed
+		}
+		// Keep the old settings row until the new OPML is durable, so interruption preserves local preferences.
+		try await feedSettingsDatabase.copySettings(from: oldURL, to: url, feedID: feed.feedID)
+		feed.updateURLBinding(url)
+		do {
+			try opmlFile.saveImmediately()
+		} catch {
+			feed.updateURLBinding(oldURL)
+			throw error
+		}
+		feedSettingsCache[oldURL] = nil
+		feedSettingsCache[url] = feed.settings
+		try await feedSettingsDatabase.removeSettings(for: oldURL, feedID: feed.feedID)
+		feed.settings.clearURLDependentCaches()
+		await feedSettingsDatabase.flushWrites()
+		structureDidChange()
+		feed.postFeedSettingDidChangeNotification(.url, oldURL: oldURL)
+		postChildrenDidChangeNotification()
+	}
+
+	static func isValidFeedURL(_ string: String) -> Bool {
+		guard let url = URL(string: string), let scheme = url.scheme?.lowercased(),
+			(scheme == "https" || scheme == "http"), let host = url.host, !host.isEmpty else { return false }
+		return true
+	}
+
+	func persistFeedMetadata() async throws {
+		try opmlFile.saveImmediately()
+		await feedSettingsDatabase.flushWrites()
 	}
 
 	public func removeFeed(_ feed: Feed, from container: Container, completion: @escaping (Result<Void, Error>) -> Void) {

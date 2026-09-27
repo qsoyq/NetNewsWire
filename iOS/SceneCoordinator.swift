@@ -69,6 +69,10 @@ struct SidebarItemNode: Hashable, Sendable {
 	private let fetchRequestQueue = FetchRequestQueue()
 	private var performanceFetchInterval: PerformanceDiagnosticInterval?
 	private var performanceRequestID: Int?
+	private var timelinePreparationTask: Task<Void, Never>?
+	private var timelinePreparationState = TimelinePreparationState()
+	private(set) var preparedTimelineArticles: TimelinePreparedArticles?
+	private(set) var articlesRevision = 0
 
 	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "SceneCoordinator")
 
@@ -272,6 +276,7 @@ struct SidebarItemNode: Hashable, Sendable {
 
 	private(set) var articles = ArticleArray() {
 		didSet {
+			articlesRevision += 1
 			timelineMiddleIndexPath = nil
 			articleDictionaryNeedsUpdate = true
 		}
@@ -774,6 +779,7 @@ struct SidebarItemNode: Hashable, Sendable {
 	}
 
 	func suspend() {
+		invalidateTimelinePreparation()
 		fetchAndMergeArticlesQueue.performCallsImmediately()
 		rebuildBackingStoresQueue.performCallsImmediately()
 		refreshTimelineAfterStatusChangeQueue.cancelPendingCalls()
@@ -2396,8 +2402,9 @@ private extension SceneCoordinator {
 	// MARK: Fetching Articles
 
 	func emptyTheTimeline() {
+		invalidateTimelinePreparation()
 		if !articles.isEmpty {
-			replaceArticles(with: Set<Article>(), animated: false)
+			commitArticles([], prepared: nil, animated: false)
 		}
 	}
 
@@ -2413,14 +2420,59 @@ private extension SceneCoordinator {
 		sortDirection = timelineSortDirectionState.sortDirection(for: sidebarItemID, defaultSortDirection: AppDefaults.shared.timelineSortDirection)
 	}
 
-	func replaceArticles(with unsortedArticles: Set<Article>, animated: Bool) {
-		let sortInterval = PerformanceDiagnosticLog.begin("Timeline sort", details: "article_count=\(unsortedArticles.count) group_by_feed=\(groupByFeed)")
-		let sortedArticles = Array(unsortedArticles).sortedByDate(sortDirection, groupByFeed: groupByFeed)
-		PerformanceDiagnosticLog.end(sortInterval, details: "article_count=\(sortedArticles.count)")
-		replaceArticles(with: sortedArticles, animated: animated)
+	func replaceArticles(with unsortedArticles: Set<Article>, animated: Bool, completion: (() -> Void)? = nil) {
+		invalidateTimelinePreparation()
+		guard !unsortedArticles.isEmpty else {
+			commitArticles([], prepared: nil, animated: animated)
+			completion?()
+			return
+		}
+		var namesByFeed = [String: [String: String]]()
+		let keys = unsortedArticles.map { article in
+			let name: String
+			if !groupByFeed {
+				name = ""
+			} else if let cached = namesByFeed[article.accountID]?[article.feedID] {
+				name = cached
+			} else {
+				name = article.account?.existingFeed(withFeedID: article.feedID)?.name ?? ""
+				namesByFeed[article.accountID, default: [:]][article.feedID] = name
+			}
+			return TimelineArticleSortKey(article: article, feedName: name)
+		}
+		let generation = timelinePreparationState.generation
+		let direction = sortDirection
+		let grouping = groupByFeed
+		let sortInterval = PerformanceDiagnosticLog.begin("Timeline sort", details: "article_count=\(keys.count) background=true", tracksMainThread: false)
+		let worker = Task.detached(priority: .userInitiated) {
+			try TimelinePreparedArticles.sort(keys, direction: direction, groupByFeed: grouping)
+		}
+		timelinePreparationTask = Task { @MainActor [weak self] in
+			do {
+				let prepared = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+				PerformanceDiagnosticLog.end(sortInterval, details: "article_count=\(prepared.articles.count)")
+				guard !Task.isCancelled, let self, self.timelinePreparationState.isCurrent(generation) else { return }
+				self.timelinePreparationTask = nil
+				self.commitArticles(prepared.articles, prepared: prepared, animated: animated)
+				completion?()
+			} catch {
+				PerformanceDiagnosticLog.end(sortInterval, details: "result=cancelled")
+			}
+		}
 	}
 
 	func replaceArticles(with sortedArticles: ArticleArray, animated: Bool) {
+		invalidateTimelinePreparation()
+		commitArticles(sortedArticles, prepared: nil, animated: animated)
+	}
+
+	func invalidateTimelinePreparation() {
+		timelinePreparationState.invalidate()
+		timelinePreparationTask?.cancel()
+		timelinePreparationTask = nil
+	}
+
+	func commitArticles(_ sortedArticles: ArticleArray, prepared: TimelinePreparedArticles?, animated: Bool) {
 		let didChange = articles != sortedArticles
 		let updateInterval = PerformanceDiagnosticLog.begin("Timeline model update", details: "old_count=\(articles.count) new_count=\(sortedArticles.count) animated=\(animated)")
 		defer {
@@ -2428,6 +2480,7 @@ private extension SceneCoordinator {
 		}
 		if didChange {
 			articles = sortedArticles
+			preparedTimelineArticles = prepared
 
 			// Update currentArticle to the new instance if it's still in the timeline.
 			// If the article is no longer in the timeline, keep showing it anyway -
@@ -2493,19 +2546,50 @@ private extension SceneCoordinator {
 		guard let timelineFeed = timelineFeed else {
 			return
 		}
+		let favoriteFeedKeys: Set<FavoriteFeedKey>?
+		if timelineFeed is FavoriteFeedsAllFeed {
+			favoriteFeedKeys = Set(FavoriteFeedsController.shared.aliases.map(\.key))
+		} else if let folder = timelineFeed as? FavoriteFeedsFolder {
+			favoriteFeedKeys = Set(folder.aliases.map(\.key))
+		} else if let alias = timelineFeed as? FavoriteFeedAlias {
+			favoriteFeedKeys = [alias.key]
+		} else {
+			favoriteFeedKeys = nil
+		}
 
 		fetchUnsortedArticlesAsync(for: [timelineFeed]) { [weak self] (unsortedArticles) in
 			guard let strongSelf = self else {
 				return
 			}
-			let mergeInterval = PerformanceDiagnosticLog.begin("Timeline merge", details: "fetched_count=\(unsortedArticles.count) existing_count=\(strongSelf.articles.count)")
-			let updatedArticles = TimelineArticleMerger.merge(fetchedArticles: unsortedArticles, existingArticles: strongSelf.articles) { article in
-				article.account?.existingFeed(withFeedID: article.feedID) != nil
+			let existing = strongSelf.articles
+			let revision = strongSelf.articlesRevision
+			let existingFeedKeys = Set(AccountManager.shared.accounts.flatMap { account in
+				account.flattenedFeeds().map { FavoriteFeedKey(feed: $0) }
+			})
+			strongSelf.invalidateTimelinePreparation()
+			let generation = strongSelf.timelinePreparationState.generation
+			let interval = PerformanceDiagnosticLog.begin("Timeline merge", details: "fetched_count=\(unsortedArticles.count) existing_count=\(existing.count) background=true", tracksMainThread: false)
+			let worker = Task.detached(priority: .userInitiated) {
+				try Task.checkCancellation()
+				let merged = TimelineArticleMerger.merge(fetchedArticles: unsortedArticles, existingArticles: existing) { article in
+					let key = FavoriteFeedKey(accountID: article.accountID, feedID: article.feedID)
+					return existingFeedKeys.contains(key) && (favoriteFeedKeys?.contains(key) ?? true)
+				}
+				try Task.checkCancellation()
+				return merged
 			}
-			PerformanceDiagnosticLog.end(mergeInterval, details: "result_count=\(updatedArticles.count)")
-
-			strongSelf.replaceArticles(with: updatedArticles, animated: animated)
-			completion?()
+			strongSelf.timelinePreparationTask = Task { @MainActor [weak self] in
+				do {
+					let merged = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+					PerformanceDiagnosticLog.end(interval, details: "result_count=\(merged.count)")
+					guard !Task.isCancelled, let self, self.timelinePreparationState.isCurrent(generation),
+						self.articlesRevision == revision else { return }
+					self.timelinePreparationTask = nil
+					self.replaceArticles(with: merged, animated: animated, completion: completion)
+				} catch {
+					PerformanceDiagnosticLog.end(interval, details: "result=cancelled")
+				}
+			}
 		}
 
 	}
@@ -2520,6 +2604,7 @@ private extension SceneCoordinator {
 	}
 
 	func cancelPendingAsyncFetches() {
+		invalidateTimelinePreparation()
 		if let performanceFetchInterval {
 			PerformanceDiagnosticLog.end(performanceFetchInterval, details: "result=cancelled")
 			self.performanceFetchInterval = nil
@@ -2552,8 +2637,7 @@ private extension SceneCoordinator {
 		}
 
 		fetchUnsortedArticlesAsync(for: fetchers) { [weak self] (articles) in
-			self?.replaceArticles(with: articles, animated: animated)
-			completion()
+			self?.replaceArticles(with: articles, animated: animated, completion: completion)
 		}
 
 	}
