@@ -163,6 +163,7 @@ struct SidebarItemNode: Hashable, Sendable {
 	}
 
 	private var exceptionArticleFetcher: ArticleFetcher?
+	private var videoPlaybackArticles = [Article]()
 	private(set) var timelineFeed: SidebarItem? {
 		didSet {
 			mainTimelineViewController?.cancelPendingScrollReset()
@@ -866,7 +867,14 @@ struct SidebarItemNode: Hashable, Sendable {
 		if let currentArticle, currentArticle.articleID == articleID {
 			return currentArticle
 		}
-		return idToArticleDictionary[articleID]
+		return idToArticleDictionary[articleID] ?? videoPlaybackArticles.first(where: { $0.articleID == articleID })
+	}
+
+	func retainArticleForVideoPlayback(_ article: Article) {
+		guard !videoPlaybackArticles.contains(where: { $0.articleID == article.articleID && $0.accountID == article.accountID }) else {
+			return
+		}
+		videoPlaybackArticles.append(article)
 	}
 
 	func unreadCountFor(_ node: Node) -> Int {
@@ -1004,6 +1012,7 @@ struct SidebarItemNode: Hashable, Sendable {
 			completion?()
 			return
 		}
+		videoPlaybackArticles.removeAll()
 
 		currentFeedIndexPath = indexPath
 		mainFeedCollectionViewController.updateFeedSelection(animations: animations)
@@ -2638,6 +2647,11 @@ private extension SceneCoordinator {
 		if exceptionArticleFetcher != nil {
 			fetchers.append(exceptionArticleFetcher!)
 			exceptionArticleFetcher = nil
+		}
+		for article in videoPlaybackArticles {
+			if let account = article.account {
+				fetchers.append(SingleArticleFetcher(account: account, articleID: article.articleID))
+			}
 		}
 
 		fetchUnsortedArticlesAsync(for: fetchers) { [weak self] (articles) in

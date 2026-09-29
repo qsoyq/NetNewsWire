@@ -89,6 +89,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 		PerformanceDiagnosticLog.event(operation: "Lifecycle", message: "scene-will-enter-foreground")
 		appDelegate.resumeDatabaseProcessingIfNecessary()
 		appDelegate.prepareAccountsForForeground()
+		VideoPlayerManager.shared.synchronizeArticleAfterForeground()
 		coordinator.resetFocus()
 	}
 

@@ -24,6 +24,7 @@ final class VideoPlayerManager: NSObject {
 	private var player: AVPlayer?
 	private var playerViewController: AVPlayerViewController?
 	private var currentArticleID: String?
+	private var playbackArticles = [Article]()
 	nonisolated private let pictureInPictureState = OSAllocatedUnfairLock(initialState: false)
 	private var isRestoringUserInterface = false
 
@@ -51,6 +52,12 @@ final class VideoPlayerManager: NSObject {
 		player.replaceCurrentItem(with: item)
 
 		currentArticleID = articleID
+		if let coordinator {
+			playbackArticles = coordinator.articles
+			if let article = coordinator.articleFor(articleID) {
+				coordinator.retainArticleForVideoPlayback(article)
+			}
+		}
 		observePlayerItemEnd()
 
 		let playerViewController = configuredPlayerViewController()
@@ -71,6 +78,7 @@ final class VideoPlayerManager: NSObject {
 		playerViewController = nil
 		removeEndObserver()
 		currentArticleID = nil
+		playbackArticles.removeAll()
 		setPictureInPictureActive(false)
 		isRestoringUserInterface = false
 	}
@@ -179,7 +187,10 @@ final class VideoPlayerManager: NSObject {
 				currentArticleID = nextArticle.articleID
 				observePlayerItemEnd()
 
-				coordinator.selectArticle(nextArticle, animations: [.navigation, .scroll])
+				coordinator.retainArticleForVideoPlayback(nextArticle)
+				if UIApplication.shared.applicationState == .active {
+					coordinator.selectArticle(nextArticle, animations: [.navigation, .scroll])
+				}
 				return
 			}
 		}
@@ -194,6 +205,10 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private func nextArticleForPlayback(_ coordinator: SceneCoordinator) -> Article? {
+		if let currentArticleID,
+		   let index = playbackArticles.firstIndex(where: { $0.articleID == currentArticleID }) {
+			return index + 1 < playbackArticles.count ? playbackArticles[index + 1] : nil
+		}
 		if let currentArticleID, coordinator.currentArticle?.articleID != currentArticleID, let article = coordinator.articleFor(currentArticleID) {
 			return coordinator.findNextArticle(article)
 		}
@@ -205,6 +220,7 @@ final class VideoPlayerManager: NSObject {
 		player?.replaceCurrentItem(with: nil)
 		removeEndObserver()
 		currentArticleID = nil
+		playbackArticles.removeAll()
 
 		if !isPiPActive {
 			playerViewController?.dismiss(animated: true)
@@ -247,6 +263,14 @@ final class VideoPlayerManager: NSObject {
 		presenter.present(playerViewController, animated: true) {
 			finish(true)
 		}
+	}
+
+	func synchronizeArticleAfterForeground() {
+		guard isPiPActive, let currentArticleID, let coordinator,
+		      let article = coordinator.articleFor(currentArticleID) else {
+			return
+		}
+		coordinator.selectArticle(article, animations: [.navigation, .scroll])
 	}
 }
 
