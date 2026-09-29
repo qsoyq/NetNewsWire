@@ -1403,7 +1403,12 @@ extension MainFeedCollectionViewController {
 				menuElements.append(folderMenu)
 			}
 
-			menuElements.append(UIMenu(title: "", options: .displayInline, children: [self.renameAction(indexPath: indexPath)]))
+			var feedActions = [UIAction]()
+			feedActions.append(self.renameAction(indexPath: indexPath))
+			if let deleteAction = self.deleteFavoriteFeedAction(indexPath: indexPath) {
+				feedActions.append(deleteAction)
+			}
+			menuElements.append(UIMenu(title: "", options: .displayInline, children: feedActions))
 
 			return UIMenu(title: "", children: menuElements)
 		})
@@ -1523,6 +1528,19 @@ extension MainFeedCollectionViewController {
 			self?.delete(indexPath: indexPath)
 		}
 		return action
+	}
+
+	func deleteFavoriteFeedAction(indexPath: IndexPath) -> UIAction? {
+		guard let alias = favoriteAlias(at: indexPath),
+			  let feed = alias.feed,
+			  feedNode(for: feed) != nil else {
+			return nil
+		}
+
+		let title = NSLocalizedString("Delete", comment: "Delete")
+		return UIAction(title: title, image: Assets.Images.trash, attributes: .destructive) { [weak self] _ in
+			self?.confirmDeleteFavoriteFeed(alias, sourceIndexPath: indexPath)
+		}
 	}
 
 	func renameAction(indexPath: IndexPath) -> UIAction {
@@ -1712,6 +1730,26 @@ extension MainFeedCollectionViewController {
 			return
 		}
 
+		confirmDelete(sidebarItem) { [weak self] in
+			self?.performDelete(indexPath: indexPath)
+		}
+	}
+
+	func confirmDeleteFavoriteFeed(_ alias: FavoriteFeedAlias, sourceIndexPath: IndexPath) {
+		guard let feed = alias.feed, feedNode(for: feed) != nil else {
+			return
+		}
+
+		confirmDelete(feed) { [weak self] in
+			guard let self, let node = self.feedNode(for: feed) else {
+				return
+			}
+			self.performDelete(node: node, sourceIndexPath: sourceIndexPath)
+		}
+	}
+
+	func confirmDelete(_ sidebarItem: SidebarItem, delete: @escaping () -> Void) {
+
 		let title: String
 		let message: String
 		if sidebarItem is Folder {
@@ -1730,8 +1768,8 @@ extension MainFeedCollectionViewController {
 		alertController.addAction(UIAlertAction(title: cancelTitle, style: .cancel))
 
 		let deleteTitle = NSLocalizedString("Delete", comment: "Delete")
-		let deleteAction = UIAlertAction(title: deleteTitle, style: .destructive) { [weak self] _ in
-			self?.performDelete(indexPath: indexPath)
+		let deleteAction = UIAlertAction(title: deleteTitle, style: .destructive) { _ in
+			delete()
 		}
 		alertController.addAction(deleteAction)
 		alertController.preferredAction = deleteAction
@@ -1740,8 +1778,14 @@ extension MainFeedCollectionViewController {
 	}
 
 	func performDelete(indexPath: IndexPath) {
+		guard let deleteNode = dataSource.itemIdentifier(for: indexPath)?.node else {
+			return
+		}
+		performDelete(node: deleteNode, sourceIndexPath: indexPath)
+	}
+
+	func performDelete(node deleteNode: Node, sourceIndexPath: IndexPath?) {
 		guard let undoManager = undoManager,
-			  let deleteNode = dataSource.itemIdentifier(for: indexPath)?.node,
 			  let deleteCommand = DeleteCommand(nodesToDelete: [deleteNode], undoManager: undoManager, errorHandler: ErrorHandler.present(self)) else {
 			return
 		}
@@ -1752,7 +1796,16 @@ extension MainFeedCollectionViewController {
 			ActivityManager.cleanUp(feed)
 		}
 
-		if indexPath == coordinator.currentFeedIndexPath {
+		let currentFeedIndexPath = coordinator.currentFeedIndexPath
+		let isSelectedRow = sourceIndexPath == currentFeedIndexPath
+		let isSelectedFeed: Bool
+		if let feed = deleteNode.representedObject as? Feed,
+		   let currentFeedIndexPath {
+			isSelectedFeed = self.feed(at: currentFeedIndexPath) === feed
+		} else {
+			isSelectedFeed = false
+		}
+		if isSelectedRow || isSelectedFeed {
 			coordinator.selectSidebarItem(indexPath: nil)
 		}
 
@@ -1792,6 +1845,16 @@ extension MainFeedCollectionViewController {
 			return alias.feed
 		}
 		return nil
+	}
+
+	func feedNode(for feed: Feed) -> Node? {
+		guard let sidebarItemID = feed.sidebarItemID,
+			  let node = coordinator.nodeFor(sidebarItemID: sidebarItemID),
+			  let representedFeed = node.representedObject as? Feed,
+			  representedFeed === feed else {
+			return nil
+		}
+		return node
 	}
 
 	func favoriteAlias(at indexPath: IndexPath) -> FavoriteFeedAlias? {
