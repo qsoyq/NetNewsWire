@@ -19,6 +19,9 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 	public static let shared = Downloader()
 	private let urlSession: URLSession
 	private var callbacks = [URL: [DownloadCallback]]()
+	private var pendingRequests = [URLRequest]()
+	private var activeDownloadCount = 0
+	private static let maximumConcurrentDownloads = 16
 	private let cache = DownloadCache.shared
 
 	nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "Downloader")
@@ -96,6 +99,20 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 			return
 		}
 
+		if activeDownloadCount >= Self.maximumConcurrentDownloads {
+			pendingRequests.append(urlRequest)
+			return
+		}
+		startDownload(urlRequest)
+	}
+}
+
+private extension Downloader {
+
+	func startDownload(_ urlRequest: URLRequest) {
+		guard let url = urlRequest.url else { return }
+		activeDownloadCount += 1
+		let isCacheableRequest = urlRequest.httpMethod == HTTPMethod.get
 		var urlRequestToUse = urlRequest
 		urlRequestToUse.addSpecialCaseUserAgentIfNeeded()
 
@@ -108,6 +125,10 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 
 			Task { @MainActor in
 				self.callAndReleaseCallbacks(url, data, response, error)
+				self.activeDownloadCount -= 1
+				if !self.pendingRequests.isEmpty {
+					self.startDownload(self.pendingRequests.removeFirst())
+				}
 			}
 		}
 		task.resume()

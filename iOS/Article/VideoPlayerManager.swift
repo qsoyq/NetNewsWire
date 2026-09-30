@@ -190,6 +190,8 @@ final class VideoPlayerManager: NSObject {
 				coordinator.retainArticleForVideoPlayback(nextArticle)
 				if UIApplication.shared.applicationState == .active {
 					coordinator.selectArticle(nextArticle, animations: [.navigation, .scroll])
+				} else {
+					markArticles(Set([nextArticle]), statusKey: .read, flag: true)
 				}
 				return
 			}

@@ -41,6 +41,7 @@ struct HTTP4xxResponse {
 	private let delegate: DownloadSessionDelegate
 	private var redirectCache = [URL: URL]()
 	private var queue = [URL]()
+	private static let maximumConcurrentTasks = 16
 	private let cache = DownloadCache.shared
 
 	public var progressInfo = ProgressInfo() {
@@ -209,7 +210,6 @@ extension DownloadSession: @preconcurrency URLSessionDataDelegate {
 				return
 			}
 
-			addDataTaskFromQueueIfNecessary()
 			completionHandler(.allow)
 		}
 	}
@@ -235,7 +235,7 @@ private extension DownloadSession {
 
 	@MainActor func addDataTask(_ url: URL) {
 
-		guard tasksPending.count < 500 else {
+		guard tasksPending.count + tasksInProgress.count < Self.maximumConcurrentTasks else {
 			queue.insert(url, at: 0)
 			return
 		}
@@ -279,8 +279,11 @@ private extension DownloadSession {
 	}
 
 	@MainActor func addDataTaskFromQueueIfNecessary() {
-		guard tasksPending.count < 500, let url = queue.popLast() else { return }
-		addDataTask(url)
+		while tasksPending.count + tasksInProgress.count < Self.maximumConcurrentTasks,
+			  let url = queue.popLast() {
+			// A cached or skipped URL creates no task, so keep draining the queue.
+			addDataTask(url)
+		}
 	}
 
 	func infoForTask(_ task: URLSessionTask) -> DownloadInfo? {
