@@ -106,6 +106,7 @@ build_ios_unsigned_ipa() {
     -project "${PROJECT_PATH}" \
     -target "${TARGET_IOS}" \
     -configuration "${CONFIGURATION}" \
+    -packageAuthorizationProvider netrc \
     SYMROOT="${DERIVED_DATA}/Build/Products" \
     OBJROOT="${DERIVED_DATA}/Build/Intermediates.noindex" \
     CODE_SIGNING_ALLOWED=NO \
