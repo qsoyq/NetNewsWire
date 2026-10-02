@@ -23,7 +23,6 @@ public actor ErrorLogDatabase {
 		let database = FMDatabase.openAndSetUpDatabase(path: databasePath)
 		database.runCreateStatements(Self.tableCreationStatements)
 		Self.migrateLevelColumnIfNeeded(database)
-		ErrorLogTable.pruneEntries(limit: Self.pruneLimit, database: database)
 		database.vacuumIfNeeded()
 
 		self.database = database
