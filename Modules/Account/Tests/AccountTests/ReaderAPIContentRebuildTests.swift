@@ -24,8 +24,8 @@ import Articles
 	func testRebuiltContentPreservesUnreadAndStarredStatus() async throws {
 		_ = try await delegate.updateRebuiltEntries(account: account, entries: [entry("1", content: "original")], requestedIDs: ["1"])
 		let originalArticles = await account.fetchArticlesAsync(.articleIDs(["1"]))
-		_ = try await account.updateAsync(articles: originalArticles, statusKey: .read, flag: false)
-		_ = try await account.updateAsync(articles: originalArticles, statusKey: .starred, flag: true)
+		await account.updateStatusesAsync(articleIDs: originalArticles.articleIDs(), statusKey: .read, flag: false)
+		await account.updateStatusesAsync(articleIDs: originalArticles.articleIDs(), statusKey: .starred, flag: true)
 
 		let count = try await delegate.updateRebuiltEntries(account: account, entries: [entry("1", content: "refreshed")], requestedIDs: ["1"])
 		let refreshedArticles = await account.fetchArticlesAsync(.articleIDs(["1"]))

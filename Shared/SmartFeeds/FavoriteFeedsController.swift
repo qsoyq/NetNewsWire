@@ -149,9 +149,10 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		return items
 	}
 
-	init(defaults: UserDefaults = .standard,
-		 accountsProvider: @escaping @MainActor () -> [Account] = { AccountManager.shared.accounts },
-		 unreadCountQueue: CoalescingQueue = .standard) {
+	init(
+		defaults: UserDefaults = .standard,
+		accountsProvider: @escaping @MainActor () -> [Account] = { AccountManager.shared.accounts },
+		unreadCountQueue: CoalescingQueue = .standard) {
 		self.defaults = defaults
 		self.accountsProvider = accountsProvider
 		self.unreadCountQueue = unreadCountQueue

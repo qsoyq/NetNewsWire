@@ -654,7 +654,6 @@ extension WebViewController: WKNavigationDelegate {
 
 }
 
-
 extension WebViewController {
 
 	func webView(_ webView: WKWebView, contextMenuForElement elementInfo: WKContextMenuElementInfo, willCommitWithAnimator animator: UIContextMenuInteractionCommitAnimating) {
@@ -1705,7 +1704,6 @@ extension WebViewController {
 	}
 
 }
-
 
 private final class ArticleImageLoadTracker {
 	let articleID: String

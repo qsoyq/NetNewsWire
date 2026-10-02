@@ -181,8 +181,6 @@ extension MainFeedCollectionViewController: UICollectionViewDropDelegate {
 		}
 	}
 
-
-
 	func favoriteDropProposal(session: any UIDropSession, destIndexPath: IndexPath) -> UICollectionViewDropProposal {
 		guard let sourceNode = session.localDragSession?.items.first?.localObject as? Node,
 			  let destObject = sidebarItemNode(for: destIndexPath)?.node.representedObject else {

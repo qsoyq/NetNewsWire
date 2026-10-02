@@ -766,7 +766,9 @@ public enum FetchType {
 
 	static func isValidFeedURL(_ string: String) -> Bool {
 		guard let url = URL(string: string), let scheme = url.scheme?.lowercased(),
-			(scheme == "https" || scheme == "http"), let host = url.host, !host.isEmpty else { return false }
+			scheme == "https" || scheme == "http", let host = url.host, !host.isEmpty else {
+			return false
+		}
 		return true
 	}
 

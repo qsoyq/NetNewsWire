@@ -797,7 +797,6 @@ private extension SettingsViewController {
 	}
 }
 
-
 private enum ArticleContentCacheLog {
 	static let sourceName = "Article Cache"
 	static let sourceID = 103
