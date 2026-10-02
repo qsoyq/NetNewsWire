@@ -72,6 +72,8 @@ final class WebViewController: UIViewController {
 	private lazy var articleIconSchemeHandler = ArticleIconSchemeHandler(coordinator: coordinator)
 	private lazy var transition = ImageTransition(controller: self)
 	private var imageDownloadTask: Task<Void, Never>?
+	private var imagePresentationEnabled = false
+	private var imageRequestGeneration = 0
 	private var mediaSourceURLs = Set<String>()
 	private var clickedImageCompletion: (() -> Void)?
 	private var mediaContextTargetState: MediaContextTargetState?
@@ -137,6 +139,12 @@ final class WebViewController: UIViewController {
 		configureBottomShowBarsView()
 
 		loadWebView()
+	}
+
+	override func viewWillAppear(_ animated: Bool) {
+		super.viewWillAppear(animated)
+		imagePresentationEnabled = true
+		webView?.evaluateJavaScript("resumeImageViewer();")
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -212,6 +220,7 @@ final class WebViewController: UIViewController {
 		stopArticleExtractor()
 
 		if article != self.article {
+			invalidateImageDownload()
 			self.article = article
 			// A restoration offset belongs only to the article it was saved for.
 			// <https://github.com/Ranchero-Software/NetNewsWire/issues/5243>
@@ -362,12 +371,30 @@ final class WebViewController: UIViewController {
 		}
 	}
 
+	func suspendImagePresentation() {
+		imagePresentationEnabled = false
+		invalidateImageDownload()
+		if isViewLoaded {
+			webView?.evaluateJavaScript("suspendImageViewer();")
+		}
+	}
+
+	private func invalidateImageDownload() {
+		imageRequestGeneration += 1
+		imageDownloadTask?.cancel()
+		imageDownloadTask = nil
+	}
+
+	private var canPresentArticleImage: Bool {
+		imagePresentationEnabled && viewIfLoaded?.window != nil
+			&& (delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true
+	}
+
 	func stopWebViewActivity() {
+		suspendImagePresentation()
 		guard !VideoPlayerManager.shared.isPiPActive, !WebViewPiPManager.shared.isPiPActive else {
 			return
 		}
-		imageDownloadTask?.cancel()
-		imageDownloadTask = nil
 		guard let webView = webView else {
 			return
 		}
@@ -380,11 +407,9 @@ final class WebViewController: UIViewController {
 					return
 				}
 				self.stopMediaPlayback(webView)
-				self.cancelImageLoad(webView)
 			}
 		} else {
 			stopMediaPlayback(webView)
-			cancelImageLoad(webView)
 		}
 	}
 
@@ -535,6 +560,7 @@ extension WebViewController: WKUIDelegate {
 extension WebViewController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		webView.evaluateJavaScript(imagePresentationEnabled ? "resumeImageViewer();" : "suspendImageViewer();")
 		if let article {
 			logMediaEvent(.info, operation: "Render", message: "documentURL=\(webView.url?.absoluteString ?? "(nil)") articleID=\(article.articleID)")
 			scheduleArticleImageSummary(documentURL: webView.url?.absoluteString ?? "")
@@ -662,6 +688,9 @@ extension WebViewController: WKScriptMessageHandler {
 		case MessageName.imageWasShown:
 			clickedImageCompletion?()
 		case MessageName.imageWasClicked:
+			guard canPresentArticleImage, message.webView === webView else {
+				return
+			}
 			imageWasClicked(body: message.body as? String)
 		case MessageName.showFeedInspector:
 			if let feed = article?.feed {
@@ -1394,7 +1423,9 @@ private extension WebViewController {
 	}
 
 	func imageWasClicked(body: String?) {
-		guard let webView, let body else { return }
+		guard canPresentArticleImage, let article, let webView, let body else {
+			return
+		}
 
 		let data = Data(body.utf8)
 		guard let clickMessage = try? JSONDecoder().decode(ImageClickMessage.self, from: data) else {
@@ -1403,14 +1434,17 @@ private extension WebViewController {
 
 		guard let imageURL = URL(string: clickMessage.imageURL) else { return }
 
-		imageDownloadTask?.cancel()
+		invalidateImageDownload()
+		let generation = imageRequestGeneration
 		imageDownloadTask = Task { [weak self] in
 			guard let downloadResponse = try? await Downloader.shared.download(imageURL, userAgentStyle: .browser) else {
 				return
 			}
 			// A late completion must not present the viewer over a different article
 			// or a returning app.
-			guard !Task.isCancelled, let self, let data = downloadResponse.data, !data.isEmpty,
+			guard !Task.isCancelled, let self, self.canPresentArticleImage,
+				  self.imageRequestGeneration == generation, self.article === article, self.webView === webView,
+				  let data = downloadResponse.data, !data.isEmpty,
 				  let image = UIImage(data: data) else {
 				return
 			}
@@ -1439,10 +1473,6 @@ private extension WebViewController {
 
 	func stopMediaPlayback(_ webView: WKWebView) {
 		webView.evaluateJavaScript("stopMediaPlayback();")
-	}
-
-	func cancelImageLoad(_ webView: WKWebView) {
-		webView.evaluateJavaScript("cancelImageLoad();")
 	}
 
 	func configureTopShowBarsView() {

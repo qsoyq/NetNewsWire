@@ -137,6 +137,8 @@ build_ios_unsigned_ipa() {
 
   log "Packaging IPA..."
   cp -R "${APP_PATH}" "${PAYLOAD_DIR}/"
+  # zip updates existing archives and otherwise keeps resources removed by this build.
+  rm -f "${IPA_PATH}"
   (
     cd "${IOS_BUILD_DIR}"
     /usr/bin/zip -qry "${IPA_PATH}" Payload

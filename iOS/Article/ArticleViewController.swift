@@ -381,7 +381,12 @@ final class ArticleViewController: UIViewController {
 		}
 
 		logDoubleTapEvent(.info, message: "Going back to the previous page")
+		currentWebViewController?.suspendImagePresentation()
 		backNavigationController.popViewController(animated: true)
+	}
+
+	func isCurrentWebViewController(_ controller: WebViewController) -> Bool {
+		currentWebViewController === controller
 	}
 
 	@objc func showBars(_ sender: Any) {

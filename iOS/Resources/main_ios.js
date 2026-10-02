@@ -1,5 +1,6 @@
 var activeImageViewer = null;
 var pendingImageClickTimer = null;
+var imageViewerEnabled = true;
 
 class ImageViewer {
 	constructor(img) {
@@ -33,6 +34,9 @@ class ImageViewer {
 	}
 
 	showViewer() {
+		if (!imageViewerEnabled || activeImageViewer !== this) {
+			return;
+		}
 		this.hideLoadingIndicator();
 		
 		const rect = this.img.getBoundingClientRect();
@@ -114,6 +118,9 @@ class ImageViewer {
 
 		// Add the click listener for images
 		window.onclick = function(event) {
+			if (!imageViewerEnabled) {
+				return;
+			}
 			if (event.target.matches("img") && !event.target.classList.contains("nnw-nozoom")) {
 				// An image inside a link navigates — it might be the only link to an
 				// important page. Zoom only standalone images.
@@ -130,6 +137,9 @@ class ImageViewer {
 				} else {
 					pendingImageClickTimer = setTimeout(function() {
 						pendingImageClickTimer = null;
+						if (!imageViewerEnabled) {
+							return;
+						}
 						cancelImageLoad();
 						activeImageViewer = new ImageViewer(event.target);
 						activeImageViewer.clicked();
@@ -163,6 +173,27 @@ function reportArticleImageLoad(img, status) {
 		documentURL: document.URL || "",
 		baseURI: document.baseURI || ""
 	});
+}
+
+// Leaving an article must also reject clicks delivered after the pending timer was cleared.
+function suspendImageViewer() {
+	imageViewerEnabled = false;
+	if (pendingImageClickTimer) {
+		clearTimeout(pendingImageClickTimer);
+		pendingImageClickTimer = null;
+	}
+	if (activeImageViewer) {
+		// Keep the image reference for the fullscreen viewer's return animation.
+		activeImageViewer.cancel();
+	}
+}
+
+function resumeImageViewer() {
+	if (activeImageViewer) {
+		activeImageViewer.showImage();
+	}
+	cancelImageLoad();
+	imageViewerEnabled = true;
 }
 
 function cancelImageLoad() {
