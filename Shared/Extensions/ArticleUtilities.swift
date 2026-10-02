@@ -13,84 +13,35 @@ import Account
 #if os(iOS)
 import UIKit
 #endif
+import Images
 
 // These handle multiple accounts.
 
 @MainActor func markArticles(_ articles: Set<Article>, statusKey: ArticleStatus.Key, flag: Bool, completion: (() -> Void)? = nil) {
-	markArticles(articles, statusKey: statusKey, flag: flag, allowRetry: true, completion: completion)
+	markArticleIDs(articleIDsByAccountID(articles), statusKey: statusKey, flag: flag, completion: completion)
 }
 
-private final class MarkArticlesErrorBox: @unchecked Sendable {
-	let lock = NSLock()
-	var stored: Error?
-
-	func assignIfEmpty(_ error: Error) {
-		lock.lock()
-		defer { lock.unlock() }
-		if stored == nil {
-			stored = error
-		}
-	}
-
-	var value: Error? {
-		lock.lock()
-		defer { lock.unlock() }
-		return stored
-	}
-}
-
-@MainActor private func markArticles(_ articles: Set<Article>, statusKey: ArticleStatus.Key, flag: Bool, allowRetry: Bool, completion: (() -> Void)?) {
-	let d: [String: Set<Article>] = accountAndArticlesDictionary(articles)
-
-	let group = DispatchGroup()
-	let firstError = MarkArticlesErrorBox()
-
-	for (accountID, accountArticles) in d {
-		guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
-			continue
-		}
-		group.enter()
-		account.markArticles(accountArticles, statusKey: statusKey, flag: flag) { result in
-			if case .failure(let error) = result {
-				firstError.assignIfEmpty(error)
+@MainActor func markArticleIDs(_ articleIDsByAccountID: [String: Set<String>], statusKey: ArticleStatus.Key, flag: Bool, completion: (() -> Void)? = nil) {
+	Task { @MainActor in
+		for (accountID, articleIDs) in articleIDsByAccountID {
+			guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
+				continue
 			}
-			group.leave()
-		}
-	}
-
-	group.notify(queue: .main) {
-		Task { @MainActor in
-			#if os(iOS)
-			if let error = firstError.value {
-				let previewIDs = articles.prefix(8).map(\.articleID).joined(separator: ",")
-				NotificationActionLog.log(.warning, operation: "Mark articles", message: "Failed statusKey=\(statusKey.rawValue) flag=\(flag) count=\(articles.count) articleIDs=\(previewIDs) error=\(error.localizedDescription); isSuspended=\(AccountManager.shared.isSuspended); appState=\(UIApplication.shared.applicationState.rawValue)")
-				if allowRetry, shouldRetryMarkArticles(after: error) {
-					appDelegate.resumeDatabaseProcessingIfNecessary()
-					NotificationActionLog.log(.info, operation: "Mark articles", message: "Retrying after database resume; count=\(articles.count)")
-					markArticles(articles, statusKey: statusKey, flag: flag, allowRetry: false, completion: completion)
-					return
-				}
+			do {
+				try await account.markArticles(articleIDs: articleIDs, statusKey: statusKey, flag: flag)
+			} catch {
+				#if os(iOS)
+				NotificationActionLog.log(.warning, operation: "Mark articles", message: "Failed statusKey=\(statusKey.rawValue) flag=\(flag) count=\(articleIDs.count) error=\(error.localizedDescription)")
+				#endif
 			}
-			#else
-			_ = allowRetry
-			#endif
-			completion?()
 		}
+		completion?()
 	}
 }
 
-#if os(iOS)
-@MainActor private func shouldRetryMarkArticles(after error: Error) -> Bool {
-	if AccountManager.shared.isSuspended {
-		return true
-	}
-	return error.localizedDescription.localizedCaseInsensitiveContains("database is suspended")
-}
-#endif
-
-private func accountAndArticlesDictionary(_ articles: Set<Article>) -> [String: Set<Article>] {
+private func articleIDsByAccountID(_ articles: Set<Article>) -> [String: Set<String>] {
 	let d = Dictionary(grouping: articles, by: { $0.accountID })
-	return d.mapValues { Set($0) }
+	return d.mapValues { Set($0.articleIDs()) }
 }
 
 extension Article {
@@ -159,11 +110,14 @@ extension Article {
 
 	func iconImageUrl(feed: Feed) -> URL? {
 		if let image = iconImage() {
+			guard let imageData = image.image.dataRepresentation() else {
+				return nil
+			}
 			let fm = FileManager.default
 			var path = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
 			let feedID = feed.feedID.replacingOccurrences(of: "/", with: "_")
 			path.appendPathComponent(feedID + "_smallIcon.png")
-			fm.createFile(atPath: path.path, contents: image.image.dataRepresentation()!, attributes: nil)
+			fm.createFile(atPath: path.path, contents: imageData, attributes: nil)
 			return path
 		} else {
 			return nil
@@ -252,25 +206,5 @@ struct ArticlePathKey {
 			ArticlePathKey.feedID: feedID,
 			ArticlePathKey.articleID: articleID
 		]
-	}
-}
-
-// MARK: SortableArticle
-
-@MainActor extension Article: SortableArticle {
-	var sortableName: String {
-		return feed?.name ?? ""
-	}
-
-	var sortableDate: Date {
-		return logicalDatePublished
-	}
-
-	var sortableArticleID: String {
-		return articleID
-	}
-
-	var sortableFeedID: String {
-		return feedID
 	}
 }

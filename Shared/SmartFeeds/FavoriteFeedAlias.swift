@@ -13,6 +13,7 @@ import Foundation
 import RSCore
 import Articles
 import Account
+import Images
 
 @MainActor final class FavoriteFeedAlias: PseudoFeed {
 
@@ -77,25 +78,25 @@ import Account
 
 extension FavoriteFeedAlias: ArticleFetcher {
 
-	func fetchArticles() throws -> Set<Article> {
-		try feed?.fetchArticles() ?? Set<Article>()
+	func fetchArticles() -> Set<Article> {
+		feed?.fetchArticles() ?? Set<Article>()
 	}
 
-	func fetchArticlesAsync() async throws -> Set<Article> {
+	func fetchArticlesAsync() async -> Set<Article> {
 		guard let feed else {
 			return Set<Article>()
 		}
-		return try await feed.fetchArticlesAsync()
+		return await feed.fetchArticlesAsync()
 	}
 
-	func fetchUnreadArticles() throws -> Set<Article> {
-		try feed?.fetchUnreadArticles() ?? Set<Article>()
+	func fetchUnreadArticles() -> Set<Article> {
+		feed?.fetchUnreadArticles() ?? Set<Article>()
 	}
 
-	func fetchUnreadArticlesAsync() async throws -> Set<Article> {
+	func fetchUnreadArticlesAsync() async -> Set<Article> {
 		guard let feed else {
 			return Set<Article>()
 		}
-		return try await feed.fetchUnreadArticlesAsync()
+		return await feed.fetchUnreadArticlesAsync()
 	}
 }

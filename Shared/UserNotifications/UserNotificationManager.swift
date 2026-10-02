@@ -9,6 +9,7 @@
 import Foundation
 import Account
 import Articles
+import RSCore
 import UserNotifications
 import os
 
@@ -65,6 +66,15 @@ import os
 		   statusKey == .read,
 		   flag == true {
 			removeNotifications(articleIDs: articleIDs, accountID: account.accountID)
+		} else if let articleIDs = note.userInfo?[Account.UserInfoKey.articleIDs] as? Set<String>, note.userInfo?[Account.UserInfoKey.statusKey] == nil {
+			Task { @MainActor in
+				var readIDs = Set<String>()
+				for batch in Array(articleIDs).chunked(into: 900) {
+					let articles = await account.fetchArticlesAsync(.articleIDs(Set(batch)))
+					readIDs.formUnion(articles.filter { $0.status.read }.map(\.articleID))
+				}
+				self.removeNotifications(articleIDs: readIDs, accountID: account.accountID)
+			}
 		}
 	}
 
@@ -135,8 +145,8 @@ private extension UserNotificationManager {
 	}
 
 	func registerCategoriesAndActions() {
-		let readAction = UNNotificationAction(identifier: ActionIdentifier.markAsRead, title: NSLocalizedString("Mark as Read", comment: "Mark as Read"), options: [])
-		let starredAction = UNNotificationAction(identifier: ActionIdentifier.markAsStarred, title: NSLocalizedString("Mark as Starred", comment: "Mark as Starred"), options: [])
+		let readAction = UNNotificationAction(identifier: ActionIdentifier.markAsRead, title: NSLocalizedString("Mark as Read", comment: "Command"), options: [])
+		let starredAction = UNNotificationAction(identifier: ActionIdentifier.markAsStarred, title: NSLocalizedString("Mark as Starred", comment: "Command"), options: [])
 		let openAction = UNNotificationAction(identifier: ActionIdentifier.openArticle, title: NSLocalizedString("Open", comment: "Open"), options: [.foreground])
 		var actions = [openAction, readAction, starredAction]
 #if os(iOS)

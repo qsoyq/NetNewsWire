@@ -16,28 +16,34 @@ import Articles
 
 	let undoActionName: String
 	let redoActionName: String
-    let articles: Set<Article>
+	let articles: Set<Article>
+	let articleIDsByAccountID: [String: Set<String>]
 	let undoManager: UndoManager
 	let flag: Bool
 	let statusKey: ArticleStatus.Key
 	let statusChangeHandler: ((Set<Article>, ArticleStatus.Key, Bool) -> Void)?
 	var completion: (() -> Void)?
+	// Called after every mark, with the flag that was applied, so undo and redo can update
+	// the UI in the right direction. Unlike completion, it’s not one-shot.
+	let didMark: ((Bool) -> Void)?
 
-	init?(initialArticles: [Article], statusKey: ArticleStatus.Key, flag: Bool, undoManager: UndoManager, statusChangeHandler: ((Set<Article>, ArticleStatus.Key, Bool) -> Void)? = nil, completion: (() -> Void)? = nil) {
+	init?(initialArticles: [Article], statusKey: ArticleStatus.Key, flag: Bool, undoManager: UndoManager, statusChangeHandler: ((Set<Article>, ArticleStatus.Key, Bool) -> Void)? = nil, completion: (() -> Void)? = nil, didMark: ((Bool) -> Void)? = nil) {
 
-        // Filter out articles that already have the desired status or can't be marked.
+        // Filter out articles that already have the desired status or can’t be marked.
 		let articlesToMark = MarkStatusCommand.filteredArticles(initialArticles, statusKey, flag)
 		if articlesToMark.isEmpty {
 			completion?()
 			return nil
 		}
-		self.articles = Set(articlesToMark)
+		self.articles = statusChangeHandler == nil ? [] : Set(articlesToMark)
+		self.articleIDsByAccountID = Dictionary(grouping: articlesToMark, by: { $0.accountID }).mapValues { Set($0.articleIDs()) }
 
 		self.flag = flag
 		self.statusKey = statusKey
  		self.undoManager = undoManager
 		self.statusChangeHandler = statusChangeHandler
 		self.completion = completion
+		self.didMark = didMark
 
 		let actionName = MarkStatusCommand.actionName(statusKey, flag)
 		self.undoActionName = actionName
@@ -66,12 +72,17 @@ import Articles
 @MainActor private extension MarkStatusCommand {
 
 	func mark(_ statusKey: ArticleStatus.Key, _ flag: Bool) {
-		let completion = completion
-        markArticles(articles, statusKey: statusKey, flag: flag) { [articles, statusChangeHandler] in
+		let completion = self.completion
+		let didMark = self.didMark
+		let statusChangeHandler = self.statusChangeHandler
+		let articles = self.articles
+		self.completion = nil
+
+		markArticleIDs(articleIDsByAccountID, statusKey: statusKey, flag: flag) {
 			statusChangeHandler?(articles, statusKey, flag)
 			completion?()
+			didMark?(flag)
 		}
-		self.completion = nil
     }
 
 	static private let markReadActionName = NSLocalizedString("Mark Read", comment: "command")

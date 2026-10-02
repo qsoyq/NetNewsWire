@@ -12,15 +12,19 @@ import RSDatabaseObjC
 
 public actor ErrorLogDatabase {
 
+	public nonisolated let databasePath: String
+
 	private let database: FMDatabase
 
 	private static let tableCreationStatements = "CREATE TABLE if not EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, date REAL NOT NULL, sourceName TEXT NOT NULL, sourceID INTEGER NOT NULL, operation TEXT NOT NULL DEFAULT '', fileName TEXT NOT NULL DEFAULT '', functionName TEXT NOT NULL DEFAULT '', lineNumber INTEGER NOT NULL DEFAULT 0, errorMessage TEXT NOT NULL, level INTEGER NOT NULL DEFAULT 3);"
 
 	public init(databasePath: String) {
+		self.databasePath = databasePath
 		let database = FMDatabase.openAndSetUpDatabase(path: databasePath)
-		database.executeStatements("PRAGMA journal_mode = WAL;")
 		database.runCreateStatements(Self.tableCreationStatements)
 		Self.migrateLevelColumnIfNeeded(database)
+		ErrorLogTable.pruneEntries(limit: Self.pruneLimit, database: database)
+		database.vacuumIfNeeded()
 
 		self.database = database
 
@@ -62,7 +66,7 @@ public actor ErrorLogDatabase {
 			  let sourceID = notification.userInfo?[ErrorLogUserInfoKey.sourceID] as? Int else {
 			return
 		}
-		
+
 		let operation = notification.userInfo?[ErrorLogUserInfoKey.operation] as? String ?? ""
 		let fileName = notification.userInfo?[ErrorLogUserInfoKey.fileName] as? String ?? ""
 		let functionName = notification.userInfo?[ErrorLogUserInfoKey.functionName] as? String ?? ""

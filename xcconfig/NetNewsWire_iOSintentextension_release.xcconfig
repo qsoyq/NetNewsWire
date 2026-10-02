@@ -1,4 +1,0 @@
-#include "./NetNewsWire_iOSintentextension_target.xcconfig"
-#include "./common/NetNewsWire_iOS_signing.xcconfig"
-
-PRODUCT_BUNDLE_IDENTIFIER = com.qsoyq-uk.NetNewsWire.iOS.IntentsExtension
