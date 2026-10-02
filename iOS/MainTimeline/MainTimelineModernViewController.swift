@@ -519,8 +519,10 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	}
 
 	private func markAllAsReadInTimeline() {
-		assert(coordinator != nil)
-		coordinator?.markAllAsReadInTimeline()
+		guard let coordinator else {
+			return
+		}
+		coordinator.markAllAsReadInTimeline(coordinator.articles)
 	}
 
 	@IBAction func markAllAsRead(_ sender: Any?) {

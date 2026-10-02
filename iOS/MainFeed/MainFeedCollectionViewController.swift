@@ -401,7 +401,7 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 				headerView.sectionHeaderType = .favoriteFeeds
 				headerView.headerTitle.text = FavoriteFeedsController.shared.nameForDisplay
 				headerView.unreadCount = FavoriteFeedsController.shared.allFeed.unreadCount
-				headerView.disclosureExpanded = self.coordinator.isExpanded(FavoriteFeedsController.shared)
+				headerView.setDisclosure(isExpanded: self.coordinator.isExpanded(FavoriteFeedsController.shared), animated: false)
 				headerView.addInteraction(UIContextMenuInteraction(delegate: self))
 				return headerView
 			}
@@ -629,7 +629,7 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 	@objc func collapseAllExceptForGroupItems(_ sender: Any?) {
 		coordinator.collapseAllFolders()
 		for case let folderCell as MainFeedCollectionViewFolderCell in collectionView.visibleCells {
-			folderCell.disclosureExpanded = false
+			folderCell.setDisclosure(isExpanded: false, animated: false)
 		}
 	}
 

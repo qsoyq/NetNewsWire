@@ -105,7 +105,7 @@ final class ImageViewController: UIViewController {
 
 		let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
 		alert.addAction(UIAlertAction(title: NSLocalizedString("Share", comment: "Share"), style: .default) { [weak self] _ in
-			guard let self, let shareButton = self.shareButton else {
+			guard let self, let shareButton = self.shareButtonItem else {
 				return
 			}
 			self.share(shareButton)

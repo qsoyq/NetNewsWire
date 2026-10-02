@@ -7,13 +7,12 @@ import RSWeb
 	private var account: Account!
 	private var feed: Feed!
 	private var delegate: ReaderAPIAccountDelegate!
-	private var transport: TestTransport!
 
 	override func setUp() async throws {
 		directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-		transport = TestTransport()
-		account = Account(dataFolder: directory.path, type: .freshRSS, accountID: UUID().uuidString, transport: transport)
+		TestingURLProtocol.reset()
+		account = Account(dataFolder: directory.path, type: .freshRSS, accountID: UUID().uuidString)
 		delegate = try XCTUnwrap(account.delegate as? ReaderAPIAccountDelegate)
 		feed = account.createFeed(with: "Original", url: "https://old.example/feed", feedID: "feed/1", homePageURL: "https://old.example/")
 		feed.externalID = feed.feedID
@@ -24,7 +23,6 @@ import RSWeb
 		feed = nil
 		delegate = nil
 		account = nil
-		transport = nil
 		try? FileManager.default.removeItem(at: directory)
 		directory = nil
 	}
@@ -61,7 +59,7 @@ import RSWeb
 		feed.editedName = "Local"
 		feed.newArticleNotificationsEnabled = true
 		_ = try await delegate.updateExistingFeedMetadata(account: account, subscriptions: [subscription()])
-		let reloaded = Account(dataFolder: directory.path, type: .freshRSS, accountID: account.accountID, transport: TestTransport())
+		let reloaded = Account(dataFolder: directory.path, type: .freshRSS, accountID: account.accountID)
 		let restored = try XCTUnwrap(reloaded.existingFeed(withFeedID: "feed/1"))
 		XCTAssertEqual(restored.url, "https://new.example/feed")
 		XCTAssertEqual(restored.homePageURL, "https://new.example/")
@@ -129,7 +127,7 @@ import RSWeb
 
 	func testSubscriptionRequestReportsMissingOptionalMetadata() async throws {
 		account.endpointURL = URL(string: "https://example.com/")
-		transport.testFiles["subscription/list"] = "JSON/ReaderAPI/feed-metadata-missing-icon.json"
+		TestingURLProtocol.setResponse("subscription/list", file: "JSON/ReaderAPI/feed-metadata-missing-icon.json")
 		let result = try await account.refreshFeedMetadata()
 		XCTAssertEqual(result.updatedCount, 1)
 		XCTAssertEqual(result.incompleteCount, 1)

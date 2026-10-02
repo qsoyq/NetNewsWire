@@ -296,24 +296,6 @@ import Images
 		}
     }
 
-	private func handle(notificationResponse response: UNNotificationResponse) {
-
-		let userInfo = response.notification.request.content.userInfo
-
-		switch response.actionIdentifier {
-		case UserNotificationManager.ActionIdentifier.markAsRead:
-			handleMarkAsRead(userInfo: userInfo)
-		case UserNotificationManager.ActionIdentifier.markAsStarred:
-			handleMarkAsStarred(userInfo: userInfo)
-		default:
-			if let sceneDelegate = response.targetScene?.delegate as? SceneDelegate {
-				sceneDelegate.handle(response)
-				DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: {
-					sceneDelegate.coordinator.dismissIfLaunchingFromExternalAction()
-				})
-			}
-		}
-	}
 }
 
 // MARK: App Initialization

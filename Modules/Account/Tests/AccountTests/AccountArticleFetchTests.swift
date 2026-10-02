@@ -14,7 +14,7 @@ import RSParser
 
 	override func setUp() async throws {
 		try await super.setUp()
-		account = TestAccountManager.shared.createAccount(type: .feedbin, transport: TestTransport())
+		account = TestAccountManager.shared.createAccount(type: .feedbin)
 	}
 
 	override func tearDown() async throws {
@@ -42,7 +42,7 @@ import RSParser
 
 		var individuallyFetched = Set<Article>()
 		for feed in feeds {
-			individuallyFetched.formUnion(try await feed.fetchArticlesAsync())
+			individuallyFetched.formUnion(await feed.fetchArticlesAsync())
 		}
 		let batchFetched = try await account.fetchArticlesAsync(feedIDs: Set(itemsByFeed.keys))
 
@@ -77,7 +77,7 @@ import RSParser
 		account.addFeedToTreeAtTopLevel(feed)
 		_ = try await account.database.updateAsync(feedIDsAndItems: itemsByFeed, defaultRead: true)
 		let expectedIDs = Set((0..<300).map { "feed/0/articles/\($0)" })
-		let selected = try await account.fetchArticlesAsync(.articleIDs(expectedIDs))
+		let selected = await account.fetchArticlesAsync(.articleIDs(expectedIDs))
 		XCTAssertEqual(selected.count, 300)
 		_ = try await account.updateAsync(articles: selected, statusKey: .read, flag: false)
 		let feedIDs = Set([feedID] + (1...1_800).map { "missing/\($0)" })

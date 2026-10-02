@@ -185,7 +185,7 @@ extension MainFeedCollectionViewController: UICollectionViewDropDelegate {
 
 	func favoriteDropProposal(session: any UIDropSession, destIndexPath: IndexPath) -> UICollectionViewDropProposal {
 		guard let sourceNode = session.localDragSession?.items.first?.localObject as? Node,
-			  let destObject = dataSource.itemIdentifier(for: destIndexPath)?.node.representedObject else {
+			  let destObject = sidebarItemNode(for: destIndexPath)?.node.representedObject else {
 			return UICollectionViewDropProposal(operation: .forbidden)
 		}
 
@@ -214,7 +214,7 @@ extension MainFeedCollectionViewController: UICollectionViewDropDelegate {
 	}
 
 	func favoriteDestinationFolder(at destIndexPath: IndexPath) -> FavoriteFeedsFolder? {
-		let destNode = dataSource.itemIdentifier(for: destIndexPath)?.node
+		let destNode = sidebarItemNode(for: destIndexPath)?.node
 		if let folder = destNode?.representedObject as? FavoriteFeedsFolder {
 			return folder.isUserFolder ? folder : nil
 		}
@@ -226,7 +226,7 @@ extension MainFeedCollectionViewController: UICollectionViewDropDelegate {
 	}
 
 	func performFavoriteDrop(dragNode: Node, destIndexPath: IndexPath) {
-		let destObject = dataSource.itemIdentifier(for: destIndexPath)?.node.representedObject
+		let destObject = sidebarItemNode(for: destIndexPath)?.node.representedObject
 		let destination = favoriteDestinationFolder(at: destIndexPath)
 		let discloseFolder = destObject is FavoriteFeedsFolder || destObject is FavoriteFeedAlias
 
