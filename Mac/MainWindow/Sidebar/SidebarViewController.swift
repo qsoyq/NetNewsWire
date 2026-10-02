@@ -261,11 +261,17 @@ extension Notification.Name {
 		configureCellsForRepresentedObject(feed)
 	}
 
-	@objc func hideReadFoldersDidChange(_ note: Notification) {
-		let newValue = AppDefaults.shared.hideReadFolders
-		if treeControllerDelegate.isReadFoldersFiltered != newValue {
-			treeControllerDelegate.isReadFoldersFiltered = newValue
-			rebuildTreeAndRestoreSelection()
+	@objc nonisolated func hideReadFoldersDidChange(_ note: Notification) {
+		// UserDefaults notifications are delivered on the thread that changed the defaults.
+		Task { @MainActor [weak self] in
+			guard let self else {
+				return
+			}
+			let newValue = AppDefaults.shared.hideReadFolders
+			if self.treeControllerDelegate.isReadFoldersFiltered != newValue {
+				self.treeControllerDelegate.isReadFoldersFiltered = newValue
+				self.rebuildTreeAndRestoreSelection()
+			}
 		}
 	}
 
