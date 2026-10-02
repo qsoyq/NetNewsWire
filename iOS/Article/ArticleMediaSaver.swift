@@ -61,7 +61,8 @@ final class ArticleMediaSaver {
 
 private extension ArticleMediaSaver {
 
-	func save(sources: [String], skippedCount: Int, mediaType: String, concurrency: Int = 1,
+	func save(
+		sources: [String], skippedCount: Int, mediaType: String, concurrency: Int = 1,
 		prepareFile: @escaping @MainActor @Sendable (String) async throws -> ArticleMediaFile,
 		saveFile: @escaping @MainActor @Sendable (URL) async throws -> Void,
 		progress: @MainActor (Int, Int) -> Void) async -> Result {
@@ -102,7 +103,8 @@ private extension ArticleMediaSaver {
 		return result
 	}
 
-	func saveItem(source: String, position: Int, total: Int, mediaType: String,
+	func saveItem(
+		source: String, position: Int, total: Int, mediaType: String,
 		prepareFile: @MainActor (String) async throws -> ArticleMediaFile,
 		saveFile: @MainActor (URL) async throws -> Void) async -> ArticleMediaSaveState.Outcome? {
 		var isSavingToPhotoLibrary = false

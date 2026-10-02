@@ -1,5 +1,6 @@
 var activeImageViewer = null;
 var pendingImageClickTimer = null;
+var imageViewerEnabled = true;
 
 class ImageViewer {
 	constructor(img) {
@@ -9,7 +10,8 @@ class ImageViewer {
 	}
 
 	isLoaded() {
-		return this.img.classList.contains("nnwLoaded");
+		// img.complete covers images that loaded before the onload handler was added.
+		return this.img.classList.contains("nnwLoaded") || this.img.complete;
 	}
 
 	clicked() {
@@ -32,6 +34,9 @@ class ImageViewer {
 	}
 
 	showViewer() {
+		if (!imageViewerEnabled || activeImageViewer !== this) {
+			return;
+		}
 		this.hideLoadingIndicator();
 		
 		const rect = this.img.getBoundingClientRect();
@@ -113,7 +118,16 @@ class ImageViewer {
 
 		// Add the click listener for images
 		window.onclick = function(event) {
+			if (!imageViewerEnabled) {
+				return;
+			}
 			if (event.target.matches("img") && !event.target.classList.contains("nnw-nozoom")) {
+				// An image inside a link navigates — it might be the only link to an
+				// important page. Zoom only standalone images.
+				// <https://github.com/Ranchero-Software/NetNewsWire/issues/3641>
+				if (event.target.closest("a[href]")) {
+					return;
+				}
 				if (activeImageViewer && activeImageViewer.img === event.target) {
 					cancelImageLoad();
 				} else if (pendingImageClickTimer) {
@@ -123,6 +137,9 @@ class ImageViewer {
 				} else {
 					pendingImageClickTimer = setTimeout(function() {
 						pendingImageClickTimer = null;
+						if (!imageViewerEnabled) {
+							return;
+						}
 						cancelImageLoad();
 						activeImageViewer = new ImageViewer(event.target);
 						activeImageViewer.clicked();
@@ -158,6 +175,27 @@ function reportArticleImageLoad(img, status) {
 	});
 }
 
+// Leaving an article must also reject clicks delivered after the pending timer was cleared.
+function suspendImageViewer() {
+	imageViewerEnabled = false;
+	if (pendingImageClickTimer) {
+		clearTimeout(pendingImageClickTimer);
+		pendingImageClickTimer = null;
+	}
+	if (activeImageViewer) {
+		// Keep the image reference for the fullscreen viewer's return animation.
+		activeImageViewer.cancel();
+	}
+}
+
+function resumeImageViewer() {
+	if (activeImageViewer) {
+		activeImageViewer.showImage();
+	}
+	cancelImageLoad();
+	imageViewerEnabled = true;
+}
+
 function cancelImageLoad() {
 	if (pendingImageClickTimer) {
 		clearTimeout(pendingImageClickTimer);
@@ -184,7 +222,18 @@ function showClickedImage() {
 }
 
 function showFeedInspectorSetup() {
-	document.getElementById("nnwImageIcon").onclick = function(event) {
+	const imageIcon = document.getElementById("nnwImageIcon");
+	if (!imageIcon) {
+		return;
+	}
+
+	// Tell VoiceOver the icon is a button that opens the Feed Info sheet.
+	// <https://github.com/Ranchero-Software/NetNewsWire/issues/4591>
+	imageIcon.setAttribute("role", "button");
+	imageIcon.setAttribute("tabindex", "0");
+	imageIcon.setAttribute("aria-label", nnwGetFeedInfoLabel);
+
+	imageIcon.onclick = function(event) {
 		window.webkit.messageHandlers.showFeedInspector.postMessage("");
 	}
 }
@@ -416,6 +465,22 @@ function postRenderProcessing() {
 	ImageViewer.init();
 	showFeedInspectorSetup();
 	setupMediaContextTargetHandler();
+	postMediaSourceURLs();
+}
+
+// Tell the app which URLs are embedded media, so it can tell a real link tap
+// from WebKit’s synthesized link activation for a video’s source.
+function postMediaSourceURLs() {
+	var urls = new Set();
+	document.querySelectorAll("video, audio, video source, audio source").forEach(element => {
+		if (element.src) {
+			urls.add(element.src);
+		}
+		if (element.currentSrc) {
+			urls.add(element.currentSrc);
+		}
+	});
+	window.webkit.messageHandlers.mediaSourceURLs.postMessage(Array.from(urls));
 }
 
 function onResize() {

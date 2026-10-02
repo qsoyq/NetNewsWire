@@ -8,7 +8,7 @@ import Articles
 
 	override func setUp() async throws {
 		try await super.setUp()
-		account = TestAccountManager.shared.createAccount(type: .freshRSS, transport: TestTransport())
+		account = TestAccountManager.shared.createAccount(type: .freshRSS)
 		delegate = try XCTUnwrap(account.delegate as? ReaderAPIAccountDelegate)
 		let feed = account.createFeed(with: "feed/1", url: "https://example.com/feed", feedID: "feed/1", homePageURL: nil)
 		account.addFeedToTreeAtTopLevel(feed)
@@ -23,12 +23,12 @@ import Articles
 
 	func testRebuiltContentPreservesUnreadAndStarredStatus() async throws {
 		_ = try await delegate.updateRebuiltEntries(account: account, entries: [entry("1", content: "original")], requestedIDs: ["1"])
-		let originalArticles = try await account.fetchArticlesAsync(.articleIDs(["1"]))
-		_ = try await account.updateAsync(articles: originalArticles, statusKey: .read, flag: false)
-		_ = try await account.updateAsync(articles: originalArticles, statusKey: .starred, flag: true)
+		let originalArticles = await account.fetchArticlesAsync(.articleIDs(["1"]))
+		await account.updateStatusesAsync(articleIDs: originalArticles.articleIDs(), statusKey: .read, flag: false)
+		await account.updateStatusesAsync(articleIDs: originalArticles.articleIDs(), statusKey: .starred, flag: true)
 
 		let count = try await delegate.updateRebuiltEntries(account: account, entries: [entry("1", content: "refreshed")], requestedIDs: ["1"])
-		let refreshedArticles = try await account.fetchArticlesAsync(.articleIDs(["1"]))
+		let refreshedArticles = await account.fetchArticlesAsync(.articleIDs(["1"]))
 		let refreshed = try XCTUnwrap(refreshedArticles.first)
 		XCTAssertEqual(count, 1)
 		XCTAssertEqual(refreshed.contentHTML, "refreshed")
@@ -42,7 +42,7 @@ import Articles
 			_ = try await delegate.updateRebuiltEntries(account: account, entries: [entry("1", content: "refreshed")], requestedIDs: ["1", "2"])
 			XCTFail("Expected an incomplete response error")
 		} catch ReaderAPIAccountDelegateError.invalidResponse { }
-		let articles = try await account.fetchArticlesAsync(.articleIDs(["1", "2"]))
+		let articles = await account.fetchArticlesAsync(.articleIDs(["1", "2"]))
 		XCTAssertEqual(articles.count, 2)
 		XCTAssertEqual(articles.first { $0.articleID == "1" }?.contentHTML, "refreshed")
 		XCTAssertEqual(articles.first { $0.articleID == "2" }?.contentHTML, "second")
@@ -54,13 +54,13 @@ import Articles
 			_ = try await delegate.updateRebuiltEntries(account: account, entries: [entry("1", content: nil)], requestedIDs: ["1"])
 			XCTFail("Expected an invalid response error")
 		} catch ReaderAPIAccountDelegateError.invalidResponse { }
-		let articles = try await account.fetchArticlesAsync(.articleIDs(["1"]))
+		let articles = await account.fetchArticlesAsync(.articleIDs(["1"]))
 		XCTAssertEqual(articles.first?.contentHTML, "original")
 	}
 
 	func testUnrequestedServerEntriesAreIgnored() async throws {
 		let count = try await delegate.updateRebuiltEntries(account: account, entries: [entry("1", content: "requested"), entry("2", content: "unrequested")], requestedIDs: ["1"])
-		let articles = try await account.fetchArticlesAsync(.articleIDs(["1", "2"]))
+		let articles = await account.fetchArticlesAsync(.articleIDs(["1", "2"]))
 		XCTAssertEqual(count, 1)
 		XCTAssertEqual(articles.articleIDs(), ["1"])
 	}

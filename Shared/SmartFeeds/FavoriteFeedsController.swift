@@ -13,6 +13,7 @@ import Foundation
 import RSCore
 import Articles
 import Account
+import Images
 
 struct FavoriteFeedKey: Codable, Hashable, Sendable {
 	let accountID: String
@@ -70,20 +71,20 @@ struct BatchFavoriteResult: Sendable, Equatable {
 
 extension FavoriteFeedsAllFeed: ArticleFetcher {
 
-	func fetchArticles() throws -> Set<Article> {
-		try FavoriteFeedsController.shared.fetchArticles()
+	func fetchArticles() -> Set<Article> {
+		(try? FavoriteFeedsController.shared.fetchArticles()) ?? Set<Article>()
 	}
 
-	func fetchArticlesAsync() async throws -> Set<Article> {
-		try await FavoriteFeedsController.shared.fetchArticlesAsync()
+	func fetchArticlesAsync() async -> Set<Article> {
+		(try? await FavoriteFeedsController.shared.fetchArticlesAsync()) ?? Set<Article>()
 	}
 
-	func fetchUnreadArticles() throws -> Set<Article> {
-		try fetchArticles().unreadArticles()
+	func fetchUnreadArticles() -> Set<Article> {
+		fetchArticles().unreadArticles()
 	}
 
-	func fetchUnreadArticlesAsync() async throws -> Set<Article> {
-		try await FavoriteFeedsController.shared.fetchUnreadArticlesAsync()
+	func fetchUnreadArticlesAsync() async -> Set<Article> {
+		(try? await FavoriteFeedsController.shared.fetchUnreadArticlesAsync()) ?? Set<Article>()
 	}
 }
 
@@ -148,9 +149,10 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		return items
 	}
 
-	init(defaults: UserDefaults = .standard,
-		 accountsProvider: @escaping @MainActor () -> [Account] = { AccountManager.shared.accounts },
-		 unreadCountQueue: CoalescingQueue = .standard) {
+	init(
+		defaults: UserDefaults = .standard,
+		accountsProvider: @escaping @MainActor () -> [Account] = { AccountManager.shared.accounts },
+		unreadCountQueue: CoalescingQueue = .standard) {
 		self.defaults = defaults
 		self.accountsProvider = accountsProvider
 		self.unreadCountQueue = unreadCountQueue

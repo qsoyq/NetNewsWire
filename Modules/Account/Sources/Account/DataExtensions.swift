@@ -35,6 +35,7 @@ public extension Feed {
 		case externalID
 		case folderRelationship
 		case lastCheckDate
+		case lastResponseCode
 	}
 }
 

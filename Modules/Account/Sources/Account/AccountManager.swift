@@ -13,9 +13,10 @@ import RSWeb
 import Articles
 import ArticlesDatabase
 import ErrorLog
+import ActivityLog
 
 @MainActor public final class AccountManager: UnreadCountProvider {
-	
+
 	public static var shared = AccountManager()
 
 	public static let netNewsWireNewsURL = "https://netnewswire.blog/feed.xml"
@@ -29,6 +30,9 @@ import ErrorLog
 
 	private let defaultAccountFolderName = "OnMyMac"
 	private let defaultAccountIdentifier = "OnMyMac"
+
+	private var lastStatusRepairDate: Date?
+	private static let statusRepairInterval: TimeInterval = 1 * 60 * 60
 
 	public var isSuspended = false
 
@@ -48,7 +52,7 @@ import ErrorLog
 		}
 	}
 
-	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "AccountManager")
+	private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "AccountManager")
 
 	public var areUnreadCountsInitialized: Bool {
 		for account in activeAccounts {
@@ -86,6 +90,17 @@ import ErrorLog
 	public var activeAccounts: [Account] {
 		assert(Thread.isMainThread)
 		return Array(accountsDictionary.values.filter { $0.isActive })
+	}
+
+	/// Repair article statuses in all active accounts, at most once per interval.
+	public func repairStatusesIfNeeded() {
+		if let lastStatusRepairDate, Date().timeIntervalSince(lastStatusRepairDate) < Self.statusRepairInterval {
+			return
+		}
+		lastStatusRepairDate = Date()
+		for account in activeAccounts {
+			account.repairStatuses()
+		}
 	}
 
 	public var sortedActiveAccounts: [Account] {
@@ -220,12 +235,16 @@ import ErrorLog
 		NotificationCenter.default.post(name: .UserDidDeleteAccount, object: self, userInfo: userInfo)
 	}
 
-	public func duplicateServiceAccount(type: AccountType, username: String?) -> Bool {
+	public func duplicateServiceAccount(type: AccountType, username: String?, endpoint: URL? = nil) -> Bool {
 		guard type != .onMyMac else {
 			return false
 		}
 		for account in accounts {
 			if account.type == type && username == account.username {
+				// Self-hosted services can have the same username on different servers.
+				if let endpoint, let existingEndpoint = account.endpointURL, endpoint != existingEndpoint {
+					continue
+				}
 				return true
 			}
 		}
@@ -271,45 +290,19 @@ import ErrorLog
 		}
 	}
 
-	public func suspendDatabaseAll() {
-		for account in accounts {
-			account.suspendDatabase()
-		}
-	}
-
 	public func resumeAll() {
-		let startTime = CFAbsoluteTimeGetCurrent()
-		let accounts = self.accounts
-		let accountCount = accounts.count
-		var pendingDatabaseResumes = accountCount
-		let resumeAllInterval = PerformanceDiagnosticLog.begin("Database resume all", details: "account_count=\(accountCount)", tracksMainThread: false)
 		isSuspended = false
-		for (accountIndex, account) in accounts.enumerated() {
-			let accountInterval = PerformanceDiagnosticLog.begin("Database resume account", details: "account_index=\(accountIndex + 1)", tracksMainThread: false)
-			account.resumeDatabaseAndDelegate {
-				PerformanceDiagnosticLog.end(accountInterval, details: "account_index=\(accountIndex + 1)")
-				pendingDatabaseResumes -= 1
-				if pendingDatabaseResumes == 0 {
-					let duration = CFAbsoluteTimeGetCurrent() - startTime
-					Self.logger.info("Resumed databases for \(accountCount) accounts in \(duration, format: .fixed(precision: 3)) seconds")
-					PerformanceDiagnosticLog.end(resumeAllInterval, details: "account_count=\(accountCount)")
-				}
-			}
+		for account in accounts {
+			account.resumeDelegate()
 		}
 		for account in accounts {
 			account.resume()
 		}
-		if accountCount == 0 {
-			Self.logger.info("Resumed databases for 0 accounts")
-			PerformanceDiagnosticLog.end(resumeAllInterval, details: "account_count=0")
-		}
 	}
 
 	public func receiveRemoteNotification(userInfo: [AnyHashable: Any]) async {
-		Task {
-			for account in activeAccounts {
-				await account.receiveRemoteNotification(userInfo: userInfo)
-			}
+		for account in activeAccounts {
+			await account.receiveRemoteNotification(userInfo: userInfo)
 		}
 	}
 
@@ -321,10 +314,13 @@ import ErrorLog
 		}
 	}
 
-	public func refreshAll(errorHandler: ErrorHandlerCallback? = nil) async {
+	/// Returns `true` if the refresh ran, `false` if it was skipped
+	/// due to no network connection.
+	@discardableResult
+	public func refreshAll(errorHandler: ErrorHandlerCallback? = nil) async -> Bool {
 		guard NetworkMonitor.shared.isConnected else {
 			Self.logger.info("AccountManager: skipping refreshAll — not connected to internet.")
-			return
+			return false
 		}
 
 		CombinedRefreshProgress.shared.start()
@@ -343,6 +339,8 @@ import ErrorLog
 				}
 			}
 		}
+
+		return true
 	}
 
 	public func sendArticleStatusAll() async {
@@ -361,19 +359,36 @@ import ErrorLog
 		}
 	}
 
-	public func syncArticleStatusAll() async {
-		await withTaskGroup(of: Void.self, isolation: MainActor.shared) { group in
+	/// Returns `true` if any account reported meaningful work this round;
+	/// `false` only if every account was idle.
+	@discardableResult
+	public func syncArticleStatusAll() async -> Bool {
+		await withTaskGroup(of: Bool.self, isolation: MainActor.shared) { group in
 			for account in activeAccounts {
 				group.addTask {
-					try? await account.syncArticleStatus()
+					(try? await account.syncArticleStatus()) ?? false
 				}
 			}
+
+			var anyWork = false
+			for await didWork in group {
+				if didWork {
+					anyWork = true
+				}
+			}
+			return anyWork
 		}
 	}
 
 	public func saveAll() {
 		for account in accounts {
 			account.save()
+		}
+	}
+
+	public func saveAllIfNeeded() {
+		for account in accounts {
+			account.saveIfNeeded()
 		}
 	}
 
@@ -404,17 +419,17 @@ import ErrorLog
 
 	// These fetch articles from active accounts and return a merged Set<Article>.
 
-	public func fetchArticles(_ fetchType: FetchType) throws -> Set<Article> {
+	public func fetchArticles(_ fetchType: FetchType) -> Set<Article> {
 		precondition(Thread.isMainThread)
 
 		var articles = Set<Article>()
 		for account in activeAccounts {
-			articles.formUnion(try account.fetchArticles(fetchType))
+			articles.formUnion(account.fetchArticles(fetchType))
 		}
 		return articles
 	}
 
-	public func fetchArticlesAsync(_ fetchType: FetchType) async throws -> Set<Article> {
+	public func fetchArticlesAsync(_ fetchType: FetchType) async -> Set<Article> {
 		precondition(Thread.isMainThread)
 
 		guard activeAccounts.count > 0 else {
@@ -423,7 +438,7 @@ import ErrorLog
 
 		var allFetchedArticles = Set<Article>()
 		for account in activeAccounts {
-			let articles = try await account.fetchArticlesAsync(fetchType)
+			let articles = await account.fetchArticlesAsync(fetchType)
 			allFetchedArticles.formUnion(articles)
 		}
 
@@ -438,31 +453,53 @@ import ErrorLog
 			return nil
 		}
 
-		do {
-			let articles = try account.fetchArticles(.articleIDs(Set([articleID])))
-			return articles.first
-		} catch {
-			return nil
-		}
+		let articles = account.fetchArticles(.articleIDs(Set([articleID])))
+		return articles.first
 	}
 
 	// MARK: - Fetching Article Counts
 
-	public func fetchCountForStarredArticles() throws -> Int {
+	public func fetchCountForStarredArticles() -> Int {
 		precondition(Thread.isMainThread)
 		var count = 0
 		for account in activeAccounts {
-			count += try account.fetchCountForStarredArticles()
+			count += account.fetchCountForStarredArticles()
+		}
+		return count
+	}
+
+	public func fetchCountForStarredArticlesAsync() async -> Int {
+		precondition(Thread.isMainThread)
+		var count = 0
+		for account in activeAccounts {
+			count += await account.fetchCountForStarredArticlesAsync()
+		}
+		return count
+	}
+
+	public func fetchCountForTodayArticlesAsync() async -> Int {
+		precondition(Thread.isMainThread)
+		var count = 0
+		for account in activeAccounts {
+			count += await account.fetchCountForTodayArticlesAsync()
+		}
+		return count
+	}
+
+	public func fetchUnreadCountForTodayAsync() async -> Int {
+		precondition(Thread.isMainThread)
+		var count = 0
+		for account in activeAccounts {
+			count += await account.fetchUnreadCountForTodayAsync()
 		}
 		return count
 	}
 
 	// MARK: - Vacuum
 
-	public func vacuumAllDatabases() async {
-		await errorLogDatabase.vacuum()
+	public func vacuumAccountDatabases() async {
 		for account in accounts {
-			account.vacuumDatabases()
+			await account.vacuumDatabases()
 		}
 	}
 
@@ -623,7 +660,7 @@ private extension AccountManager {
 	}
 
 	func duplicateServiceAccount(_ account: Account) -> Bool {
-		duplicateServiceAccount(type: account.type, username: account.username)
+		duplicateServiceAccount(type: account.type, username: account.username, endpoint: account.endpointURL)
 	}
 
 	func sortByName(_ accounts: [Account]) -> [Account] {

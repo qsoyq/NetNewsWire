@@ -60,8 +60,8 @@ public enum ArticleContentCacheRebuilder {
 			try Task.checkCancellation()
 			progress?("\(account.nameForDisplay): refreshing feed information…")
 			let metadata = try await account.refreshFeedMetadata()
-			let unreadIDs = try await account.fetchUnreadArticleIDsAsync()
-			let starredIDs = try await account.fetchStarredArticleIDsAsync()
+			let unreadIDs = await account.fetchUnreadArticleIDsAsync()
+			let starredIDs = await account.fetchStarredArticleIDsAsync()
 			let articleIDs = articleIDsToRebuild(unreadIDs: unreadIDs, starredIDs: starredIDs)
 			progress?("\(account.nameForDisplay): refreshing \(articleIDs.count) cached articles…")
 			var downloadedCount = 0

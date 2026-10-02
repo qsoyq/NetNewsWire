@@ -13,6 +13,7 @@ import Foundation
 import RSCore
 import Articles
 import Account
+import Images
 
 struct FavoriteFolderRecord: Codable, Equatable, Sendable {
 	var id: UUID
@@ -148,19 +149,19 @@ struct FavoriteFolderRecord: Codable, Equatable, Sendable {
 
 extension FavoriteFeedsFolder: ArticleFetcher {
 
-	func fetchArticles() throws -> Set<Article> {
-		try FavoriteFeedsController.shared.fetchArticles(for: aliases)
+	func fetchArticles() -> Set<Article> {
+		(try? FavoriteFeedsController.shared.fetchArticles(for: aliases)) ?? Set<Article>()
 	}
 
-	func fetchArticlesAsync() async throws -> Set<Article> {
-		try await FavoriteFeedsController.shared.fetchArticlesAsync(for: aliases)
+	func fetchArticlesAsync() async -> Set<Article> {
+		(try? await FavoriteFeedsController.shared.fetchArticlesAsync(for: aliases)) ?? Set<Article>()
 	}
 
-	func fetchUnreadArticles() throws -> Set<Article> {
-		try fetchArticles().unreadArticles()
+	func fetchUnreadArticles() -> Set<Article> {
+		fetchArticles().unreadArticles()
 	}
 
-	func fetchUnreadArticlesAsync() async throws -> Set<Article> {
-		try await FavoriteFeedsController.shared.fetchUnreadArticlesAsync(for: aliases)
+	func fetchUnreadArticlesAsync() async -> Set<Article> {
+		(try? await FavoriteFeedsController.shared.fetchUnreadArticlesAsync(for: aliases)) ?? Set<Article>()
 	}
 }

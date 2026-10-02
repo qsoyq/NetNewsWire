@@ -14,7 +14,7 @@ import RSParser
 
 	override func setUp() async throws {
 		try await super.setUp()
-		account = TestAccountManager.shared.createAccount(type: .feedbin, transport: TestTransport())
+		account = TestAccountManager.shared.createAccount(type: .feedbin)
 	}
 
 	override func tearDown() async throws {
@@ -32,17 +32,17 @@ import RSParser
 	}
 
 	func testAsyncBatchFetchMatchesIndividualFeedFetches() async throws {
-		let itemsByFeed = FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
+		let itemsByFeed = makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
 		let feeds = itemsByFeed.keys.sorted().map { feedID in
 			let feed = account.createFeed(with: feedID, url: "https://example.com/\(feedID)", feedID: feedID, homePageURL: nil)
 			account.addFeedToTreeAtTopLevel(feed)
 			return feed
 		}
-		_ = try await account.database.updateAsync(feedIDsAndItems: itemsByFeed, defaultRead: false)
+		_ = await account.database.updateAsync(feedIDsAndItems: itemsByFeed, defaultRead: false)
 
 		var individuallyFetched = Set<Article>()
 		for feed in feeds {
-			individuallyFetched.formUnion(try await feed.fetchArticlesAsync())
+			individuallyFetched.formUnion(await feed.fetchArticlesAsync())
 		}
 		let batchFetched = try await account.fetchArticlesAsync(feedIDs: Set(itemsByFeed.keys))
 
@@ -50,19 +50,19 @@ import RSParser
 	}
 
 	func testAsyncUnreadBatchFetchReturnsOnlyUnreadArticles() async throws {
-		let itemsByFeed = FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
+		let itemsByFeed = makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
 		let feeds = itemsByFeed.keys.sorted().map { feedID in
 			let feed = account.createFeed(with: feedID, url: "https://example.com/\(feedID)", feedID: feedID, homePageURL: nil)
 			account.addFeedToTreeAtTopLevel(feed)
 			return feed
 		}
-		_ = try await account.database.updateAsync(feedIDsAndItems: itemsByFeed, defaultRead: false)
+		_ = await account.database.updateAsync(feedIDsAndItems: itemsByFeed, defaultRead: false)
 
 		let allArticles = try await account.fetchArticlesAsync(feedIDs: Set(feeds.map(\.feedID)))
 		guard let articleToMarkRead = allArticles.first else {
 			return XCTFail("Expected fetched articles")
 		}
-		_ = try await account.updateAsync(articles: Set([articleToMarkRead]), statusKey: .read, flag: true)
+		await account.updateStatusesAsync(articleIDs: [articleToMarkRead.articleID], statusKey: .read, flag: true)
 
 		let unreadArticles = try await account.fetchUnreadArticlesAsync(feedIDs: Set(feeds.map(\.feedID)))
 
@@ -71,15 +71,15 @@ import RSParser
 	}
 
 	func testLargeReadHistoryDoesNotAppearInUnreadBatch() async throws {
-		let itemsByFeed = FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 11_300)
+		let itemsByFeed = makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 11_300)
 		let feedID = "feed/0"
 		let feed = account.createFeed(with: feedID, url: "https://example.com/feed", feedID: feedID, homePageURL: nil)
 		account.addFeedToTreeAtTopLevel(feed)
-		_ = try await account.database.updateAsync(feedIDsAndItems: itemsByFeed, defaultRead: true)
+		_ = await account.database.updateAsync(feedIDsAndItems: itemsByFeed, defaultRead: true)
 		let expectedIDs = Set((0..<300).map { "feed/0/articles/\($0)" })
-		let selected = try await account.fetchArticlesAsync(.articleIDs(expectedIDs))
+		let selected = await account.fetchArticlesAsync(.articleIDs(expectedIDs))
 		XCTAssertEqual(selected.count, 300)
-		_ = try await account.updateAsync(articles: selected, statusKey: .read, flag: false)
+		await account.updateStatusesAsync(articleIDs: selected.articleIDs(), statusKey: .read, flag: false)
 		let feedIDs = Set([feedID] + (1...1_800).map { "missing/\($0)" })
 		let unread = try await account.fetchUnreadArticlesAsync(feedIDs: feedIDs)
 		XCTAssertEqual(unread.articleIDs(), expectedIDs)
@@ -90,11 +90,11 @@ import RSParser
 		let feedID = "feed/0"
 		let feed = account.createFeed(with: feedID, url: "https://example.com/feed", feedID: feedID, homePageURL: nil)
 		account.addFeedToTreeAtTopLevel(feed)
-		let original = try XCTUnwrap(FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 1)[feedID]?.first)
-		_ = try await account.database.updateAsync(feedIDsAndItems: [feedID: [original]], defaultRead: false)
+		let original = try XCTUnwrap(makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 1)[feedID]?.first)
+		_ = await account.database.updateAsync(feedIDsAndItems: [feedID: [original]], defaultRead: false)
 		let originalArticles = try await account.fetchArticlesAsync(feedIDs: [feedID])
 		let article = try XCTUnwrap(originalArticles.first)
-		_ = try await account.updateAsync(articles: [article], statusKey: .read, flag: true)
+		await account.updateStatusesAsync(articleIDs: [article.articleID], statusKey: .read, flag: true)
 
 		let refreshed = ParsedItem(
 			syncServiceID: original.syncServiceID, uniqueID: original.uniqueID, feedURL: original.feedURL,
@@ -104,12 +104,40 @@ import RSParser
 			datePublished: original.datePublished, dateModified: original.dateModified, authors: original.authors,
 			tags: original.tags, attachments: original.attachments
 		)
-		_ = try await account.database.updateAsync(feedIDsAndItems: [feedID: [refreshed]], defaultRead: true)
+		_ = await account.database.updateAsync(feedIDsAndItems: [feedID: [refreshed]], defaultRead: true)
 
 		let updatedArticles = try await account.fetchArticlesAsync(feedIDs: [feedID])
 		let updated = try XCTUnwrap(updatedArticles.first)
 		XCTAssertEqual(updated.articleID, article.articleID)
 		XCTAssertEqual(updated.contentHTML, "Refreshed HTML")
 		XCTAssertTrue(updated.status.read)
+	}
+
+	private func makeParsedItemTestDataFor(numberOfFeeds: Int, numberOfItemsInFeeds: Int) -> [String: Set<ParsedItem>] {
+		Dictionary(uniqueKeysWithValues: (0..<numberOfFeeds).map { feedIndex in
+			let feedID = "feed/\(feedIndex)"
+			let items = (0..<numberOfItemsInFeeds).map { index in
+				ParsedItem(
+					syncServiceID: "\(feedID)/articles/\(index)",
+					uniqueID: "\(feedID)/articles/\(index)",
+					feedURL: feedID,
+					url: "https://example.com/\(feedID)/articles/\(index)",
+					externalURL: nil,
+					title: "Title \(index)",
+					language: nil,
+					contentHTML: "Content \(index) HTML",
+					contentText: "Content \(index) Text",
+					markdown: nil,
+					summary: nil,
+					imageURL: nil,
+					bannerImageURL: nil,
+					datePublished: nil,
+					dateModified: nil,
+					authors: nil,
+					tags: nil,
+					attachments: nil)
+			}
+			return (feedID, Set(items))
+		})
 	}
 }

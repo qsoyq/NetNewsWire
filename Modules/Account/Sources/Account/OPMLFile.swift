@@ -21,7 +21,7 @@ import RSParser
 		}
 	}
 	private let saveQueue = CoalescingQueue(name: "Save Queue", interval: 0.5)
-	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "OPMLFile")
+	private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "OPMLFile")
 
 	init(filename: String, account: Account) {
 		self.fileURL = URL(fileURLWithPath: filename)
@@ -38,7 +38,7 @@ import RSParser
 		}
 
 		BatchUpdate.shared.perform {
-			account.loadOPMLItems(opmlItems)
+			account.loadOPMLItems(opmlItems, isManualImport: false)
 		}
 	}
 
@@ -53,6 +53,13 @@ import RSParser
 	func saveImmediately() throws {
 		guard !account.isDeleted else { return }
 		try opmlDocument().write(to: fileURL, atomically: true, encoding: .utf8)
+	}
+
+	@objc func saveToDiskIfNeeded() {
+		if isDirty {
+			isDirty = false
+			save()
+		}
 	}
 }
 
@@ -70,13 +77,6 @@ private extension OPMLFile {
 		}
 	}
 
-	@objc func saveToDiskIfNeeded() {
-		if isDirty {
-			isDirty = false
-			save()
-		}
-	}
-
 	func opmlFileData() -> Data? {
 		var fileData: Data?
 
@@ -89,12 +89,12 @@ private extension OPMLFile {
 		return fileData
 	}
 
-	func parsedOPMLItems(fileData: Data) -> [RSOPMLItem]? {
+	func parsedOPMLItems(fileData: Data) -> [OPMLItem]? {
 		let parserData = ParserData(url: fileURL.absoluteString, data: fileData)
-		var opmlDocument: RSOPMLDocument?
+		var opmlDocument: OPMLDocument?
 
 		do {
-			opmlDocument = try RSOPMLParser.parseOPML(with: parserData)
+			opmlDocument = try OPMLParser.parseOPML(with: parserData)
 		} catch {
 			Self.logger.error("OPML import failed: \(error.localizedDescription)")
 			return nil

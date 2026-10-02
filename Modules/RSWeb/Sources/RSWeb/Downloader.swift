@@ -10,7 +10,7 @@ import Foundation
 import os
 import RSCore
 
-public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> Swift.Void
+public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swift.Void
 
 /// Simple downloader, for a one-shot download like an image
 /// or a web page. For a download-feeds session, see DownloadSession.
@@ -18,13 +18,13 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 @MainActor public final class Downloader {
 	public static let shared = Downloader()
 	private let urlSession: URLSession
-	private var callbacks = [URL: [DownloadCallback]]()
-	private var pendingRequests = [URLRequest]()
+	private var callbacks = [URL: [(callback: DownloadCallback, fromCache: Bool)]]()
+	private var pendingRequests = [(URLRequest, UserAgentStyle)]()
 	private var activeDownloadCount = 0
 	private static let maximumConcurrentDownloads = 16
 	private let cache = DownloadCache.shared
 
-	nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "Downloader")
+	nonisolated private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "Downloader")
 
 	private init() {
 		let sessionConfiguration = URLSessionConfiguration.ephemeral
@@ -45,24 +45,28 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 		urlSession.invalidateAndCancel()
 	}
 
-	public func download(_ url: URL) async throws -> (Data?, URLResponse?) {
+	public func download(_ url: URL, userAgentStyle: UserAgentStyle = .feed) async throws -> DownloadResponse {
+		try await download(URLRequest(url: url), userAgentStyle: userAgentStyle)
+	}
+
+	public func download(_ urlRequest: URLRequest, userAgentStyle: UserAgentStyle = .feed) async throws -> DownloadResponse {
 		try await withCheckedThrowingContinuation { continuation in
-			download(url) { data, response, error in
+			download(urlRequest, userAgentStyle: userAgentStyle) { downloadResponse, error in
 				if let error {
 					continuation.resume(throwing: error)
 				} else {
-					continuation.resume(returning: (data, response))
+					continuation.resume(returning: downloadResponse)
 				}
 			}
 		}
 	}
 
-	public func download(_ url: URL, _ callback: @escaping DownloadCallback) {
+	public func download(_ url: URL, userAgentStyle: UserAgentStyle = .feed, _ callback: @escaping DownloadCallback) {
 		assert(Thread.isMainThread)
-		download(URLRequest(url: url), callback)
+		download(URLRequest(url: url), userAgentStyle: userAgentStyle, callback)
 	}
 
-	public func download(_ urlRequest: URLRequest, _ callback: @escaping DownloadCallback) {
+	public func download(_ urlRequest: URLRequest, userAgentStyle: UserAgentStyle = .feed, _ callback: @escaping DownloadCallback) {
 		assert(Thread.isMainThread)
 
 		guard let url = urlRequest.url else {
@@ -72,7 +76,7 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 
 		guard url.isHTTPOrHTTPSURL() else {
 			Self.logger.debug("Downloader: skipping download for non-http/https URL: \(url)")
-			callback(nil, nil, nil)
+			callback(DownloadResponse(data: nil, response: nil, returnedFromCache: false), nil)
 			return
 		}
 
@@ -82,7 +86,7 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 		if isCacheableRequest {
 			if let cachedRecord = cache[url.absoluteString] {
 				Self.logger.debug("Downloader: returning cached record for \(url)")
-				callback(cachedRecord.data, cachedRecord.response, nil)
+				callback(DownloadResponse(data: cachedRecord.data, response: cachedRecord.response, returnedFromCache: true), nil)
 				return
 			}
 		}
@@ -90,35 +94,45 @@ public typealias DownloadCallback = @MainActor (Data?, URLResponse?, Error?) -> 
 		// Add callback. If there is already a download in progress for this URL, return early.
 		if callbacks[url] == nil {
 			Self.logger.debug("Downloader: downloading \(url)")
-			callbacks[url] = [callback]
+			callbacks[url] = [(callback, false)]
 		} else {
-			// A download is already be in progress for this URL. Don’t start a separate download.
-			// Add the callback to the callbacks array for this URL.
+			// A download is already in progress for this URL. Don’t start a separate download.
+			// Add the callback to the callbacks array for this URL. This caller is coalesced
+			// onto the in-progress download, so it makes no network request of its own.
 			Self.logger.debug("Downloader: download in progress for \(url) — adding callback")
-			callbacks[url]?.append(callback)
+			callbacks[url]?.append((callback, true))
 			return
 		}
 
 		if activeDownloadCount >= Self.maximumConcurrentDownloads {
-			pendingRequests.append(urlRequest)
+			pendingRequests.append((urlRequest, userAgentStyle))
 			return
 		}
-		startDownload(urlRequest)
+		startDownload(urlRequest, userAgentStyle: userAgentStyle)
 	}
 }
 
 private extension Downloader {
 
-	func startDownload(_ urlRequest: URLRequest) {
+	func startDownload(_ urlRequest: URLRequest, userAgentStyle: UserAgentStyle) {
 		guard let url = urlRequest.url else { return }
 		activeDownloadCount += 1
 		let isCacheableRequest = urlRequest.httpMethod == HTTPMethod.get
 		var urlRequestToUse = urlRequest
-		urlRequestToUse.addSpecialCaseUserAgentIfNeeded()
+		switch userAgentStyle {
+		case .feed:
+			break // the session's user agent
+		case .specialCaseFeed:
+			urlRequestToUse.setValue(UserAgent.extendedUserAgent, forHTTPHeaderField: HTTPRequestHeader.userAgent)
+		case .browser:
+			urlRequestToUse.setValue(UserAgent.browserUserAgent, forHTTPHeaderField: HTTPRequestHeader.userAgent)
+		}
+		urlRequestToUse.addSpecialCaseUserAgentIfNeeded() // Host requirements win over the requested style.
 
 		let task = urlSession.dataTask(with: urlRequestToUse) { (data, response, error) in
 
-			if isCacheableRequest {
+			// Don’t cache errors — a retry should hit the network.
+			if isCacheableRequest && error == nil {
 				Self.logger.debug("Downloader: caching response for \(url)")
 				self.cache.add(url.absoluteString, data: data, response: response)
 			}
@@ -127,7 +141,8 @@ private extension Downloader {
 				self.callAndReleaseCallbacks(url, data, response, error)
 				self.activeDownloadCount -= 1
 				if !self.pendingRequests.isEmpty {
-					self.startDownload(self.pendingRequests.removeFirst())
+					let (request, style) = self.pendingRequests.removeFirst()
+					self.startDownload(request, userAgentStyle: style)
 				}
 			}
 		}
@@ -140,15 +155,14 @@ private extension Downloader {
 	func callAndReleaseCallbacks(_ url: URL, _ data: Data? = nil, _ response: URLResponse? = nil, _ error: Error? = nil) {
 		assert(Thread.isMainThread)
 
-		defer {
-			callbacks[url] = nil
-		}
-
 		guard let callbacksForURL = callbacks[url] else {
 			assertionFailure("Downloader: downloaded URL \(url) but no callbacks found")
 			Self.logger.fault("Downloader: downloaded URL \(url) but no callbacks found")
 			return
 		}
+
+		// Release before calling — a callback may start a new download of the same URL.
+		callbacks[url] = nil
 
 		let count = callbacksForURL.count
 		if count == 1 {
@@ -157,8 +171,9 @@ private extension Downloader {
 			Self.logger.debug("Downloader: calling \(count) callbacks for URL \(url)")
 		}
 
-		for callback in callbacksForURL {
-			callback(data, response, error)
+		for entry in callbacksForURL {
+			let downloadResponse = DownloadResponse(data: data, response: response, returnedFromCache: entry.fromCache)
+			entry.callback(downloadResponse, error)
 		}
 	}
 }

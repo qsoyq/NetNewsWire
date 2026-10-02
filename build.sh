@@ -106,6 +106,7 @@ build_ios_unsigned_ipa() {
     -project "${PROJECT_PATH}" \
     -target "${TARGET_IOS}" \
     -configuration "${CONFIGURATION}" \
+    -packageAuthorizationProvider netrc \
     SYMROOT="${DERIVED_DATA}/Build/Products" \
     OBJROOT="${DERIVED_DATA}/Build/Intermediates.noindex" \
     CODE_SIGNING_ALLOWED=NO \
@@ -136,6 +137,8 @@ build_ios_unsigned_ipa() {
 
   log "Packaging IPA..."
   cp -R "${APP_PATH}" "${PAYLOAD_DIR}/"
+  # zip updates existing archives and otherwise keeps resources removed by this build.
+  rm -f "${IPA_PATH}"
   (
     cd "${IOS_BUILD_DIR}"
     /usr/bin/zip -qry "${IPA_PATH}" Payload
