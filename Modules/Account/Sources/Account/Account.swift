@@ -898,7 +898,7 @@ public enum FetchType {
 		let feeds = Set(feedIDs.compactMap { existingFeed(withFeedID: $0) })
 		var articles = Set<Article>()
 		for feedIDBatch in Self.articleFetchFeedIDBatches(feedIDs) {
-			articles.formUnion(try database.fetchArticles(feedIDs: feedIDBatch))
+			articles.formUnion(database.fetchArticles(feedIDs: feedIDBatch))
 		}
 		validateUnreadCountsAfterFetchingUnreadArticles(feeds: feeds, articles: articles)
 		return articles

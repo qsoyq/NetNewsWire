@@ -32,7 +32,7 @@ import RSParser
 	}
 
 	func testAsyncBatchFetchMatchesIndividualFeedFetches() async throws {
-		let itemsByFeed = FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
+		let itemsByFeed = makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
 		let feeds = itemsByFeed.keys.sorted().map { feedID in
 			let feed = account.createFeed(with: feedID, url: "https://example.com/\(feedID)", feedID: feedID, homePageURL: nil)
 			account.addFeedToTreeAtTopLevel(feed)
@@ -50,7 +50,7 @@ import RSParser
 	}
 
 	func testAsyncUnreadBatchFetchReturnsOnlyUnreadArticles() async throws {
-		let itemsByFeed = FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
+		let itemsByFeed = makeParsedItemTestDataFor(numberOfFeeds: 2, numberOfItemsInFeeds: 3)
 		let feeds = itemsByFeed.keys.sorted().map { feedID in
 			let feed = account.createFeed(with: feedID, url: "https://example.com/\(feedID)", feedID: feedID, homePageURL: nil)
 			account.addFeedToTreeAtTopLevel(feed)
@@ -71,7 +71,7 @@ import RSParser
 	}
 
 	func testLargeReadHistoryDoesNotAppearInUnreadBatch() async throws {
-		let itemsByFeed = FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 11_300)
+		let itemsByFeed = makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 11_300)
 		let feedID = "feed/0"
 		let feed = account.createFeed(with: feedID, url: "https://example.com/feed", feedID: feedID, homePageURL: nil)
 		account.addFeedToTreeAtTopLevel(feed)
@@ -90,7 +90,7 @@ import RSParser
 		let feedID = "feed/0"
 		let feed = account.createFeed(with: feedID, url: "https://example.com/feed", feedID: feedID, homePageURL: nil)
 		account.addFeedToTreeAtTopLevel(feed)
-		let original = try XCTUnwrap(FeedlyTestSupport().makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 1)[feedID]?.first)
+		let original = try XCTUnwrap(makeParsedItemTestDataFor(numberOfFeeds: 1, numberOfItemsInFeeds: 1)[feedID]?.first)
 		_ = await account.database.updateAsync(feedIDsAndItems: [feedID: [original]], defaultRead: false)
 		let originalArticles = try await account.fetchArticlesAsync(feedIDs: [feedID])
 		let article = try XCTUnwrap(originalArticles.first)
@@ -111,5 +111,33 @@ import RSParser
 		XCTAssertEqual(updated.articleID, article.articleID)
 		XCTAssertEqual(updated.contentHTML, "Refreshed HTML")
 		XCTAssertTrue(updated.status.read)
+	}
+
+	private func makeParsedItemTestDataFor(numberOfFeeds: Int, numberOfItemsInFeeds: Int) -> [String: Set<ParsedItem>] {
+		Dictionary(uniqueKeysWithValues: (0..<numberOfFeeds).map { feedIndex in
+			let feedID = "feed/\(feedIndex)"
+			let items = (0..<numberOfItemsInFeeds).map { index in
+				ParsedItem(
+					syncServiceID: "\(feedID)/articles/\(index)",
+					uniqueID: "\(feedID)/articles/\(index)",
+					feedURL: feedID,
+					url: "https://example.com/\(feedID)/articles/\(index)",
+					externalURL: nil,
+					title: "Title \(index)",
+					language: nil,
+					contentHTML: "Content \(index) HTML",
+					contentText: "Content \(index) Text",
+					markdown: nil,
+					summary: nil,
+					imageURL: nil,
+					bannerImageURL: nil,
+					datePublished: nil,
+					dateModified: nil,
+					authors: nil,
+					tags: nil,
+					attachments: nil)
+			}
+			return (feedID, Set(items))
+		})
 	}
 }
