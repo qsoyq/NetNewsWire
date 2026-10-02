@@ -73,8 +73,13 @@ final class ArticleViewController: UIViewController {
 
 			if let previousController = currentWebViewController, previousController.article != article {
 				let controller: WebViewController
-				if WebViewPiPManager.shared.isPiPActive(in: previousController), let article {
+				if WebViewPiPManager.shared.isPiPActive(in: previousController) {
 					WebViewPiPManager.shared.protect(previousController)
+					guard let article else {
+						updateUI()
+						syncArticleExtractorButtonState()
+						return
+					}
 					controller = createWebViewController(article)
 				} else {
 					controller = previousController
