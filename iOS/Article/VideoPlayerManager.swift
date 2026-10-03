@@ -148,13 +148,19 @@ final class VideoPlayerManager: NSObject {
 
 	private func observePlayerItemEnd() {
 		removeEndObserver()
+		guard let item = player?.currentItem else {
+			return
+		}
 		endObserver = NotificationCenter.default.addObserver(
 			forName: .AVPlayerItemDidPlayToEndTime,
-			object: player?.currentItem,
+			object: item,
 			queue: .main
-		) { [weak self] _ in
+		) { [weak self, weak item] _ in
 			Task { @MainActor in
-				self?.handleVideoEnded()
+				guard let self, Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
+					return
+				}
+				self.handleVideoEnded()
 			}
 		}
 	}
@@ -172,10 +178,21 @@ final class VideoPlayerManager: NSObject {
 			return
 		}
 
-		// PiP active: try seamless continuation if enabled
-		if isPiPActive && AppDefaults.shared.pipAutoPlayNextVideo {
-			if let nextArticle = nextArticleForPlayback(coordinator),
-			   let nextVideoURL = Self.extractFirstVideoURL(from: nextArticle.body) {
+		let pipActive = isPiPActive
+		let pipAutoPlayNextVideo = AppDefaults.shared.pipAutoPlayNextVideo
+		let continuesInPiP = pipActive && pipAutoPlayNextVideo
+		let nextArticle = continuesInPiP ? nextArticleForPlayback(coordinator) : nil
+		let nextVideoURL = nextArticle.flatMap { Self.extractFirstVideoURL(from: $0.body) }
+		let action = Self.playbackEndAction(
+			isPiPActive: pipActive,
+			pipAutoPlayNextVideo: pipAutoPlayNextVideo,
+			autoGotoNextAfterVideo: AppDefaults.shared.autoGotoNextAfterVideo,
+			hasNextVideo: nextVideoURL != nil
+		)
+
+		switch action {
+		case .playNextVideo:
+			if let nextArticle, let nextVideoURL {
 				Self.logger.info("Swapping to next article video in PiP")
 				appDelegate.resumeDatabaseProcessingIfNecessary()
 				NotificationActionLog.log(.info, operation: "PiP auto-next", message: "Selecting next article \(nextArticle.articleID); isSuspended=\(AccountManager.shared.isSuspended); appState=\(UIApplication.shared.applicationState.rawValue)")
@@ -195,15 +212,36 @@ final class VideoPlayerManager: NSObject {
 				}
 				return
 			}
-		}
-
-		// Not in PiP or PiP auto-next disabled: use regular auto-next
-		if AppDefaults.shared.autoGotoNextAfterVideo {
+		case .selectNextArticle:
 			appDelegate.resumeDatabaseProcessingIfNecessary()
 			coordinator.selectNextArticle()
+		case .finish:
+			break
 		}
 
 		finishPlaybackSession()
+	}
+
+	enum PlaybackEndAction: Equatable {
+		case playNextVideo
+		case selectNextArticle
+		case finish
+	}
+
+	static func playbackEndAction(isPiPActive: Bool, pipAutoPlayNextVideo: Bool, autoGotoNextAfterVideo: Bool, hasNextVideo: Bool) -> PlaybackEndAction {
+		if isPiPActive && pipAutoPlayNextVideo {
+			// The displayed article can lag behind background playback. Never navigate
+			// from that stale selection when the playback queue has ended.
+			return hasNextVideo ? .playNextVideo : .finish
+		}
+		return autoGotoNextAfterVideo ? .selectNextArticle : .finish
+	}
+
+	static func isCurrentPlaybackItem(_ item: AVPlayerItem?, currentItem: AVPlayerItem?) -> Bool {
+		guard let item else {
+			return false
+		}
+		return item === currentItem
 	}
 
 	private func nextArticleForPlayback(_ coordinator: SceneCoordinator) -> Article? {
