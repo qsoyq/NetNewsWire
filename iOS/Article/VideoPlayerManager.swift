@@ -11,6 +11,7 @@ import AVKit
 import os
 import Articles
 import Account
+import ErrorLog
 
 @MainActor
 final class VideoPlayerManager: NSObject {
@@ -37,10 +38,20 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private var endObserver: NSObjectProtocol?
+	private var playerItemStatusObservation: NSKeyValueObservation?
+	private var playerTimeControlObservation: NSKeyValueObservation?
+	private var playbackDiagnosticObservers = [NSObjectProtocol]()
+	private var playbackRequestID = 0
+	private var playbackRequestStartUptime: TimeInterval = 0
 
 	override init() {
 		super.init()
-		try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+		do {
+			try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+		} catch {
+			let error = error as NSError
+			ArticleMediaLog.log(.error, operation: "Native video audio session", message: "domain=\(error.domain) code=\(error.code)")
+		}
 	}
 
 	// MARK: - Public API
@@ -49,6 +60,7 @@ final class VideoPlayerManager: NSObject {
 		let item = AVPlayerItem(url: url)
 		let player = player ?? AVPlayer()
 		self.player = player
+		let replacesExistingItem = player.currentItem != nil
 		player.replaceCurrentItem(with: item)
 
 		currentArticleID = articleID
@@ -61,17 +73,25 @@ final class VideoPlayerManager: NSObject {
 		observePlayerItemEnd()
 
 		let playerViewController = configuredPlayerViewController()
+		let cacheHit = AppDefaults.shared.cacheVideoContent && VideoCacheDatabase.shared.hasCachedData(for: url.absoluteString)
+		ArticleMediaLog.log(.info, operation: "Native video request", message: "request=\(playbackRequestID) articleID=\(articleID) source=\(ArticleMediaLog.urlDescription(url.absoluteString, level: .info)) cache_hit=\(cacheHit) replaces_item=\(replacesExistingItem) presenter_visible=\(presenter.viewIfLoaded?.window != nil) player_presented=\(playerViewController.presentingViewController != nil) player_dismissing=\(playerViewController.isBeingDismissed) pip=\(isPiPActive)")
+		ArticleMediaLog.log(.debug, operation: "Native video URL", message: "request=\(playbackRequestID) articleID=\(articleID) url=\(url.absoluteString)")
 		guard playerViewController.presentingViewController == nil, !isPiPActive else {
 			player.play()
+			logPlaybackDiagnostics(for: item, event: "play-existing-presentation")
 			return
 		}
 
 		presenter.present(playerViewController, animated: true) {
 			player.play()
+			self.logPlaybackDiagnostics(for: item, event: "presentation-completed")
 		}
 	}
 
 	func stop() {
+		if let item = player?.currentItem {
+			logPlaybackDiagnostics(for: item, event: "stop")
+		}
 		player?.pause()
 		player?.replaceCurrentItem(with: nil)
 		playerViewController?.dismiss(animated: true)
@@ -151,6 +171,7 @@ final class VideoPlayerManager: NSObject {
 		guard let item = player?.currentItem else {
 			return
 		}
+		observePlaybackDiagnostics(for: item)
 		endObserver = NotificationCenter.default.addObserver(
 			forName: .AVPlayerItemDidPlayToEndTime,
 			object: item,
@@ -170,6 +191,76 @@ final class VideoPlayerManager: NSObject {
 			NotificationCenter.default.removeObserver(endObserver)
 		}
 		endObserver = nil
+		playerItemStatusObservation?.invalidate()
+		playerItemStatusObservation = nil
+		playerTimeControlObservation?.invalidate()
+		playerTimeControlObservation = nil
+		for observer in playbackDiagnosticObservers {
+			NotificationCenter.default.removeObserver(observer)
+		}
+		playbackDiagnosticObservers.removeAll()
+	}
+
+	private func observePlaybackDiagnostics(for item: AVPlayerItem) {
+		playbackRequestID += 1
+		playbackRequestStartUptime = ProcessInfo.processInfo.systemUptime
+		playerItemStatusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, change in
+			let status = change.newValue?.rawValue ?? -1
+			Task { @MainActor in
+				guard let self, let item else {
+					return
+				}
+				self.logPlaybackDiagnostics(for: item, event: "item-status-\(status)")
+			}
+		}
+		playerTimeControlObservation = player?.observe(\.timeControlStatus, options: [.new]) { [weak self, weak item] _, change in
+			let status = change.newValue?.rawValue ?? -1
+			Task { @MainActor in
+				guard let self, let item else {
+					return
+				}
+				self.logPlaybackDiagnostics(for: item, event: "time-control-\(status)")
+			}
+		}
+		let events: [(Notification.Name, String)] = [
+			(.AVPlayerItemFailedToPlayToEndTime, "failed-to-end"),
+			(.AVPlayerItemNewErrorLogEntry, "error-log"),
+			(.AVPlayerItemPlaybackStalled, "stalled")
+		]
+		for (name, event) in events {
+			let observer = NotificationCenter.default.addObserver(forName: name, object: item, queue: .main) { [weak self, weak item] notification in
+				let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? NSError
+				Task { @MainActor in
+					guard let self, let item else {
+						return
+					}
+					self.logPlaybackDiagnostics(for: item, event: event, error: error)
+				}
+			}
+			playbackDiagnosticObservers.append(observer)
+		}
+	}
+
+	private func logPlaybackDiagnostics(for item: AVPlayerItem, event: String, error: Error? = nil) {
+		guard Self.isCurrentPlaybackItem(item, currentItem: player?.currentItem) else {
+			return
+		}
+		let elapsed = (ProcessInfo.processInfo.systemUptime - playbackRequestStartUptime) * 1_000
+		var details = "request=\(playbackRequestID) articleID=\(currentArticleID ?? "(nil)") event=\(event) elapsed_ms=\(String(format: "%.1f", elapsed)) item_status=\(item.status.rawValue) time_control=\(player?.timeControlStatus.rawValue ?? -1) waiting_reason=\(player?.reasonForWaitingToPlay?.rawValue ?? "none") pip=\(isPiPActive)"
+		var underlyingError = (error ?? item.error).map { $0 as NSError }
+		for depth in 0..<4 {
+			guard let currentError = underlyingError else {
+				break
+			}
+			details += " error_\(depth)_domain=\(currentError.domain) error_\(depth)_code=\(currentError.code)"
+			underlyingError = currentError.userInfo[NSUnderlyingErrorKey] as? NSError
+		}
+		if let entry = item.errorLog()?.events.last {
+			details += " stream_error_domain=\(entry.errorDomain) stream_error_code=\(entry.errorStatusCode)"
+		}
+		let level: ErrorLogLevel = item.status == .failed || error != nil || event == "failed-to-end" ? .error :
+			(event == "error-log" || event == "stalled" ? .warning : .info)
+		ArticleMediaLog.log(level, operation: "Native video state", message: details)
 	}
 
 	private func handleVideoEnded() {
@@ -256,6 +347,9 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private func finishPlaybackSession() {
+		if let item = player?.currentItem {
+			logPlaybackDiagnostics(for: item, event: "finish-session")
+		}
 		player?.pause()
 		player?.replaceCurrentItem(with: nil)
 		removeEndObserver()
@@ -353,6 +447,7 @@ extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 
 	nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {
 		Task { @MainActor in
+			ArticleMediaLog.log(.info, operation: "Native video dismissal", message: "request=\(playbackRequestID) articleID=\(currentArticleID ?? "(nil)") controller_current=\(playerViewController === self.playerViewController) pip=\(isPiPActive) restoring=\(isRestoringUserInterface)")
 			if !isPiPActive, !isRestoringUserInterface {
 				finishPlaybackSession()
 			}

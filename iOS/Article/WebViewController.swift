@@ -698,6 +698,7 @@ extension WebViewController: WKScriptMessageHandler {
 		case MessageName.videoEnded:
 			handleVideoEnded()
 		case MessageName.nativeVideoPlay:
+			logMediaEvent(.info, operation: "Native video handoff", message: "articleID=\(article?.articleID ?? "(nil)") document_current=\(message.webView === webView) main_frame=\(message.frameInfo.isMainFrame) article_current=\((delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true) view_visible=\(viewIfLoaded?.window != nil) autoplay=\(AppDefaults.shared.autoplayVideo) cache_video=\(AppDefaults.shared.cacheVideoContent) prefetch=\(AppDefaults.shared.prefetchNextArticleContent)")
 			handleNativeVideoPlay(body: message.body as? String)
 		case MessageName.webViewPiPStarted:
 			WebViewPiPManager.shared.pipDidStart(from: self)

@@ -34,22 +34,26 @@ struct SidebarItemNode: Hashable, Sendable {
 	let sidebarItemID: SidebarItemIdentifier
 	let folderID: Int? // Identifies this folder (nil if not a folder)
 	let parentFolderID: Int?
+	let parentFavoriteFolderID: String?
 
 	@MainActor init(_ node: Node) {
 		self.node = node
 		self.sidebarItemID = (node.representedObject as! SidebarItem).sidebarItemID!
 		self.folderID = (node.representedObject as? Folder)?.folderID
 		self.parentFolderID = (node.parent?.representedObject as? Folder)?.folderID
+		self.parentFavoriteFolderID = (node.parent?.representedObject as? FavoriteFeedsFolder)?.folderID
 	}
 
 	nonisolated func hash(into hasher: inout Hasher) {
 		hasher.combine(sidebarItemID)
 		hasher.combine(folderID)
 		hasher.combine(parentFolderID)
+		hasher.combine(parentFavoriteFolderID)
 	}
 
 	nonisolated static func == (lhs: SidebarItemNode, rhs: SidebarItemNode) -> Bool {
 		lhs.sidebarItemID == rhs.sidebarItemID && lhs.folderID == rhs.folderID && lhs.parentFolderID == rhs.parentFolderID
+			&& lhs.parentFavoriteFolderID == rhs.parentFavoriteFolderID
 	}
 }
 
