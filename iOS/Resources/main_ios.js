@@ -264,7 +264,11 @@ function setupVideoAutoFullscreen() {
 function setupVideoAutoFullscreenNative() {
 	document.querySelectorAll("video").forEach(element => {
 		if (element.classList.contains("nnwAnimatedGIF")) return;
+		if (element.nnwNativePlayListenerInstalled) return;
+		element.nnwNativePlayListenerInstalled = true;
 		element.addEventListener("playing", function() {
+			// A queued playing event can arrive after direct native autoplay paused the video.
+			if (element.paused) return;
 			if (!element.webkitPresentationMode || element.webkitPresentationMode === "inline") {
 				var rawSrc = element.currentSrc || element.src || (element.querySelector("source") ? element.querySelector("source").src : null);
 				var videoURL = resolveVideoURL(rawSrc);
@@ -275,6 +279,22 @@ function setupVideoAutoFullscreenNative() {
 			}
 		});
 	});
+}
+
+// Read the rendered DOM, including resolved relative URLs and reader-mode content.
+// Native autoplay must not wait for WebKit to load or play the media first.
+function nativeVideoAutoplaySource() {
+	var element = document.querySelector("video:not(.nnwAnimatedGIF)");
+	if (!element) return { outcome: "no-video" };
+	var source = element.querySelector("source");
+	var url = resolveVideoURL(element.currentSrc || element.src || (source ? source.src : ""));
+	var snapshot = {
+		outcome: /^https?:/i.test(url || "") ? "ready" : "unsupported-source",
+		url: url || "", readyState: element.readyState, networkState: element.networkState,
+		errorCode: element.error ? element.error.code : 0
+	};
+	if (snapshot.outcome === "ready") element.pause();
+	return snapshot;
 }
 
 function setupVideoAutoplay() {

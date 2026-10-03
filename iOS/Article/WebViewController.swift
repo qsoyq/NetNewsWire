@@ -86,6 +86,11 @@ final class WebViewController: UIViewController {
 	private var isMediaSaveResultPresentationScheduled = false
 	private var articleImageLoadTracker: ArticleImageLoadTracker?
 	private var articleImageSummaryTask: Task<Void, Never>?
+	private var videoDocumentReady = false
+	private var videoDocumentGeneration = 0
+	private var nativeAutoplayPending = false
+	private var nativeAutoplayStarted = false
+	private var videoPresentationEnabled = false
 
 	private var articleExtractor: ArticleExtractor?
 	var extractedArticle: ExtractedArticle? {
@@ -149,6 +154,8 @@ final class WebViewController: UIViewController {
 
 	override func viewDidAppear(_ animated: Bool) {
 		super.viewDidAppear(animated)
+		videoPresentationEnabled = true
+		startNativeVideoDirectly()
 		presentPendingMediaSaveResult()
 	}
 
@@ -165,6 +172,16 @@ final class WebViewController: UIViewController {
 		// dismissal lets WebKit's full-screen entry continuation fire on a stale view
 		// hierarchy and trip a RELEASE_ASSERT in WebFullScreenManagerProxy on iOS 26.
 		stopWebViewActivity()
+	}
+
+	override func viewDidDisappear(_ animated: Bool) {
+		super.viewDidDisappear(animated)
+		// A completed article exit starts a new autoplay opportunity on return.
+		// Presenting the native player or entering PiP stays within this opening.
+		if presentedViewController == nil, !VideoPlayerManager.shared.isPiPActive,
+			!WebViewPiPManager.shared.isPiPActive {
+			nativeAutoplayStarted = false
+		}
 	}
 
 	// MARK: Notifications
@@ -220,6 +237,7 @@ final class WebViewController: UIViewController {
 		stopArticleExtractor()
 
 		if article != self.article {
+			nativeAutoplayStarted = false
 			invalidateImageDownload()
 			self.article = article
 			// A restoration offset belongs only to the article it was saved for.
@@ -391,6 +409,7 @@ final class WebViewController: UIViewController {
 	}
 
 	func stopWebViewActivity() {
+		videoPresentationEnabled = false
 		suspendImagePresentation()
 		guard !VideoPlayerManager.shared.isPiPActive, !WebViewPiPManager.shared.isPiPActive else {
 			return
@@ -560,6 +579,10 @@ extension WebViewController: WKUIDelegate {
 extension WebViewController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		guard webView === self.webView else {
+			return
+		}
+		videoDocumentReady = true
 		webView.evaluateJavaScript(imagePresentationEnabled ? "resumeImageViewer();" : "suspendImageViewer();")
 		if let article {
 			logMediaEvent(.info, operation: "Render", message: "documentURL=\(webView.url?.absoluteString ?? "(nil)") articleID=\(article.articleID)")
@@ -576,7 +599,9 @@ extension WebViewController: WKNavigationDelegate {
 		} else if AppDefaults.shared.autoFullscreenVideo {
 			webView.evaluateJavaScript("setupVideoAutoFullscreen();")
 		}
-		if AppDefaults.shared.autoplayVideo {
+		if AppDefaults.shared.useNativeVideoPlayer && AppDefaults.shared.autoplayVideo {
+			startNativeVideoDirectly()
+		} else if AppDefaults.shared.autoplayVideo {
 			webView.evaluateJavaScript("setupVideoAutoplay();")
 		}
 		if AppDefaults.shared.autoGotoNextAfterVideo {
@@ -699,6 +724,11 @@ extension WebViewController: WKScriptMessageHandler {
 			handleVideoEnded()
 		case MessageName.nativeVideoPlay:
 			logMediaEvent(.info, operation: "Native video handoff", message: "articleID=\(article?.articleID ?? "(nil)") document_current=\(message.webView === webView) main_frame=\(message.frameInfo.isMainFrame) article_current=\((delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true) view_visible=\(viewIfLoaded?.window != nil) autoplay=\(AppDefaults.shared.autoplayVideo) cache_video=\(AppDefaults.shared.cacheVideoContent) prefetch=\(AppDefaults.shared.prefetchNextArticleContent)")
+			guard message.webView === webView, message.frameInfo.isMainFrame,
+				canPresentNativeVideo else {
+				logMediaEvent(.info, operation: "Native video handoff", message: "outcome=ignored-inactive")
+				return
+			}
 			handleNativeVideoPlay(body: message.body as? String)
 		case MessageName.webViewPiPStarted:
 			WebViewPiPManager.shared.pipDidStart(from: self)
@@ -753,13 +783,45 @@ extension WebViewController: WKScriptMessageHandler {
 		coordinator.selectNextArticle()
 	}
 
-	private func startNativeVideoDirectly() {
-		guard let articleID = article?.articleID,
-			  let body = article?.body,
-			  let url = VideoPlayerManager.extractFirstVideoURL(from: body) else {
+	private var canPresentNativeVideo: Bool {
+		AppDefaults.shared.useNativeVideoPlayer && videoPresentationEnabled && viewIfLoaded?.window != nil
+			&& (delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true
+			&& presentedViewController == nil
+			&& !VideoPlayerManager.shared.isPiPActive && !WebViewPiPManager.shared.isPiPActive
+	}
+
+	func startNativeVideoDirectly() {
+		guard AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo,
+			!nativeAutoplayStarted, !nativeAutoplayPending, let articleID = article?.articleID else {
 			return
 		}
-		VideoPlayerManager.shared.play(url: url, articleID: articleID, from: self)
+		logMediaEvent(.info, operation: "Native video autoplay", message: "articleID=\(articleID) document=\(videoDocumentGeneration) ready=\(videoDocumentReady) eligible=\(canPresentNativeVideo) pip=\(VideoPlayerManager.shared.isPiPActive || WebViewPiPManager.shared.isPiPActive)")
+		guard videoDocumentReady, canPresentNativeVideo, let webView else {
+			return
+		}
+		let generation = videoDocumentGeneration
+		nativeAutoplayPending = true
+		webView.evaluateJavaScript("nativeVideoAutoplaySource();") { [weak self, weak webView] result, error in
+			guard let self, generation == self.videoDocumentGeneration, articleID == self.article?.articleID,
+				webView === self.webView else {
+				return
+			}
+			self.nativeAutoplayPending = false
+			guard self.canPresentNativeVideo, !self.nativeAutoplayStarted,
+				AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo else {
+				self.logMediaEvent(.info, operation: "Native video autoplay", message: "articleID=\(articleID) outcome=ignored-late-result")
+				return
+			}
+			guard error == nil, let snapshot = result as? [String: Any] else {
+				self.logMediaEvent(.warning, operation: "Native video autoplay", message: "articleID=\(articleID) outcome=script-error error=\(error?.localizedDescription ?? "invalid-result")")
+				return
+			}
+			self.logMediaEvent(.info, operation: "Native video autoplay", message: "articleID=\(articleID) outcome=\(snapshot["outcome"] ?? "unknown") ready_state=\(snapshot["readyState"] ?? -1) network_state=\(snapshot["networkState"] ?? -1) error_code=\(snapshot["errorCode"] ?? 0)")
+			guard snapshot["outcome"] as? String == "ready", let source = snapshot["url"] as? String else {
+				return
+			}
+			self.handleNativeVideoPlay(body: source)
+		}
 	}
 
 	private func handleNativeVideoPlay(body: String?) {
@@ -780,6 +842,9 @@ extension WebViewController: WKScriptMessageHandler {
 		guard let articleID = article?.articleID else {
 			return
 		}
+		// Both direct autoplay and a queued webpage handoff share this entry point.
+		// Mark before presenting: returning from the player must not autoplay again.
+		nativeAutoplayStarted = true
 		VideoPlayerManager.shared.play(url: url, articleID: articleID, from: self)
 	}
 
@@ -1381,6 +1446,9 @@ private extension WebViewController {
 		} else {
 			articleImageLoadTracker = nil
 		}
+		videoDocumentReady = false
+		videoDocumentGeneration += 1
+		nativeAutoplayPending = false
 		webView.loadHTMLString(html, baseURL: URL(string: rendering.baseURL))
 	}
 

@@ -585,6 +585,8 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 
 	func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
 		isPageTransitionInProgress = false
+		// A preloaded page may have finished rendering before it became current.
+		currentWebViewController?.startNativeVideoDirectly()
 
 		if let pending = pendingSetViewController {
 			pendingSetViewController = nil
