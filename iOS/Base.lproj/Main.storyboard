@@ -380,12 +380,12 @@
                                 <action selector="settings:" destination="6Bn-mF-MPS" id="hbg-Ot-ImT"/>
                             </connections>
                         </barButtonItem>
-                        <barButtonItem title="Collapse All Folders" image="chevron.up.square" catalog="system" id="cAF-01-cAF">
+                        <barButtonItem title="Collapse All" image="chevron.up.square" catalog="system" id="cAF-01-cAF">
                             <userDefinedRuntimeAttributes>
-                                <userDefinedRuntimeAttribute type="string" keyPath="accLabelText" value="Collapse All Folders"/>
+                                <userDefinedRuntimeAttribute type="string" keyPath="accLabelText" value="Collapse All"/>
                             </userDefinedRuntimeAttributes>
                             <connections>
-                                <action selector="collapseAllExceptForGroupItems:" destination="6Bn-mF-MPS" id="cAF-02-cAF"/>
+                                <action selector="collapseFoldersOrSections:" destination="6Bn-mF-MPS" id="cAF-02-cAF"/>
                             </connections>
                         </barButtonItem>
                         <barButtonItem style="plain" systemItem="flexibleSpace" id="xNq-ig-7IX"/>
@@ -405,6 +405,7 @@
                     <simulatedToolbarMetrics key="simulatedBottomBarMetrics"/>
                     <connections>
                         <outlet property="addNewItemButton" destination="iTI-PO-3e6" id="lnC-7T-ziu"/>
+                        <outlet property="collapseAllButton" destination="cAF-01-cAF" id="cAF-03-cAF"/>
                         <outlet property="filterButton" destination="pBp-WF-vxp" id="ehZ-fU-VAz"/>
                     </connections>
                 </collectionViewController>

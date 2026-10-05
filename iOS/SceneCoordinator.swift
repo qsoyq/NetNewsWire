@@ -1124,6 +1124,34 @@ struct SidebarItemNode: Hashable, Sendable {
 		collapse(containerID)
 	}
 
+	func collapseFoldersOrSections() {
+		Self.logger.debug("SceneCoordinator: collapseFoldersOrSections")
+		let hasExpandedFolder = treeController.rootNode.childNodes.contains { sectionNode in
+			isExpanded(sectionNode) && sectionNode.childNodes.contains { node in
+				(node.representedObject is Folder || node.representedObject is FavoriteFeedsFolder) && isExpanded(node)
+			}
+		}
+		if hasExpandedFolder {
+			collapseAllFolders()
+			return
+		}
+
+		let sectionsToCollapse = treeController.rootNode.childNodes.filter { node in
+			(node.representedObject is Account || node.representedObject is FavoriteFeedsController) && isExpanded(node)
+		}
+		guard !sectionsToCollapse.isEmpty else {
+			return
+		}
+		for sectionNode in sectionsToCollapse {
+			unmarkExpanded(sectionNode)
+		}
+		rebuildBackingStores { [weak self] in
+			self?.mainFeedCollectionViewController.refreshVisibleDisclosureStates()
+			self?.clearTimelineIfNoLongerAvailable()
+		}
+		saveExpandedContainers()
+	}
+
 	func collapseAllFolders() {
 		Self.logger.debug("SceneCoordinator: collapseAllFolders")
 		for sectionNode in treeController.rootNode.childNodes {
@@ -1133,8 +1161,10 @@ struct SidebarItemNode: Hashable, Sendable {
 				}
 			}
 		}
-		rebuildBackingStores()
-		clearTimelineIfNoLongerAvailable()
+		rebuildBackingStores { [weak self] in
+			self?.mainFeedCollectionViewController.refreshVisibleDisclosureStates()
+			self?.clearTimelineIfNoLongerAvailable()
+		}
 		saveExpandedContainers()
 	}
 

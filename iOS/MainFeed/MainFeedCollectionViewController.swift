@@ -29,6 +29,7 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 	private static let favoriteFoldersMenuTitle = NSLocalizedString("Add to Folder", comment: "Add to Folder")
 
 	@IBOutlet var filterButton: UIBarButtonItem!
+	@IBOutlet var collapseAllButton: UIBarButtonItem!
 	@IBOutlet var addNewItemButton: UIBarButtonItem! {
 		didSet {
 			addNewItemButton.target = self
@@ -78,6 +79,9 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
+		let collapseTitle = NSLocalizedString("Collapse All", comment: "Collapse folders or subscription and favorite sections")
+		collapseAllButton.title = collapseTitle
+		collapseAllButton.accessibilityLabel = collapseTitle
 		registerForNotifications()
 		configureCurrentActivityButton()
 		configureCollectionView()
@@ -619,6 +623,39 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 			return makePseudoFeedContextMenu(indexPath: indexPath)
 		} else {
 			return nil
+		}
+	}
+
+	@IBAction func collapseFoldersOrSections(_ sender: Any?) {
+		coordinator.collapseFoldersOrSections()
+		refreshVisibleDisclosureStates()
+	}
+
+	func refreshVisibleDisclosureStates() {
+		for case let folderCell as MainFeedCollectionViewFolderCell in collectionView.visibleCells {
+			guard let indexPath = collectionView.indexPath(for: folderCell),
+				  let node = dataSource.itemIdentifier(for: indexPath)?.node else {
+				continue
+			}
+			folderCell.setDisclosure(isExpanded: coordinator.isExpanded(node), animated: false)
+		}
+
+		for case let headerView as MainFeedCollectionHeaderReusableView in collectionView.visibleSupplementaryViews(ofKind: UICollectionView.elementKindSectionHeader) {
+			switch headerView.sectionHeaderType {
+			case .smartFeeds:
+				headerView.setDisclosure(isExpanded: coordinator.isExpanded(SmartFeedsController.shared), animated: false)
+			case .favoriteFeeds:
+				headerView.unreadCount = FavoriteFeedsController.shared.allFeed.unreadCount
+				headerView.setDisclosure(isExpanded: coordinator.isExpanded(FavoriteFeedsController.shared), animated: false)
+			case .account(let accountID):
+				guard let account = AccountManager.shared.existingAccount(accountID: accountID) else {
+					continue
+				}
+				headerView.unreadCount = account.unreadCount
+				headerView.setDisclosure(isExpanded: coordinator.isExpanded(account), animated: false)
+			case nil:
+				continue
+			}
 		}
 	}
 
