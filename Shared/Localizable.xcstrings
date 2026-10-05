@@ -293,6 +293,23 @@
     "Copy Home Page URL" : {
       "comment" : "Command"
     },
+    "Copy Resource URL" : {
+      "comment" : "Copy the original image or video URL",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝资源地址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝資源網址"
+          }
+        }
+      }
+    },
     "Couldn’t complete the iCloud scan because of an error:" : {
       "comment" : "Scan error alert title"
     },

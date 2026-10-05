@@ -40,6 +40,7 @@ class ImageViewer {
 		this.hideLoadingIndicator();
 		
 		const rect = this.img.getBoundingClientRect();
+		const imageSource = this.img.currentSrc || this.img.src;
 		
 		// Instead of trying to convert to canvas (which fails with CORS),
 		// send the original image src URL
@@ -49,7 +50,8 @@ class ImageViewer {
 			width: rect.width,
 			height: rect.height,
 			imageTitle: this.img.title,
-			imageURL: this.img.src,
+			imageURL: imageSource,
+			resourceURL: originalURLForCachedSource(imageSource),
 		};
 
 		var jsonMessage = JSON.stringify(message);
@@ -333,7 +335,7 @@ function originalURLForCachedSource(source) {
 	}
 }
 
-function mediaSourceForSaving(element, mediaType) {
+function originalMediaSource(element, mediaType) {
 	var source;
 	if (mediaType === "image") {
 		source = element.currentSrc || element.src;
@@ -363,7 +365,7 @@ function collectMediaForSaving(mediaType) {
 		if (mediaType === "image" && isArticleHeaderElement(element)) return;
 		if (mediaType === "video" && isAnimatedGIFVideo(element)) return;
 
-		var source = mediaSourceForSaving(element, mediaType);
+		var source = originalMediaSource(element, mediaType);
 		if (!isSaveableMediaSource(source, mediaType)) {
 			skipped++;
 			return;
@@ -402,14 +404,16 @@ function mediaContextTargetType(event) {
 	return target.tagName.toLowerCase() === "video" ? "video" : "image";
 }
 
-function postMediaContextTarget(type, press) {
-	window.webkit.messageHandlers.mediaContextTarget.postMessage(type + ":" + press);
+function postMediaContextTarget(type, press, event) {
+	var target = event.target.closest ? event.target.closest("img, video") : null;
+	var resourceURL = target && (type === "image" || type === "video") ? originalMediaSource(target, type) : "";
+	window.webkit.messageHandlers.mediaContextTarget.postMessage({type: type, press: press, resourceURL: resourceURL || ""});
 }
 
 function reportMediaContextTargetForTouchStart(event) {
 	// A touch start begins a new press and therefore owns the target, so it may report "none".
 	mediaPressSequence += 1;
-	postMediaContextTarget(mediaContextTargetType(event) || "none", mediaPressSequence);
+	postMediaContextTarget(mediaContextTargetType(event) || "none", mediaPressSequence, event);
 }
 
 function reportMediaContextTargetForContextMenu(event) {
@@ -417,7 +421,7 @@ function reportMediaContextTargetForContextMenu(event) {
 	// keeps the current press number so it can only ever refresh that press.
 	var type = mediaContextTargetType(event);
 	if (type) {
-		postMediaContextTarget(type, mediaPressSequence);
+		postMediaContextTarget(type, mediaPressSequence, event);
 	}
 }
 

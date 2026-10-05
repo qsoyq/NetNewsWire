@@ -19,6 +19,7 @@ final class ImageViewController: UIViewController {
 
 	var image: UIImage!
 	var imageTitle: String?
+	var resourceURL: String?
 	var saveAllImagesHandler: (() -> Void)?
 
 	// Strong reference — the navigation controller’s transitioningDelegate is weak,
@@ -104,6 +105,11 @@ final class ImageViewController: UIViewController {
 		}
 
 		let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+		if let resourceURL, !resourceURL.isEmpty {
+			alert.addAction(UIAlertAction(title: NSLocalizedString("Copy Resource URL", comment: "Copy the original image or video URL"), style: .default) { _ in
+				UIPasteboard.general.string = resourceURL
+			})
+		}
 		alert.addAction(UIAlertAction(title: NSLocalizedString("Share", comment: "Share"), style: .default) { [weak self] _ in
 			guard let self, let shareButton = self.shareButtonItem else {
 				return

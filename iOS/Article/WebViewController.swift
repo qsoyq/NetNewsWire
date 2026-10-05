@@ -47,6 +47,7 @@ final class WebViewController: UIViewController {
 		let target: MediaContextTarget
 		let press: Int
 		let detectedAt: Date
+		let resourceURL: String?
 	}
 
 	private struct MediaSnapshot: Decodable {
@@ -77,6 +78,7 @@ final class WebViewController: UIViewController {
 	private var mediaSourceURLs = Set<String>()
 	private var clickedImageCompletion: (() -> Void)?
 	private var mediaContextTargetState: MediaContextTargetState?
+	private var latestMediaContextPress = 0
 	private var didConfigureContextMenuForCurrentPress = false
 	private var mediaSaveProgressAlert: UIAlertController?
 	private var mediaSaveTask: Task<Void, Never>?
@@ -735,24 +737,28 @@ extension WebViewController: WKScriptMessageHandler {
 		case MessageName.webViewPiPStopped:
 			WebViewPiPManager.shared.pipDidStop(from: self)
 		case MessageName.mediaLongPress:
+			guard message.webView === webView, message.frameInfo.isMainFrame else {
+				return
+			}
 			handleMediaLongPressMessage(message.body as? String)
 		case MessageName.articleImageLoad:
 			handleArticleImageLoadMessage(message.body)
 		case MessageName.mediaContextTarget:
-			// Reports carry "<type>:<press>" so a straggler from an earlier press can never overwrite
-			// the media element the current press is about to build a menu for.
-			let components = (message.body as? String ?? "").split(separator: ":", maxSplits: 1)
-			let reportedType = components.first.map(String.init) ?? ""
-			let reportedPress = components.count > 1 ? Int(components[1]) : nil
-
-			// A straggler from an earlier press must never change the target of the press in progress.
-			let isFromEarlierPress = reportedPress != nil && mediaContextTargetState != nil && reportedPress! < mediaContextTargetState!.press
+			guard message.webView === webView, message.frameInfo.isMainFrame,
+				let report = message.body as? [String: Any],
+				let reportedType = report["type"] as? String,
+				let reportedPress = report["press"] as? Int else {
+				return
+			}
+			// Keep the sequence even after a non-media press clears the target, so a late report
+			// cannot restore the resource from an earlier press.
+			guard reportedPress >= latestMediaContextPress else {
+				logMediaEvent(.debug, operation: "Long press", message: "Ignored a target report from an earlier press")
+				return
+			}
+			latestMediaContextPress = reportedPress
 
 			guard let aTarget = MediaContextTarget(rawValue: reportedType) else {
-				guard !isFromEarlierPress else {
-					logMediaEvent(.debug, operation: "Long press", message: "Ignored a non-media report from an earlier press")
-					return
-				}
 				// A press that did not start on media clears the target, matching what WebKit will do.
 				mediaContextTargetState = nil
 				didConfigureContextMenuForCurrentPress = false
@@ -760,16 +766,12 @@ extension WebViewController: WKScriptMessageHandler {
 				return
 			}
 
-			guard !isFromEarlierPress else {
-				logMediaEvent(.debug, operation: "Long press", message: "Ignored \(aTarget.rawValue) report from an earlier press")
-				return
-			}
-
 			let isNewPress = mediaContextTargetState?.press != reportedPress
 			if isNewPress {
 				didConfigureContextMenuForCurrentPress = false
 			}
-			mediaContextTargetState = MediaContextTargetState(target: aTarget, press: reportedPress ?? 0, detectedAt: Date())
+			let resourceURL = report["resourceURL"] as? String
+			mediaContextTargetState = MediaContextTargetState(target: aTarget, press: reportedPress, detectedAt: Date(), resourceURL: resourceURL?.isEmpty == false ? resourceURL : nil)
 			logMediaEvent(.debug, operation: "Long press", message: "Detected \(aTarget.rawValue) target")
 		case MessageName.mediaSourceURLs:
 			mediaSourceURLs = Set((message.body as? [String]) ?? [])
@@ -897,6 +899,7 @@ private struct ImageClickMessage: Codable {
 	let height: Float
 	let imageTitle: String?
 	let imageURL: String
+	let resourceURL: String?
 }
 
 // MARK: Private
@@ -911,16 +914,24 @@ private extension WebViewController {
 		return mediaContextTargetState.target
 	}
 
-	/// Builds the menu WebKit shows, with the batch save action appended after the actions the system
+	/// Builds the menu WebKit shows, with resource actions appended after the actions the system
 	/// provides. Passing nil for the target keeps the original menu exactly as it was.
 	private func mediaContextMenuConfiguration(appending mediaContextTarget: MediaContextTarget?) -> UIContextMenuConfiguration {
-		UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] suggestedActions in
+		let resourceURL = mediaContextTargetState?.resourceURL
+		return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] suggestedActions in
 			guard let self, let mediaContextTarget, mediaContextTarget != .header else {
 				return UIMenu(title: "", children: suggestedActions)
 			}
 
 			var menuElements = suggestedActions
-			menuElements.append(UIMenu(title: "", options: .displayInline, children: [self.saveAllMediaAction(for: mediaContextTarget)]))
+			var resourceActions = [UIAction]()
+			if let resourceURL {
+				resourceActions.append(UIAction(title: NSLocalizedString("Copy Resource URL", comment: "Copy the original image or video URL"), image: UIImage(systemName: "doc.on.doc")) { _ in
+					UIPasteboard.general.string = resourceURL
+				})
+			}
+			resourceActions.append(self.saveAllMediaAction(for: mediaContextTarget))
+			menuElements.append(UIMenu(title: "", options: .displayInline, children: resourceActions))
 			return UIMenu(title: "", children: menuElements)
 		}
 	}
@@ -985,11 +996,12 @@ private extension WebViewController {
 	func handleMediaLongPressMessage(_ body: String?) {
 		let components = (body ?? "").split(separator: ":", maxSplits: 1)
 		let reportedType = components.first.map(String.init)
+		guard components.count > 1, let press = Int(components[1]),
+			press == latestMediaContextPress,
+			currentMediaContextTarget?.rawValue == reportedType else {
+			return
+		}
 		if reportedType == MediaContextTarget.header.rawValue {
-			if components.count > 1, let press = Int(components[1]), let mediaContextTargetState, press != mediaContextTargetState.press {
-				logMediaEvent(.debug, operation: "Long press", message: "Ignored a header report from an earlier press")
-				return
-			}
 			if didConfigureContextMenuForCurrentPress {
 				logMediaEvent(.debug, operation: "Long press", message: "WebKit already provided the header menu for this press")
 				return
@@ -1002,10 +1014,6 @@ private extension WebViewController {
 			return
 		}
 		guard reportedType == MediaContextTarget.video.rawValue else {
-			return
-		}
-		if components.count > 1, let press = Int(components[1]), let mediaContextTargetState, press != mediaContextTargetState.press {
-			logMediaEvent(.debug, operation: "Long press", message: "Ignored a video report from an earlier press")
 			return
 		}
 		guard !didConfigureContextMenuForCurrentPress else {
@@ -1023,6 +1031,11 @@ private extension WebViewController {
 
 	private func presentVideoActions() {
 		let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+		if let resourceURL = mediaContextTargetState?.resourceURL {
+			alert.addAction(UIAlertAction(title: NSLocalizedString("Copy Resource URL", comment: "Copy the original image or video URL"), style: .default) { _ in
+				UIPasteboard.general.string = resourceURL
+			})
+		}
 		alert.addAction(UIAlertAction(title: NSLocalizedString("Save All Videos", comment: "Save all article videos"), style: .default) { [weak self] _ in
 			self?.logMediaEvent(.info, operation: "Save all", message: "Selected video batch save")
 			self?.confirmSaveAllMedia(for: .video)
@@ -1461,6 +1474,9 @@ private extension WebViewController {
 		}
 		videoDocumentReady = false
 		videoDocumentGeneration += 1
+		mediaContextTargetState = nil
+		latestMediaContextPress = 0
+		didConfigureContextMenuForCurrentPress = false
 		nativeAutoplayPending = false
 		webView.loadHTMLString(html, baseURL: URL(string: rendering.baseURL))
 	}
@@ -1547,7 +1563,7 @@ private extension WebViewController {
 
 		transition.originImage = image
 
-		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, transition: transition, saveAllImagesHandler: { [weak self] in
+		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, resourceURL: clickMessage.resourceURL, transition: transition, saveAllImagesHandler: { [weak self] in
 			self?.confirmSaveAllMedia(for: .image)
 		})
 	}
