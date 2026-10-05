@@ -824,6 +824,19 @@ extension WebViewController: WKScriptMessageHandler {
 		}
 	}
 
+	func resumeNativeVideoAfterPageTransition() {
+		guard viewIfLoaded?.window != nil,
+			(delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true,
+			presentedViewController == nil, !isBeingDismissed,
+			UIApplication.shared.applicationState == .active,
+			!VideoPlayerManager.shared.isPiPActive, !WebViewPiPManager.shared.isPiPActive else {
+			return
+		}
+		// Programmatic navigation can reuse this controller without viewDidAppear.
+		videoPresentationEnabled = true
+		startNativeVideoDirectly()
+	}
+
 	private func handleNativeVideoPlay(body: String?) {
 		guard var urlString = body else {
 			return

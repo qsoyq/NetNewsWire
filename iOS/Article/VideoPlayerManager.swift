@@ -280,6 +280,7 @@ final class VideoPlayerManager: NSObject {
 			autoGotoNextAfterVideo: AppDefaults.shared.autoGotoNextAfterVideo,
 			hasNextVideo: nextVideoURL != nil
 		)
+		ArticleMediaLog.log(.info, operation: "Native video end", message: "request=\(playbackRequestID) articleID=\(currentArticleID ?? "(nil)") action=\(action) pip=\(pipActive)")
 
 		switch action {
 		case .playNextVideo:
@@ -304,8 +305,19 @@ final class VideoPlayerManager: NSObject {
 				return
 			}
 		case .selectNextArticle:
-			appDelegate.resumeDatabaseProcessingIfNecessary()
-			coordinator.selectNextArticle()
+			let endedRequestID = playbackRequestID
+			let selectedArticleID = coordinator.currentArticle?.articleID
+			finishPlaybackSession { [weak self, weak coordinator] in
+				guard let self, let coordinator,
+					self.playbackRequestID == endedRequestID,
+					coordinator.currentArticle?.articleID == selectedArticleID else {
+					return
+				}
+				ArticleMediaLog.log(.info, operation: "Native video end", message: "request=\(endedRequestID) event=dismissal-completed-select-next")
+				appDelegate.resumeDatabaseProcessingIfNecessary()
+				coordinator.selectNextArticle()
+			}
+			return
 		case .finish:
 			break
 		}
@@ -346,7 +358,7 @@ final class VideoPlayerManager: NSObject {
 		return coordinator.nextArticle
 	}
 
-	private func finishPlaybackSession() {
+	private func finishPlaybackSession(completion: (() -> Void)? = nil) {
 		if let item = player?.currentItem {
 			logPlaybackDiagnostics(for: item, event: "finish-session")
 		}
@@ -356,10 +368,19 @@ final class VideoPlayerManager: NSObject {
 		currentArticleID = nil
 		playbackArticles.removeAll()
 
-		if !isPiPActive {
-			playerViewController?.dismiss(animated: true)
-			playerViewController = nil
+		guard !isPiPActive else {
+			completion?()
+			return
 		}
+		// Clear the old session before dismissal can make the article visible again.
+		// Its completion may immediately start a new playback session.
+		let finishedController = playerViewController
+		playerViewController = nil
+		guard let finishedController, finishedController.presentingViewController != nil else {
+			completion?()
+			return
+		}
+		finishedController.dismiss(animated: true, completion: completion)
 	}
 
 	private func restoreUserInterface(completionHandler: @escaping @Sendable (Bool) -> Void) {
@@ -448,7 +469,9 @@ extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 	nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {
 		Task { @MainActor in
 			ArticleMediaLog.log(.info, operation: "Native video dismissal", message: "request=\(playbackRequestID) articleID=\(currentArticleID ?? "(nil)") controller_current=\(playerViewController === self.playerViewController) pip=\(isPiPActive) restoring=\(isRestoringUserInterface)")
-			if !isPiPActive, !isRestoringUserInterface {
+			// A dismissal callback from the finished controller must not tear down
+			// the next article's player after automatic navigation.
+			if playerViewController === self.playerViewController, !isPiPActive, !isRestoringUserInterface {
 				finishPlaybackSession()
 			}
 		}

@@ -99,7 +99,12 @@ final class ArticleViewController: UIViewController {
 						if self.isPageTransitionInProgress {
 							self.pendingSetViewController = controller
 						} else {
-							self.pageViewController.setViewControllers([controller], direction: .forward, animated: false, completion: nil)
+							self.pageViewController.setViewControllers([controller], direction: .forward, animated: false) { [weak self] finished in
+								guard finished, let self, self.isCurrentWebViewController(controller) else {
+									return
+								}
+								controller.resumeNativeVideoAfterPageTransition()
+							}
 							self.syncArticleExtractorButtonState()
 						}
 					}
@@ -586,7 +591,7 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 	func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
 		isPageTransitionInProgress = false
 		// A preloaded page may have finished rendering before it became current.
-		currentWebViewController?.startNativeVideoDirectly()
+		currentWebViewController?.resumeNativeVideoAfterPageTransition()
 
 		if let pending = pendingSetViewController {
 			pendingSetViewController = nil
@@ -596,7 +601,12 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 				if self.isPageTransitionInProgress {
 					self.pendingSetViewController = pending
 				} else {
-					self.pageViewController.setViewControllers([pending], direction: .forward, animated: false, completion: nil)
+					self.pageViewController.setViewControllers([pending], direction: .forward, animated: false) { [weak self] finished in
+						guard finished, let self, self.isCurrentWebViewController(pending) else {
+							return
+						}
+						pending.resumeNativeVideoAfterPageTransition()
+					}
 					self.syncArticleExtractorButtonState()
 				}
 			}
