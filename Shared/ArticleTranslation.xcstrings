@@ -1,6 +1,27 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Clear Translation Cache": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Clear Translation Cache" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "清除翻译缓存" } }
+      }
+    },
+    "Concurrent Requests": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Concurrent Requests" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "并发请求数" } }
+      }
+    },
+    "Saved translations are reused for the same article and service settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Saved translations are reused for the same article and service settings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "相同文章和服务设置会复用已保存的译文。" } }
+      }
+    },
     "Article Translation": {
       "extractionState": "manual",
       "localizations": {

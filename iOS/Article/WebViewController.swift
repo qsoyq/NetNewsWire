@@ -591,7 +591,7 @@ extension WebViewController: WKNavigationDelegate {
 		videoDocumentReady = true
 		articleTranslationController.setActive(viewIfLoaded?.window != nil && (delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true)
 		if article != nil, articleExtractor?.state != .processing {
-			articleTranslationController.documentDidLoad(webView)
+			articleTranslationController.documentDidLoad(webView, articleID: article?.articleID)
 		}
 		webView.evaluateJavaScript(imagePresentationEnabled ? "resumeImageViewer();" : "suspendImageViewer();")
 		if let article {

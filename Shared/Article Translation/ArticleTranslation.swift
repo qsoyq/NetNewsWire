@@ -158,12 +158,24 @@ enum ArticleTranslationResponse {
 
 actor ArticleTranslationService {
 	static let shared = ArticleTranslationService()
+	private static let persistedCacheKey = "ArticleTranslationFragmentCache"
 	private var cache = [String: String]()
 	private var cacheOrder = [String]()
 	private let session: URLSession
 
 	init(session: URLSession = URLSession(configuration: .ephemeral)) {
 		self.session = session
+		if let data = UserDefaults.standard.data(forKey: Self.persistedCacheKey),
+			let saved = try? JSONDecoder().decode([String: String].self, from: data) {
+			cache = saved
+			cacheOrder = Array(saved.keys)
+		}
+	}
+
+	func clearCache() {
+		cache.removeAll()
+		cacheOrder.removeAll()
+		UserDefaults.standard.removeObject(forKey: Self.persistedCacheKey)
 	}
 
 	/// Split by Swift characters so a long paragraph never truncates or splits an emoji.
@@ -184,10 +196,20 @@ actor ArticleTranslationService {
 		return chunks
 	}
 
-	func translate(_ originals: [ArticleTranslationSegment], configuration: ArticleTranslationConfiguration,
+	func translate(_ originals: [ArticleTranslationSegment], articleID: String? = nil, configuration: ArticleTranslationConfiguration,
+		maxConcurrentRequests: Int = 4,
 		onUpdate: @Sendable ([ArticleTranslationSegment], Int, Int) async throws -> Void) async throws {
 		guard !originals.isEmpty else {
 			throw ArticleTranslationError.noText
+		}
+		let articleCacheKey = articleID.map { configuration.cacheKey(for: "article:\($0)") }
+		if let articleCacheKey, let encoded = cache[articleCacheKey],
+			let data = encoded.data(using: .utf8),
+			let saved = try? JSONDecoder().decode([String: String].self, from: data),
+			saved.count == originals.count,
+			originals.allSatisfy({ saved[$0.id] != nil }) {
+			try await onUpdate(originals.map { ArticleTranslationSegment(id: $0.id, text: saved[$0.id]!) }, originals.count, originals.count)
+			return
 		}
 		let parts = originals.map { original in
 			Self.chunks(of: original.text).enumerated().map { index, text in
@@ -217,37 +239,64 @@ actor ArticleTranslationService {
 		}
 		try Task.checkCancellation()
 		try await onUpdate(completedSegments(), published.count, originals.count)
+		let concurrency = min(8, max(1, maxConcurrentRequests))
 		var offset = 0
 		while offset < pending.count {
 			try Task.checkCancellation()
-			var batch = [ArticleTranslationSegment]()
-			var size = 0
-			while offset < pending.count, batch.count < 8 {
-				let part = pending[offset]
-				let partSize = part.text.count + (part.context?.count ?? 0)
-				if !batch.isEmpty, size + partSize > 5000 {
-					break
+			var batches = [[ArticleTranslationSegment]]()
+			for _ in 0..<concurrency where offset < pending.count {
+				var batch = [ArticleTranslationSegment]()
+				var size = 0
+				while offset < pending.count, batch.count < 8 {
+					let part = pending[offset]
+					let partSize = part.text.count + (part.context?.count ?? 0)
+					if !batch.isEmpty, size + partSize > 5000 { break }
+					batch.append(part)
+					size += partSize
+					offset += 1
 				}
-				batch.append(part)
-				size += partSize
-				offset += 1
+				if !batch.isEmpty { batches.append(batch) }
 			}
-			let translations = try await send(batch, configuration: configuration)
+			let responses = try await withThrowingTaskGroup(of: [ArticleTranslationSegment].self) { group in
+				for batch in batches {
+					group.addTask { try await self.send(batch, configuration: configuration) }
+				}
+				var collected = [[ArticleTranslationSegment]]()
+				for try await response in group { collected.append(response) }
+				return collected
+			}
 			try Task.checkCancellation()
-			for translation in translations {
+			let sourceByID = Dictionary(uniqueKeysWithValues: batches.flatMap { $0 }.map { ($0.id, $0) })
+			for translation in responses.flatMap({ $0 }) {
 				results[translation.id] = translation.text
-				if let source = batch.first(where: { $0.id == translation.id }) {
+				if let source = sourceByID[translation.id] {
 					let key = configuration.cacheKey(for: source.text, context: source.context)
 					if cache[key] == nil {
 						cacheOrder.append(key)
 					}
 					cache[key] = translation.text
+					persistCache()
 				}
 			}
 			while cacheOrder.count > 512 {
 				cache.removeValue(forKey: cacheOrder.removeFirst())
 			}
 			try await onUpdate(completedSegments(), published.count, originals.count)
+		}
+		if let articleCacheKey, !results.isEmpty {
+			var saved = [String: String]()
+			for (index, original) in originals.enumerated() {
+				let translated = parts[index].compactMap { results[$0.id] }
+				if translated.count == parts[index].count { saved[original.id] = translated.joined(separator: "\n") }
+			}
+			if let data = try? JSONEncoder().encode(saved) { cache[articleCacheKey] = String(decoding: data, as: UTF8.self) }
+			persistCache()
+		}
+	}
+
+	private func persistCache() {
+		if let data = try? JSONEncoder().encode(cache) {
+			UserDefaults.standard.set(data, forKey: Self.persistedCacheKey)
 		}
 	}
 

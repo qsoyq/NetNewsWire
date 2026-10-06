@@ -66,10 +66,20 @@ struct ArticleTranslationSettingsView: View {
 						Text(language.title).tag(language)
 					}
 				}
+				Picker(ArticleTranslationStrings.text("Concurrent Requests"), selection: $preferences.concurrentRequests) {
+					ForEach(1...8, id: \.self) { value in Text("\(value)").tag(value) }
+				}
 			} header: {
 				Text(ArticleTranslationStrings.text("Translation Service"))
 			} footer: {
 				Text(ArticleTranslationStrings.text("Base URL and Path form the request address. An empty Path uses /responses. Article text is sent directly to this service. Your API key is saved in Keychain."))
+			}
+			Section {
+				Button(ArticleTranslationStrings.text("Clear Translation Cache"), role: .destructive) {
+					Task { await ArticleTranslationService.shared.clearCache() }
+				}
+			} footer: {
+				Text(ArticleTranslationStrings.text("Saved translations are reused for the same article and service settings."))
 			}
 			if let errorMessage {
 				Section {

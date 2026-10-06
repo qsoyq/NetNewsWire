@@ -18,6 +18,7 @@ import Foundation
 	private var isActive = false
 	private var isTranslating = false
 	private var shouldAutomaticallyTranslate = true
+	private var articleID: String?
 
 	override init() {
 		super.init()
@@ -40,8 +41,9 @@ import Foundation
 		shouldAutomaticallyTranslate = true
 	}
 
-	func documentDidLoad(_ webView: WKWebView) {
+	func documentDidLoad(_ webView: WKWebView, articleID: String? = nil) {
 		documentWillChange()
+		self.articleID = articleID
 		if self.webView !== webView {
 			self.webView?.configuration.userContentController.removeScriptMessageHandler(forName: "articleTranslation", contentWorld: Self.contentWorld)
 			self.webView = webView
@@ -109,7 +111,8 @@ import Foundation
 				guard let json = snapshot as? String else { throw ArticleTranslationError.invalidResponse }
 				let segments = try JSONDecoder().decode([ArticleTranslationSegment].self, from: Data(json.utf8))
 				guard self.isCurrent(operation, document: document) else { return }
-				try await ArticleTranslationService.shared.translate(segments, configuration: configuration) { [weak self] translations, completed, total in
+				let preferences = ArticleTranslationSettings.preferences
+				try await ArticleTranslationService.shared.translate(segments, articleID: self.articleID, configuration: configuration, maxConcurrentRequests: preferences.concurrentRequests) { [weak self] translations, completed, total in
 					guard let self else { throw CancellationError() }
 					try await self.receive(translations, completed: completed, total: total, operation: operation, document: document)
 				}
