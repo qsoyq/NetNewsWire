@@ -32,7 +32,12 @@ final class ArticleViewController: UIViewController {
 	@IBOutlet private var searchBar: ArticleSearchBar!
 	@IBOutlet private var searchBarBottomConstraint: NSLayoutConstraint!
 	private var defaultControls: [UIBarButtonItem]?
-	private lazy var translationBarButtonItem = UIBarButtonItem(title: ArticleTranslationStrings.text("Translate"), style: .plain, target: self, action: #selector(toggleTranslation(_:)))
+	private lazy var translationBarButtonItem: UIBarButtonItem = {
+		let item = UIBarButtonItem(image: UIImage(systemName: "character.book.closed"), style: .plain, target: self, action: #selector(toggleTranslation(_:)))
+		item.accessibilityLabel = ArticleTranslationStrings.text("Translate")
+		item.accessibilityIdentifier = "article.translation"
+		return item
+	}()
 	private var shouldApplyInitialArticleFullscreen = true
 
 	private var pageViewController: UIPageViewController!
@@ -176,14 +181,8 @@ final class ArticleViewController: UIViewController {
 		articleExtractorButton.addTarget(self, action: #selector(toggleArticleExtractor(_:)), for: .touchUpInside)
 		let articleExtractorBarButtonItem = UIBarButtonItem(customView: articleExtractorButton)
 		if #available(iOS 26, *) {
-			toolbarItems?.insert(translationBarButtonItem, at: 6)
-		} else if var items = toolbarItems {
-			items.insert(translationBarButtonItem, at: max(0, items.count - 1))
-			toolbarItems = items
-		}
-
-		if #available(iOS 26, *) {
 			toolbarItems?.insert(articleExtractorBarButtonItem, at: 5)
+			toolbarItems?.insert(translationBarButtonItem, at: 4)
 		} else {
 			let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
 			toolbarItems = [
@@ -192,6 +191,7 @@ final class ArticleViewController: UIViewController {
 				starBarButtonItem,
 				flex(),
 				nextUnreadBarButtonItem,
+				translationBarButtonItem,
 				flex(),
 				articleExtractorBarButtonItem,
 				flex(),
@@ -718,11 +718,14 @@ private extension ArticleViewController {
 		}
 		translationBarButtonItem.isEnabled = true
 		if state == "translated" {
-			translationBarButtonItem.title = ArticleTranslationStrings.text("Show Original")
+			translationBarButtonItem.image = UIImage(systemName: "arrow.uturn.backward.circle")
+			translationBarButtonItem.accessibilityLabel = ArticleTranslationStrings.text("Show Original")
 		} else if state == "running" {
-			translationBarButtonItem.title = ArticleTranslationStrings.text("Stop")
+			translationBarButtonItem.image = UIImage(systemName: "stop.circle")
+			translationBarButtonItem.accessibilityLabel = ArticleTranslationStrings.text("Stop")
 		} else {
-			translationBarButtonItem.title = ArticleTranslationStrings.text("Translate")
+			translationBarButtonItem.image = UIImage(systemName: "character.book.closed")
+			translationBarButtonItem.accessibilityLabel = ArticleTranslationStrings.text("Translate")
 		}
 	}
 
