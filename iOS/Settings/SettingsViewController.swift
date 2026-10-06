@@ -67,6 +67,7 @@ final class SettingsViewController: UITableViewController {
 		case cacheVideoContent
 		case prefetchNextArticle
 		case clearVideoCache
+		case translation
 		case enableFullScreenArticles
 	}
 
@@ -252,6 +253,9 @@ final class SettingsViewController: UITableViewController {
 
 		}
 
+		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.translation.rawValue {
+			(cell.viewWithTag(941) as? UILabel)?.text = ArticleTranslationStrings.text("Article Translation")
+		}
 		return cell
 	}
 
@@ -309,6 +313,8 @@ final class SettingsViewController: UITableViewController {
 			case .clearVideoCache:
 				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
 				clearVideoCache()
+			case .translation:
+				self.navigationController?.pushViewController(UIHostingController(rootView: ArticleTranslationSettingsView()), animated: true)
 			default:
 				break
 			}

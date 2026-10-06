@@ -702,6 +702,26 @@
                                             </constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" accessoryType="disclosureIndicator" indentationWidth="10" id="trn-sl-ROW" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="1004" width="374" height="44"/>
+                                        <autoresizingMask key="autoresizingMask"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="trn-sl-ROW" id="trn-sl-CNT">
+                                            <rect key="frame" x="0.0" y="0.0" width="347" height="44"/>
+                                            <autoresizingMask key="autoresizingMask"/>
+                                            <subviews>
+                                                <label opaque="NO" userInteractionEnabled="NO" tag="941" contentMode="left" text="Article Translation" numberOfLines="0" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="trn-sl-LBL">
+                                                    <rect key="frame" x="20" y="11" width="307" height="22"/>
+                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
+                                                </label>
+                                            </subviews>
+                                            <constraints>
+                                                <constraint firstItem="trn-sl-LBL" firstAttribute="top" secondItem="trn-sl-CNT" secondAttribute="topMargin" id="trn-sl-TOP"/>
+                                                <constraint firstAttribute="bottomMargin" secondItem="trn-sl-LBL" secondAttribute="bottom" id="trn-sl-BOT"/>
+                                                <constraint firstItem="trn-sl-LBL" firstAttribute="leading" secondItem="trn-sl-CNT" secondAttribute="leadingMargin" id="trn-sl-LEA"/>
+                                                <constraint firstAttribute="trailingMargin" secondItem="trn-sl-LBL" secondAttribute="trailing" id="trn-sl-TRA"/>
+                                            </constraints>
+                                        </tableViewCellContentView>
+                                    </tableViewCell>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="WR6-xo-ty2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
                                         <rect key="frame" x="20" y="1004" width="374" height="92"/>
                                         <autoresizingMask key="autoresizingMask"/>

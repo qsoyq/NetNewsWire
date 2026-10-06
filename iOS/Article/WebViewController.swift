@@ -93,6 +93,7 @@ final class WebViewController: UIViewController {
 	private var nativeAutoplayPending = false
 	private var nativeAutoplayStarted = false
 	private var videoPresentationEnabled = false
+	private let articleTranslationController = ArticleTranslationController()
 
 	private var articleExtractor: ArticleExtractor?
 	var extractedArticle: ExtractedArticle? {
@@ -156,6 +157,7 @@ final class WebViewController: UIViewController {
 
 	override func viewDidAppear(_ animated: Bool) {
 		super.viewDidAppear(animated)
+		articleTranslationController.setActive(true)
 		videoPresentationEnabled = true
 		startNativeVideoDirectly()
 		presentPendingMediaSaveResult()
@@ -170,6 +172,7 @@ final class WebViewController: UIViewController {
 
 	override func viewWillDisappear(_ animated: Bool) {
 		super.viewWillDisappear(animated)
+		articleTranslationController.setActive(false)
 		// Pause in-flight media before the view goes away. Leaving a video playing during
 		// dismissal lets WebKit's full-screen entry continuation fire on a stale view
 		// hierarchy and trip a RELEASE_ASSERT in WebFullScreenManagerProxy on iOS 26.
@@ -239,6 +242,7 @@ final class WebViewController: UIViewController {
 		stopArticleExtractor()
 
 		if article != self.article {
+			articleTranslationController.documentWillChange()
 			nativeAutoplayStarted = false
 			invalidateImageDownload()
 			self.article = article
@@ -585,6 +589,10 @@ extension WebViewController: WKNavigationDelegate {
 			return
 		}
 		videoDocumentReady = true
+		articleTranslationController.setActive(viewIfLoaded?.window != nil && (delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true)
+		if article != nil, articleExtractor?.state != .processing {
+			articleTranslationController.documentDidLoad(webView)
+		}
 		webView.evaluateJavaScript(imagePresentationEnabled ? "resumeImageViewer();" : "suspendImageViewer();")
 		if let article {
 			logMediaEvent(.info, operation: "Render", message: "documentURL=\(webView.url?.absoluteString ?? "(nil)") articleID=\(article.articleID)")
@@ -1473,6 +1481,7 @@ private extension WebViewController {
 			articleImageLoadTracker = nil
 		}
 		videoDocumentReady = false
+		articleTranslationController.documentWillChange()
 		videoDocumentGeneration += 1
 		mediaContextTargetState = nil
 		latestMediaContextPress = 0

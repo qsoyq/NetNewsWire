@@ -157,6 +157,9 @@ private extension WebViewConfiguration {
 			let scriptSource = try! String(contentsOf: scriptURL, encoding: .utf8)
 			return WKUserScript(source: scriptSource, injectionTime: .atDocumentStart, forMainFrameOnly: true)
 		}
+		if let translationScript = ArticleTranslationController.userScript {
+			scripts.append(translationScript)
+		}
 
 #if os(iOS)
 		scripts.insert(feedInfoLabelScript, at: 0)
