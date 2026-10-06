@@ -17,6 +17,8 @@
 		518B2EE82351B3DD00400001 /* Articles in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EEB2351B3DD00400001 /* Articles */; };
 		518B2EE92351B3DD00400001 /* RSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EEC2351B3DD00400001 /* RSCore */; };
 		518B2EEA2351B3DD00400001 /* Account in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EED2351B3DD00400001 /* Account */; };
+		D761C570C8164D549BF67DA1 /* RSParser in Frameworks */ = {isa = PBXBuildFile; productRef = D761C570C8164D549BF67DA3 /* RSParser */; };
+		D761C570C8164D549BF67DA2 /* Images in Frameworks */ = {isa = PBXBuildFile; productRef = D761C570C8164D549BF67DA4 /* Images */; };
 		518B2EF02351B3DD00400001 /* Account in Frameworks */ = {isa = PBXBuildFile; productRef = 518B2EEF2351B3DD00400001 /* Account */; };
 		510C416924E5CDE3008226FD /* NetNewsWire Share Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 510C415C24E5CDE3008226FD /* NetNewsWire Share Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		511B148924E5DBDD00C919BD /* Account in Frameworks */ = {isa = PBXBuildFile; productRef = 511B148824E5DBDD00C919BD /* Account */; };
@@ -519,6 +521,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				518B2EE82351B3DD00400001 /* Articles in Frameworks */,
+				D761C570C8164D549BF67DA1 /* RSParser in Frameworks */,
+				D761C570C8164D549BF67DA2 /* Images in Frameworks */,
 				518B2EE92351B3DD00400001 /* RSCore in Frameworks */,
 				518B2EEA2351B3DD00400001 /* Account in Frameworks */,
 			);
@@ -753,6 +757,8 @@
 				518B2EEB2351B3DD00400001 /* Articles */,
 				518B2EEC2351B3DD00400001 /* RSCore */,
 				518B2EED2351B3DD00400001 /* Account */,
+				D761C570C8164D549BF67DA3 /* RSParser */,
+				D761C570C8164D549BF67DA4 /* Images */,
 			);
 			productName = "NetNewsWire-iOSTests";
 			productReference = 518B2ED22351B3DD00400001 /* NetNewsWire-iOSTests.xctest */;
@@ -1706,6 +1712,14 @@
 			productName = Images;
 		};
 		D1A7E100000000000000C004 /* Images */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Images;
+		};
+		D761C570C8164D549BF67DA3 /* RSParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RSParser;
+		};
+		D761C570C8164D549BF67DA4 /* Images */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Images;
 		};

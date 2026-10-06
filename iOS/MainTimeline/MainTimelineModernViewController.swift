@@ -284,6 +284,10 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 			didPushArticleViewController = false
 			self.deselectIfNecessary()
 		}
+
+		// The visible cells can settle after viewWillAppear's refresh during a pop.
+		collectionView?.layoutIfNeeded()
+		reloadVisibleCells()
 	}
 
 	func deselectIfNecessary() {
@@ -574,6 +578,17 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 // MARK: - UICollectionViewDelegate
 
 extension MainTimelineModernViewController: UICollectionViewDelegate {
+	func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+		guard let dataSource, let article = article(at: indexPath, dataSource: dataSource),
+			  let cell = cell as? MainTimelineCell,
+			  cell.cellData?.accountID == article.accountID,
+			  cell.cellData?.articleID == article.articleID else {
+			return
+		}
+		// Refresh the displayed item even if its status changed while it was off screen.
+		cell.cellData = configure(article: article)
+	}
+
 	func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
 		becomeFirstResponder()
 		if let dataSource, let article = article(at: indexPath, dataSource: dataSource) {
