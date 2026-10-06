@@ -70,11 +70,11 @@ import WebKit
 		_ = try await evaluate("window.nnwTranslation.apply('old', [{id:'0',text:'Wrong article'}]);", in: webView)
 		let count = try await evaluate("return document.querySelectorAll('.nnw-translation-text').length;", in: webView) as? Int
 		XCTAssertEqual(count, 0)
-		let manualHidden = try await evaluate("return document.querySelector('.nnw-translation-controls button').hidden;", in: webView) as? Bool
-		XCTAssertEqual(manualHidden, true)
-		try await configure(webView, document: "off", enabled: false)
 		let controls = try await evaluate("return document.querySelectorAll('.nnw-translation-controls').length;", in: webView) as? Int
 		XCTAssertEqual(controls, 0)
+		try await configure(webView, document: "off", enabled: false)
+		let disabledControls = try await evaluate("return document.querySelectorAll('.nnw-translation-controls').length;", in: webView) as? Int
+		XCTAssertEqual(disabledControls, 0)
 	}
 
 	func testReplacementHandlesRepeatedSpacesAndTabsAndRestoresExactly() async throws {

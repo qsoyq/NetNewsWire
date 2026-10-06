@@ -94,6 +94,13 @@ final class WebViewController: UIViewController {
 	private var nativeAutoplayStarted = false
 	private var videoPresentationEnabled = false
 	private let articleTranslationController = ArticleTranslationController()
+	var translationStateDidChange: ((String) -> Void)? {
+		didSet { articleTranslationController.stateDidChange = translationStateDidChange }
+	}
+
+	func toggleTranslation() {
+		articleTranslationController.toggleFromNative()
+	}
 
 	private var articleExtractor: ArticleExtractor?
 	var extractedArticle: ExtractedArticle? {

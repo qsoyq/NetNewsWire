@@ -2,7 +2,7 @@
     "use strict";
     const ignored = "script,style,noscript,pre,textarea,input,button,select,svg,math,video,audio,.articleTitle,.article-title,[hidden],[aria-hidden='true'],[translate='no'],.notranslate,[data-nnw-translation]";
     let documentID = "", options = {}, units = new Map(), identities = new WeakMap(), nextID = 0;
-    let panel, primary, restoreButton, status, state = "idle";
+    let state = "idle";
     const rendered = new Map();
     const replacements = new Map();
 
@@ -88,10 +88,6 @@
         return JSON.stringify(Array.from(units.values(), unit => ({ id: unit.id, text: unit.text })));
     }
 
-    function post(action) {
-        window.webkit.messageHandlers.articleTranslation.postMessage({ action, documentID });
-    }
-
     function restore(expectedID) {
         if (expectedID !== documentID) return;
         rendered.forEach(element => element.remove());
@@ -133,61 +129,26 @@
     }
 
     function setState(expectedID, value, detail) {
-        if (expectedID !== documentID || !panel) return;
+        if (expectedID !== documentID) return;
         state = value;
-        const labels = options.labels;
-        const headings = { idle: labels.original, running: labels.working, translated: labels.done, paused: labels.paused, error: labels.failed };
-        status.textContent = detail || headings[value] || "";
-        primary.textContent = value === "running" ? labels.stop : value === "error" || value === "paused" ? labels.retry : labels.translate;
-        primary.hidden = value === "translated" || (!options.manualEnabled && !["running", "error", "paused"].includes(value));
-        restoreButton.hidden = rendered.size === 0 && replacements.size === 0 && value !== "running";
     }
 
     function configure(configuration) {
         if (documentID) restore(documentID);
-        panel?.remove();
-        panel = null;
         documentID = configuration.documentID;
         options = configuration;
         identities = new WeakMap();
         nextID = 0;
         units.clear();
         if (!configuration.enabled) return;
-        const root = document.querySelector(".articleBody,.article-body");
-        if (!root) return;
         if (!document.getElementById("nnw-translation-style")) {
             const style = document.createElement("style");
             style.id = "nnw-translation-style";
             style.textContent = `
                 .nnw-translation-text { margin: .5em 0 1em; font-weight: normal; white-space: pre-wrap; overflow-wrap: anywhere; opacity: .85; }
-                .nnw-translation-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .25em 1em; margin: 1em 0; font: .875rem/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }
-                .nnw-translation-controls span { flex: 1 1 10em; overflow-wrap: anywhere; }
-                .nnw-translation-controls button { appearance: none; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: .5em; padding: .4em .8em; min-height: 44px; font: inherit; cursor: pointer; touch-action: manipulation; }
-                .nnw-translation-controls [hidden] { display: none; }
             `;
             document.head.appendChild(style);
         }
-        panel = document.createElement("div");
-        panel.dataset.nnwTranslation = "controls";
-        panel.className = "nnw-translation-controls";
-        panel.setAttribute("role", "group");
-        panel.setAttribute("aria-label", options.labels.title);
-        status = document.createElement("span");
-        status.setAttribute("role", "status");
-        status.setAttribute("aria-live", "polite");
-        primary = document.createElement("button");
-        primary.type = "button";
-        primary.addEventListener("click", event => {
-            if (event.isTrusted) post(state === "running" ? "stop" : "translate");
-        });
-        restoreButton = document.createElement("button");
-        restoreButton.type = "button";
-        restoreButton.textContent = options.labels.restore;
-        restoreButton.addEventListener("click", event => {
-            if (event.isTrusted) post("restore");
-        });
-        panel.append(status, primary, restoreButton);
-        root.before(panel);
         setState(documentID, "idle", "");
     }
 

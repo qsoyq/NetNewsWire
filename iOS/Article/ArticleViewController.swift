@@ -32,6 +32,7 @@ final class ArticleViewController: UIViewController {
 	@IBOutlet private var searchBar: ArticleSearchBar!
 	@IBOutlet private var searchBarBottomConstraint: NSLayoutConstraint!
 	private var defaultControls: [UIBarButtonItem]?
+	private lazy var translationBarButtonItem = UIBarButtonItem(title: ArticleTranslationStrings.text("Translate"), style: .plain, target: self, action: #selector(toggleTranslation(_:)))
 	private var shouldApplyInitialArticleFullscreen = true
 
 	private var pageViewController: UIPageViewController!
@@ -174,6 +175,12 @@ final class ArticleViewController: UIViewController {
 
 		articleExtractorButton.addTarget(self, action: #selector(toggleArticleExtractor(_:)), for: .touchUpInside)
 		let articleExtractorBarButtonItem = UIBarButtonItem(customView: articleExtractorButton)
+		if #available(iOS 26, *) {
+			toolbarItems?.insert(translationBarButtonItem, at: 6)
+		} else if var items = toolbarItems {
+			items.insert(translationBarButtonItem, at: max(0, items.count - 1))
+			toolbarItems = items
+		}
 
 		if #available(iOS 26, *) {
 			toolbarItems?.insert(articleExtractorBarButtonItem, at: 5)
@@ -337,6 +344,7 @@ final class ArticleViewController: UIViewController {
 			starBarButtonItem.image = Assets.Images.starOpen
 			starBarButtonItem.accLabelText = NSLocalizedString("Star Article", comment: "Star Article")
 		}
+		updateTranslationButton()
 	}
 
 	// MARK: Notifications
@@ -400,6 +408,10 @@ final class ArticleViewController: UIViewController {
 
 	@IBAction func toggleArticleExtractor(_ sender: Any) {
 		currentWebViewController?.toggleArticleExtractor()
+	}
+
+	@objc private func toggleTranslation(_ sender: Any) {
+		currentWebViewController?.toggleTranslation()
 	}
 
 	@IBAction func nextUnread(_ sender: Any) {
@@ -692,8 +704,26 @@ private extension ArticleViewController {
 		let controller = WebViewController()
 		controller.coordinator = coordinator
 		controller.delegate = self
+		controller.translationStateDidChange = { [weak self] state in
+			self?.updateTranslationButton(state: state)
+		}
 		controller.setArticle(article, updateView: updateView)
 		return controller
+	}
+
+	func updateTranslationButton(state: String? = nil) {
+		guard ArticleTranslationSettings.preferences.isEnabled else {
+			translationBarButtonItem.isEnabled = false
+			return
+		}
+		translationBarButtonItem.isEnabled = true
+		if state == "translated" {
+			translationBarButtonItem.title = ArticleTranslationStrings.text("Show Original")
+		} else if state == "running" {
+			translationBarButtonItem.title = ArticleTranslationStrings.text("Stop")
+		} else {
+			translationBarButtonItem.title = ArticleTranslationStrings.text("Translate")
+		}
 	}
 
 	func syncArticleExtractorButtonState() {

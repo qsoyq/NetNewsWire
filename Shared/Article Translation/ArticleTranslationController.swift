@@ -19,6 +19,8 @@ import Foundation
 	private var isTranslating = false
 	private var shouldAutomaticallyTranslate = true
 	private var articleID: String?
+	private var state = "idle"
+	var stateDidChange: ((String) -> Void)?
 
 	override init() {
 		super.init()
@@ -148,7 +150,21 @@ import Foundation
 	}
 
 	private func updateState(_ state: String, detail: String = "") {
+		self.state = state
+		stateDidChange?(state)
 		webView?.callAsyncJavaScript("window.nnwTranslation.setState(documentID, state, detail);", arguments: ["documentID": documentID, "state": state, "detail": detail], in: nil, in: Self.contentWorld, completionHandler: nil)
+	}
+
+	func toggleFromNative() {
+		if state == "translated" {
+			stop()
+			shouldAutomaticallyTranslate = false
+			webView?.callAsyncJavaScript("window.nnwTranslation.restore(documentID);", arguments: ["documentID": documentID], in: nil, in: Self.contentWorld, completionHandler: nil)
+		} else if state == "running" {
+			stop()
+		} else {
+			startTranslation()
+		}
 	}
 
 	private func stop() {
@@ -179,7 +195,7 @@ import Foundation
 
 	@objc private func settingsChanged(_ notification: Notification) {
 		guard isReady, let webView else { return }
-		documentDidLoad(webView)
+		documentDidLoad(webView, articleID: articleID)
 	}
 }
 
