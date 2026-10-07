@@ -86,6 +86,7 @@ public enum FetchType {
 	case feed(Feed)
 	case articleIDs(Set<String>)
 	case search(String)
+	case searchAuthors(String)
 	case searchWithArticleIDs(String, Set<String>)
 }
 
@@ -884,6 +885,8 @@ public enum FetchType {
 			return _fetchArticles(articleIDs: articleIDs)
 		case .search(let searchString):
 			return _fetchArticlesMatching(searchString: searchString)
+		case .searchAuthors(let searchString):
+			return _fetchArticlesMatchingAuthorName(searchString: searchString)
 		case .searchWithArticleIDs(let searchString, let articleIDs):
 			return _fetchArticlesMatchingWithArticleIDs(searchString: searchString, articleIDs: articleIDs)
 		}
@@ -924,6 +927,8 @@ public enum FetchType {
 			return await _fetchArticlesAsync(articleIDs: articleIDs)
 		case .search(let searchString):
 			return await _fetchArticlesMatchingAsync(searchString: searchString)
+		case .searchAuthors(let searchString):
+			return await _fetchArticlesMatchingAuthorNameAsync(searchString: searchString)
 		case .searchWithArticleIDs(let searchString, let articleIDs):
 			return await _fetchArticlesMatchingWithArticleIDsAsync(searchString: searchString, articleIDs: articleIDs)
 		}
@@ -1452,6 +1457,14 @@ private extension Account {
 
 	func _fetchArticlesMatchingAsync(searchString: String) async -> Set<Article> {
 		await database.fetchArticlesMatchingAsync(searchString: searchString, feedIDs: flattenedFeedsIDs)
+	}
+
+	func _fetchArticlesMatchingAuthorName(searchString: String) -> Set<Article> {
+		database.fetchArticlesMatchingAuthorName(searchString: searchString, feedIDs: flattenedFeedsIDs)
+	}
+
+	func _fetchArticlesMatchingAuthorNameAsync(searchString: String) async -> Set<Article> {
+		await database.fetchArticlesMatchingAuthorNameAsync(searchString: searchString, feedIDs: flattenedFeedsIDs)
 	}
 
 	func _fetchArticlesMatchingWithArticleIDs(searchString: String, articleIDs: Set<String>) -> Set<Article> {

@@ -142,8 +142,24 @@ final class ArticlesTable: DatabaseTable, Sendable {
 		return articles
 	}
 
+	func fetchArticlesMatchingAuthorName(_ searchString: String) -> Set<Article> {
+		nonisolated(unsafe) var articles: Set<Article> = Set<Article>()
+
+		queue.runInDatabaseSync { database in
+			articles = self.fetchArticlesMatchingAuthorName(searchString, database)
+		}
+
+		return articles
+	}
+
 	func fetchArticlesMatching(_ searchString: String, _ feedIDs: Set<String>) -> Set<Article> {
 		var articles = fetchArticlesMatching(searchString)
+		articles = articles.filter { feedIDs.contains($0.feedID) }
+		return articles
+	}
+
+	func fetchArticlesMatchingAuthorName(_ searchString: String, _ feedIDs: Set<String>) -> Set<Article> {
+		var articles = fetchArticlesMatchingAuthorName(searchString)
 		articles = articles.filter { feedIDs.contains($0.feedID) }
 		return articles
 	}
@@ -156,6 +172,10 @@ final class ArticlesTable: DatabaseTable, Sendable {
 
 	func fetchArticlesMatchingAsync(_ searchString: String, _ feedIDs: Set<String>, _ completion: @escaping ArticleSetResultBlock) {
 		fetchArticlesAsync({ self.fetchArticlesMatching(searchString, feedIDs, $0) }, completion)
+	}
+
+	func fetchArticlesMatchingAuthorNameAsync(_ searchString: String, _ feedIDs: Set<String>, _ completion: @escaping ArticleSetResultBlock) {
+		fetchArticlesAsync({ self.fetchArticlesMatchingAuthorName(searchString, feedIDs, $0) }, completion)
 	}
 
 	func fetchArticlesMatchingWithArticleIDsAsync(_ searchString: String, _ articleIDs: Set<String>, _ completion: @escaping ArticleSetResultBlock) {
@@ -740,6 +760,20 @@ nonisolated private extension ArticlesTable {
 		let whereClause = "searchRowID in \(placeholders)"
 		let parameters: [AnyObject] = Array(searchRowIDs) as [AnyObject]
 		return fetchArticlesWithWhereClause(database, whereClause: whereClause, parameters: parameters)
+	}
+
+	func fetchArticlesMatchingAuthorName(_ searchString: String, _ database: FMDatabase) -> Set<Article> {
+		let sql = "select * from articles natural join statuses where authors like ? escape '\\';"
+		let candidates = articlesWithSQL(sql, [sqliteLikeSearchString(with: searchString) as AnyObject], database)
+		return candidates.filter { article in
+			article.authors?.contains { author in
+				author.name?.localizedCaseInsensitiveContains(searchString) == true
+			} == true
+		}
+	}
+
+	func fetchArticlesMatchingAuthorName(_ searchString: String, _ feedIDs: Set<String>, _ database: FMDatabase) -> Set<Article> {
+		fetchArticlesMatchingAuthorName(searchString, database).filter { feedIDs.contains($0.feedID) }
 	}
 
 	func fetchSearchRowIDsMatchingFTSSearchString(_ searchString: String, _ database: FMDatabase) -> Set<Int64> {

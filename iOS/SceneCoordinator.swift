@@ -1436,12 +1436,14 @@ struct SidebarItemNode: Hashable, Sendable {
 		guard !query.isEmpty else { return [] }
 		let feeds = AccountManager.shared.sortedActiveAccounts.flatMap { $0.flattenedFeeds() }
 		let uniqueFeeds = Dictionary(uniqueKeysWithValues: feeds.map { ("\($0.accountID):\($0.feedID)", $0) }).values
+		let articleFeedKeys = Set(AccountManager.shared.fetchArticles(.searchAuthors(query)).map { "\($0.accountID):\($0.feedID)" })
 		return uniqueFeeds
 			.filter { feed in
-				feed.authors?.contains { author in
+				let feedAuthorMatches = feed.authors?.contains { author in
 					guard let name = author.name else { return false }
 					return name.localizedCaseInsensitiveContains(query)
 				} == true
+				return feedAuthorMatches || articleFeedKeys.contains("\(feed.accountID):\(feed.feedID)")
 			}
 			.sorted { $0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending }
 	}

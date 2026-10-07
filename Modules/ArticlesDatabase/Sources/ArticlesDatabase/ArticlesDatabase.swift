@@ -168,6 +168,11 @@ public struct ArticleCounts: Sendable {
 		return articlesTable.fetchArticlesMatching(searchString, feedIDs)
 	}
 
+	public func fetchArticlesMatchingAuthorName(searchString: String, feedIDs: Set<String>) -> Set<Article> {
+		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
+		return articlesTable.fetchArticlesMatchingAuthorName(searchString, feedIDs)
+	}
+
 	public func fetchArticlesMatchingWithArticleIDs(searchString: String, articleIDs: Set<String>) -> Set<Article> {
 		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
 		return articlesTable.fetchArticlesMatchingWithArticleIDs(searchString, articleIDs)
@@ -236,6 +241,14 @@ public struct ArticleCounts: Sendable {
 	public func fetchArticlesMatchingAsync(searchString: String, feedIDs: Set<String>) async -> Set<Article> {
 		await withCheckedContinuation { continuation in
 			_fetchArticlesMatchingAsync(searchString: searchString, feedIDs: feedIDs) { articles in
+				continuation.resume(returning: articles)
+			}
+		}
+	}
+
+	public func fetchArticlesMatchingAuthorNameAsync(searchString: String, feedIDs: Set<String>) async -> Set<Article> {
+		await withCheckedContinuation { continuation in
+			_fetchArticlesMatchingAuthorNameAsync(searchString: searchString, feedIDs: feedIDs) { articles in
 				continuation.resume(returning: articles)
 			}
 		}
@@ -549,6 +562,11 @@ private extension ArticlesDatabase {
 	func _fetchArticlesMatchingAsync(searchString: String, feedIDs: Set<String>, _ completion: @escaping ArticleSetResultBlock) {
 		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
 		articlesTable.fetchArticlesMatchingAsync(searchString, feedIDs, completion)
+	}
+
+	func _fetchArticlesMatchingAuthorNameAsync(searchString: String, feedIDs: Set<String>, _ completion: @escaping ArticleSetResultBlock) {
+		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
+		articlesTable.fetchArticlesMatchingAuthorNameAsync(searchString, feedIDs, completion)
 	}
 
 	func _fetchArticlesMatchingWithArticleIDsAsync(searchString: String, articleIDs: Set<String>, _ completion: @escaping ArticleSetResultBlock) {

@@ -1,11 +1,13 @@
 import UIKit
 import Account
+import Images
 
 @MainActor final class FeedSearchResultsViewController: UITableViewController {
 	weak var coordinator: SceneCoordinator?
 	var onFeedSelected: ((Feed) -> Void)?
 
 	private var feeds = [Feed]()
+	private let iconSize = CGSize(width: 40, height: 40)
 
 	func update(feeds: [Feed]) {
 		self.feeds = feeds
@@ -16,6 +18,7 @@ import Account
 		super.viewDidLoad()
 		tableView.backgroundColor = .systemBackground
 		tableView.keyboardDismissMode = .onDrag
+		tableView.rowHeight = 56
 	}
 
 	override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -28,9 +31,24 @@ import Account
 		let feed = feeds[indexPath.row]
 		cell.textLabel?.text = feed.nameForDisplay
 		cell.detailTextLabel?.text = feed.authors?.compactMap(\.name).sorted().joined(separator: ", ")
-		cell.imageView?.image = IconImageCache.shared.imageForFeed(feed)?.image
+		cell.imageView?.image = fixedIconImage(for: IconImageCache.shared.imageForFeed(feed)?.image)
+		cell.imageView?.contentMode = .scaleAspectFit
+		cell.imageView?.clipsToBounds = true
+		cell.imageView?.layer.cornerRadius = 4
 		cell.accessoryType = .disclosureIndicator
 		return cell
+	}
+
+	private func fixedIconImage(for image: UIImage?) -> UIImage {
+		let renderer = UIGraphicsImageRenderer(size: iconSize)
+		return renderer.image { context in
+			let image = image ?? UIImage(systemName: "dot.radiowaves.left.and.right")
+			guard let image else { return }
+			let scale = min(iconSize.width / image.size.width, iconSize.height / image.size.height)
+			let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+			let origin = CGPoint(x: (iconSize.width - size.width) / 2, y: (iconSize.height - size.height) / 2)
+			image.draw(in: CGRect(origin: origin, size: size))
+		}
 	}
 
 	override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
