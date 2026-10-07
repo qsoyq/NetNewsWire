@@ -18,7 +18,8 @@ import Articles
 		XCTAssertFalse(AppDefaults.shared.automaticallyExpandArticleDetails)
 		let settings = try settingsController()
 		XCTAssertFalse(settings.automaticallyExpandArticleDetailsSwitch.isOn)
-		let row = settings.tableView(settings.tableView, cellForRowAt: IndexPath(row: 13, section: 4))
+		let index = try articleSettingsRow("articles.autoExpandDetails.row", in: settings)
+		let row = settings.tableView(settings.tableView, cellForRowAt: index)
 		XCTAssertEqual((row.viewWithTag(942) as? UILabel)?.text, NSLocalizedString("Automatically Expand Collapsed Content", comment: ""))
 		settings.automaticallyExpandArticleDetailsSwitch.isOn = true
 		settings.automaticallyExpandArticleDetailsSwitch.sendActions(for: .valueChanged)
@@ -153,7 +154,7 @@ import Articles
 		defer { window.isHidden = true; previousWindow?.makeKeyAndVisible() }
 		for style in [UIUserInterfaceStyle.light, .dark] {
 			window.overrideUserInterfaceStyle = style
-			settings.tableView.scrollToRow(at: IndexPath(row: 13, section: 4), at: .middle, animated: false)
+			settings.tableView.scrollToRow(at: try articleSettingsRow("articles.autoExpandDetails.row", in: settings), at: .middle, animated: false)
 			window.layoutIfNeeded()
 			try await Task.sleep(for: .milliseconds(200))
 			let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }

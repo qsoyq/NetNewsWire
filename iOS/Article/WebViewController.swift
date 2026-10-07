@@ -101,6 +101,7 @@ final class WebViewController: UIViewController {
 	private var nativeAutoplayStarted = false
 	private var videoPresentationEnabled = false
 	private let articleTranslationController = ArticleTranslationController()
+	private let videoPreviewController = VideoPreviewController()
 	var translationState: String { articleTranslationController.state }
 	var translationStateDidChange: ((String) -> Void)? {
 		didSet { articleTranslationController.stateDidChange = translationStateDidChange }
@@ -178,6 +179,8 @@ final class WebViewController: UIViewController {
 			}
 		}
 		articleTranslationController.setActive(true)
+		videoPreviewController.setActive(true)
+		ArticlePrefetcher.shared.prefetchNextArticle(after: article, coordinator: coordinator)
 		videoPresentationEnabled = true
 		startNativeVideoDirectly()
 		presentPendingMediaSaveResult()
@@ -193,6 +196,7 @@ final class WebViewController: UIViewController {
 	override func viewWillDisappear(_ animated: Bool) {
 		super.viewWillDisappear(animated)
 		articleTranslationController.setActive(false)
+		videoPreviewController.setActive(false)
 		// Pause in-flight media before the view goes away. Leaving a video playing during
 		// dismissal lets WebKit's full-screen entry continuation fire on a stale view
 		// hierarchy and trip a RELEASE_ASSERT in WebFullScreenManagerProxy on iOS 26.
@@ -262,6 +266,7 @@ final class WebViewController: UIViewController {
 		stopArticleExtractor()
 
 		if article != self.article {
+			videoPreviewController.documentWillChange()
 			articleTranslationController.documentWillChange()
 			nativeAutoplayStarted = false
 			invalidateImageDownload()
@@ -435,6 +440,7 @@ final class WebViewController: UIViewController {
 	}
 
 	func stopWebViewActivity() {
+		videoPreviewController.setActive(false)
 		videoPresentationEnabled = false
 		suspendImagePresentation()
 		guard !VideoPlayerManager.shared.isPiPActive, !WebViewPiPManager.shared.isPiPActive else {
@@ -609,6 +615,8 @@ extension WebViewController: WKNavigationDelegate {
 			return
 		}
 		videoDocumentReady = true
+		videoPreviewController.documentDidLoad(webView)
+		videoPreviewController.setActive(viewIfLoaded?.window != nil && ((delegate as? ArticleViewController)?.isCurrentWebViewController(self) ?? true))
 		articleTranslationController.setActive(viewIfLoaded?.window != nil && (delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true)
 		if article != nil, articleExtractor?.state != .processing {
 			articleTranslationController.documentDidLoad(webView, articleID: article?.articleID)
@@ -638,7 +646,9 @@ extension WebViewController: WKNavigationDelegate {
 			webView.evaluateJavaScript("setupVideoEndedHandler();")
 		}
 
-		ArticlePrefetcher.shared.prefetchNextArticle(after: article, coordinator: coordinator)
+		if viewIfLoaded?.window != nil, (delegate as? ArticleViewController)?.isCurrentWebViewController(self) ?? true {
+			ArticlePrefetcher.shared.prefetchNextArticle(after: article, coordinator: coordinator)
+		}
 		delegate?.webViewControllerDidLoadArticle(self)
 	}
 
@@ -864,6 +874,8 @@ extension WebViewController: WKScriptMessageHandler {
 			return
 		}
 		// Programmatic navigation can reuse this controller without viewDidAppear.
+		videoPreviewController.setActive(true)
+		ArticlePrefetcher.shared.prefetchNextArticle(after: article, coordinator: coordinator)
 		videoPresentationEnabled = true
 		startNativeVideoDirectly()
 	}
@@ -1502,6 +1514,7 @@ private extension WebViewController {
 			articleImageLoadTracker = nil
 		}
 		videoDocumentReady = false
+		videoPreviewController.documentWillChange()
 		articleTranslationController.documentWillChange()
 		videoDocumentGeneration += 1
 		mediaContextTargetState = nil

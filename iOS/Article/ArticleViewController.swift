@@ -297,6 +297,7 @@ final class ArticleViewController: UIViewController {
 
 	override func viewWillDisappear(_ animated: Bool) {
 		super.viewWillDisappear(animated)
+		ArticlePrefetcher.shared.cancelVideoPreviewPrefetch(clearContext: true)
 		isTranslationPrefetchActive = false
 		translationPrefetcher.cancel()
 		NotificationCenter.default.removeObserver(self, name: ArticleTranslationSettings.didChange, object: nil)

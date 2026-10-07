@@ -449,256 +449,23 @@
                                             </constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="aFv-R5-pQ1" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1057" width="374" height="52"/>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" accessoryType="disclosureIndicator" indentationWidth="10" id="med-001-nnw" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="1004" width="374" height="44"/>
                                         <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="aFv-R5-pQ1" id="bGw-S6-qR2">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="med-001-nnw" id="med-002-nnw">
+                                            <rect key="frame" x="0.0" y="0.0" width="347" height="44"/>
                                             <autoresizingMask key="autoresizingMask"/>
                                             <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Auto Fullscreen Play Video" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="cHx-T7-rS3">
-                                                    <rect key="frame" x="20" y="15" width="210" height="21.5"/>
+                                                <label opaque="NO" userInteractionEnabled="NO" tag="944" contentMode="left" text="Media" numberOfLines="0" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="med-003-nnw">
+                                                    <rect key="frame" x="20" y="11" width="307" height="22"/>
                                                     <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="dIy-U8-sT4">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchAutoFullscreenVideo:" destination="a0p-rk-skQ" eventType="valueChanged" id="eJz-V9-tU5"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="cHx-T7-rS3" firstAttribute="top" secondItem="bGw-S6-qR2" secondAttribute="topMargin" id="fKA-W0-uV6"/>
-                                                <constraint firstItem="dIy-U8-sT4" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="cHx-T7-rS3" secondAttribute="trailing" constant="8" id="gLB-X1-vW7"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="dIy-U8-sT4" secondAttribute="bottom" constant="6" id="hMC-Y2-wX8"/>
-                                                <constraint firstItem="dIy-U8-sT4" firstAttribute="centerY" secondItem="bGw-S6-qR2" secondAttribute="centerY" id="iND-Z3-xY9"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="cHx-T7-rS3" secondAttribute="bottom" id="jOE-A4-yZ0"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="dIy-U8-sT4" secondAttribute="trailing" constant="0" id="kPF-B5-zA1"/>
-                                                <constraint firstItem="dIy-U8-sT4" firstAttribute="top" relation="greaterThanOrEqual" secondItem="bGw-S6-qR2" secondAttribute="top" constant="6" id="lQG-C6-AB2"/>
-                                                <constraint firstItem="cHx-T7-rS3" firstAttribute="leading" secondItem="bGw-S6-qR2" secondAttribute="leadingMargin" id="mRH-D7-BC3"/>
-                                            </constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="bNV-P3-qW2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1109" width="374" height="52"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="bNV-P3-qW2" id="cOW-Q4-rX3">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Native Video Player" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dPX-R5-sY4">
-                                                    <rect key="frame" x="20" y="15" width="160" height="21.5"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="eQY-S6-tZ5">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchUseNativeVideoPlayer:" destination="a0p-rk-skQ" eventType="valueChanged" id="fRZ-T7-uA6"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="dPX-R5-sY4" firstAttribute="top" secondItem="cOW-Q4-rX3" secondAttribute="topMargin" id="gSA-U8-vB7"/>
-                                                <constraint firstItem="eQY-S6-tZ5" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="dPX-R5-sY4" secondAttribute="trailing" constant="8" id="hTB-V9-wC8"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="eQY-S6-tZ5" secondAttribute="bottom" constant="6" id="iUC-W0-xD9"/>
-                                                <constraint firstItem="eQY-S6-tZ5" firstAttribute="centerY" secondItem="cOW-Q4-rX3" secondAttribute="centerY" id="jVD-X1-yE0"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="dPX-R5-sY4" secondAttribute="bottom" id="kWE-Y2-zF1"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="eQY-S6-tZ5" secondAttribute="trailing" constant="0" id="lXF-Z3-AG2"/>
-                                                <constraint firstItem="eQY-S6-tZ5" firstAttribute="top" relation="greaterThanOrEqual" secondItem="cOW-Q4-rX3" secondAttribute="top" constant="6" id="mYG-A4-BH3"/>
-                                                <constraint firstItem="dPX-R5-sY4" firstAttribute="leading" secondItem="cOW-Q4-rX3" secondAttribute="leadingMargin" id="nZH-B5-CI4"/>
-                                            </constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="nTJ-F9-uV2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1109" width="374" height="52"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="nTJ-F9-uV2" id="oUK-G0-vW3">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Autoplay Video" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="pVL-H1-wX4">
-                                                    <rect key="frame" x="20" y="15" width="120" height="21.5"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="qWM-I2-xY5">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchAutoplayVideo:" destination="a0p-rk-skQ" eventType="valueChanged" id="rXN-J3-yZ6"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="pVL-H1-wX4" firstAttribute="top" secondItem="oUK-G0-vW3" secondAttribute="topMargin" id="sYO-K4-zA7"/>
-                                                <constraint firstItem="qWM-I2-xY5" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="pVL-H1-wX4" secondAttribute="trailing" constant="8" id="tZP-L5-AB8"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="qWM-I2-xY5" secondAttribute="bottom" constant="6" id="uAQ-M6-BC9"/>
-                                                <constraint firstItem="qWM-I2-xY5" firstAttribute="centerY" secondItem="oUK-G0-vW3" secondAttribute="centerY" id="vBR-N7-CD0"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="pVL-H1-wX4" secondAttribute="bottom" id="wCS-O8-DE1"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="qWM-I2-xY5" secondAttribute="trailing" constant="0" id="xDT-P9-EF2"/>
-                                                <constraint firstItem="qWM-I2-xY5" firstAttribute="top" relation="greaterThanOrEqual" secondItem="oUK-G0-vW3" secondAttribute="top" constant="6" id="yEU-Q0-FG3"/>
-                                                <constraint firstItem="pVL-H1-wX4" firstAttribute="leading" secondItem="oUK-G0-vW3" secondAttribute="leadingMargin" id="zFV-R1-GH4"/>
-                                            </constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="aGW-S2-HI5" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1161" width="374" height="52"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="aGW-S2-HI5" id="bHX-T3-IJ6">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Goto Next After Video Finish" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="cIY-U4-JK7">
-                                                    <rect key="frame" x="20" y="15" width="230" height="21.5"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="dJZ-V5-KL8">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchAutoGotoNextAfterVideo:" destination="a0p-rk-skQ" eventType="valueChanged" id="eKA-W6-LM9"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="cIY-U4-JK7" firstAttribute="top" secondItem="bHX-T3-IJ6" secondAttribute="topMargin" id="fLB-X7-MN0"/>
-                                                <constraint firstItem="dJZ-V5-KL8" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="cIY-U4-JK7" secondAttribute="trailing" constant="8" id="gMC-Y8-NO1"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="dJZ-V5-KL8" secondAttribute="bottom" constant="6" id="hND-Z9-OP2"/>
-                                                <constraint firstItem="dJZ-V5-KL8" firstAttribute="centerY" secondItem="bHX-T3-IJ6" secondAttribute="centerY" id="iOE-A0-PQ3"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="cIY-U4-JK7" secondAttribute="bottom" id="jPF-B1-QR4"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="dJZ-V5-KL8" secondAttribute="trailing" constant="0" id="kQG-C2-RS5"/>
-                                                <constraint firstItem="dJZ-V5-KL8" firstAttribute="top" relation="greaterThanOrEqual" secondItem="bHX-T3-IJ6" secondAttribute="top" constant="6" id="lRH-D3-ST6"/>
-                                                <constraint firstItem="cIY-U4-JK7" firstAttribute="leading" secondItem="bHX-T3-IJ6" secondAttribute="leadingMargin" id="mSI-E4-TU7"/>
-                                            </constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="pAJ-D7-EK6" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1213" width="374" height="52"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="pAJ-D7-EK6" id="qBK-E8-FL7">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Auto Play Next Video In PiP" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="rCL-F9-GM8">
-                                                    <rect key="frame" x="20" y="15" width="200" height="21.5"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="sDM-G0-HN9">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchPipAutoPlayNextVideo:" destination="a0p-rk-skQ" eventType="valueChanged" id="tEN-H1-IO0"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="rCL-F9-GM8" firstAttribute="top" secondItem="qBK-E8-FL7" secondAttribute="topMargin" id="uFO-I2-JP1"/>
-                                                <constraint firstItem="sDM-G0-HN9" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="rCL-F9-GM8" secondAttribute="trailing" constant="8" id="vGP-J3-KQ2"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="sDM-G0-HN9" secondAttribute="bottom" constant="6" id="wHQ-K4-LR3"/>
-                                                <constraint firstItem="sDM-G0-HN9" firstAttribute="centerY" secondItem="qBK-E8-FL7" secondAttribute="centerY" id="xIR-L5-MS4"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="rCL-F9-GM8" secondAttribute="bottom" id="yJS-M6-NT5"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="sDM-G0-HN9" secondAttribute="trailing" constant="0" id="zKT-N7-OU6"/>
-                                                <constraint firstItem="sDM-G0-HN9" firstAttribute="top" relation="greaterThanOrEqual" secondItem="qBK-E8-FL7" secondAttribute="top" constant="6" id="ALU-O8-PV7"/>
-                                                <constraint firstItem="rCL-F9-GM8" firstAttribute="leading" secondItem="qBK-E8-FL7" secondAttribute="leadingMargin" id="BMV-P9-QW8"/>
-                                            </constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="vCc-K1-qR7" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1005" width="374" height="52"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="vCc-K1-qR7" id="pLm-N2-hW3">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Cache Video Content" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="tRv-M3-dK9">
-                                                    <rect key="frame" x="20" y="15" width="160" height="21.5"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="bNx-V4-wQ8">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchCacheVideoContent:" destination="a0p-rk-skQ" eventType="valueChanged" id="cVd-P5-rT1"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="tRv-M3-dK9" firstAttribute="top" secondItem="pLm-N2-hW3" secondAttribute="topMargin" id="kT1-v3-qN2"/>
-                                                <constraint firstItem="bNx-V4-wQ8" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="tRv-M3-dK9" secondAttribute="trailing" constant="8" id="pQ2-w4-rS3"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="bNx-V4-wQ8" secondAttribute="bottom" constant="6" id="rT3-x5-sU4"/>
-                                                <constraint firstItem="bNx-V4-wQ8" firstAttribute="centerY" secondItem="pLm-N2-hW3" secondAttribute="centerY" id="sU4-y6-tV5"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="tRv-M3-dK9" secondAttribute="bottom" id="tV5-z7-uW6"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="bNx-V4-wQ8" secondAttribute="trailing" constant="0" id="uW6-A8-vX7"/>
-                                                <constraint firstItem="bNx-V4-wQ8" firstAttribute="top" relation="greaterThanOrEqual" secondItem="pLm-N2-hW3" secondAttribute="top" constant="6" id="vX7-B9-wY8"/>
-                                                <constraint firstItem="tRv-M3-dK9" firstAttribute="leading" secondItem="pLm-N2-hW3" secondAttribute="leadingMargin" id="wY8-C0-xZ9"/>
-                                            </constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="pFA-X1-kB2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1057" width="374" height="52"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="pFA-X1-kB2" id="qGB-Y2-lC3">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Prefetch Next Article" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="rHC-Z3-mD4">
-                                                    <rect key="frame" x="20" y="15" width="175" height="21.5"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="sID-A4-nE5">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchPrefetchNextArticle:" destination="a0p-rk-skQ" eventType="valueChanged" id="tJE-B5-oF6"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="rHC-Z3-mD4" firstAttribute="top" secondItem="qGB-Y2-lC3" secondAttribute="topMargin" id="uKF-C6-pG7"/>
-                                                <constraint firstItem="sID-A4-nE5" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="rHC-Z3-mD4" secondAttribute="trailing" constant="8" id="vLG-D7-qH8"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="sID-A4-nE5" secondAttribute="bottom" constant="6" id="wMH-E8-rI9"/>
-                                                <constraint firstItem="sID-A4-nE5" firstAttribute="centerY" secondItem="qGB-Y2-lC3" secondAttribute="centerY" id="xNI-F9-sJ0"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="rHC-Z3-mD4" secondAttribute="bottom" id="yOJ-G0-tK1"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="sID-A4-nE5" secondAttribute="trailing" constant="0" id="zPK-H1-uL2"/>
-                                                <constraint firstItem="sID-A4-nE5" firstAttribute="top" relation="greaterThanOrEqual" secondItem="qGB-Y2-lC3" secondAttribute="top" constant="6" id="AQL-I2-vM3"/>
-                                                <constraint firstItem="rHC-Z3-mD4" firstAttribute="leading" secondItem="qGB-Y2-lC3" secondAttribute="leadingMargin" id="BRM-J3-wN4"/>
-                                            </constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="default" indentationWidth="10" id="dRt-L2-sN8" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1109" width="374" height="44"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="dRt-L2-sN8" id="qMn-O3-iX4">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="44"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Clear Video Cache" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="eFs-M3-jY5">
-                                                    <rect key="frame" x="20" y="11.5" width="334" height="21"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <color key="textColor" systemColor="systemRedColor"/>
-                                                    <nil key="highlightedColor"/>
                                                 </label>
                                             </subviews>
                                             <constraints>
-                                                <constraint firstItem="eFs-M3-jY5" firstAttribute="top" secondItem="qMn-O3-iX4" secondAttribute="topMargin" id="fGt-N4-kZ6"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="eFs-M3-jY5" secondAttribute="bottom" id="gHu-O5-lA7"/>
-                                                <constraint firstItem="eFs-M3-jY5" firstAttribute="leading" secondItem="qMn-O3-iX4" secondAttribute="leadingMargin" id="hIv-P6-mB8"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="eFs-M3-jY5" secondAttribute="trailing" id="iJw-Q7-nC9"/>
+                                                <constraint firstItem="med-003-nnw" firstAttribute="top" secondItem="med-002-nnw" secondAttribute="topMargin" id="med-004-nnw"/>
+                                                <constraint firstAttribute="bottomMargin" secondItem="med-003-nnw" secondAttribute="bottom" id="med-005-nnw"/>
+                                                <constraint firstItem="med-003-nnw" firstAttribute="leading" secondItem="med-002-nnw" secondAttribute="leadingMargin" id="med-006-nnw"/>
+                                                <constraint firstAttribute="trailingMargin" secondItem="med-003-nnw" secondAttribute="trailing" id="med-007-nnw"/>
                                             </constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
@@ -1087,14 +854,7 @@
                         <outlet property="openLinksInNetNewsWire" destination="dhR-L2-PX3" id="z1b-pX-bwG"/>
                         <outlet property="refreshClearsReadArticlesSwitch" destination="duV-CN-JmH" id="xTd-jF-Ei1"/>
                         <outlet property="refreshFeedsSwitch" destination="bNx-R4-wS8" id="wY0-zA-bC1"/>
-                        <outlet property="cacheVideoContentSwitch" destination="bNx-V4-wQ8" id="xA1-dE-fG2"/>
-                        <outlet property="autoFullscreenVideoSwitch" destination="dIy-U8-sT4" id="nSI-E8-DC4"/>
-                        <outlet property="useNativeVideoPlayerSwitch" destination="eQY-S6-tZ5" id="oAI-C6-DJ5"/>
-                        <outlet property="autoplayVideoSwitch" destination="qWM-I2-xY5" id="nTU-F9-UV8"/>
-                        <outlet property="autoGotoNextAfterVideoSwitch" destination="dJZ-V5-KL8" id="oUV-G0-VW9"/>
-                        <outlet property="pipAutoPlayNextVideoSwitch" destination="sDM-G0-HN9" id="CNW-Q0-RX9"/>
                         <outlet property="automaticallyExpandArticleDetailsSwitch" destination="dsc-03-new" id="dsc-switch-outlet"/>
-                        <outlet property="prefetchNextArticleSwitch" destination="sID-A4-nE5" id="CSN-R1-SY0"/>
                         <outlet property="showFullscreenArticlesSwitch" destination="2Md-2E-7Z4" id="lEN-VP-wEO"/>
                         <outlet property="timelineSortOrderSwitch" destination="Keq-Np-l9O" id="Zm7-HG-r5h"/>
                     </connections>

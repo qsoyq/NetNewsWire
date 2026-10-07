@@ -35,6 +35,7 @@ extension Notification.Name {
 	public static let userInterfaceColorPaletteDidUpdate = Notification.Name("UserInterfaceColorPaletteDidUpdateNotification")
 	public static let timelineIconSizeDidChange = Notification.Name("TimelineIconSizeDidChangeNotification")
 	public static let timelineNumberOfLinesDidChange = Notification.Name("TimelineNumberOfLinesDidChangeNotification")
+	public static let videoPreviewSettingsDidChange = Notification.Name("VideoPreviewSettingsDidChangeNotification")
 }
 
 final class AppDefaults: Sendable {
@@ -72,6 +73,7 @@ final class AppDefaults: Sendable {
 		static let articleContentJavascriptEnabled = "articleContentJavascriptEnabled"
 		static let refreshFeeds = "refreshFeeds"
 		static let cacheVideoContent = "cacheVideoContent"
+		static let loadVideoFirstFramePreview = "loadVideoFirstFramePreview"
 		static let autoFullscreenVideo = "autoFullscreenVideo"
 		static let useNativeVideoPlayer = "useNativeVideoPlayer"
 		static let autoplayVideo = "autoplayVideo"
@@ -196,6 +198,15 @@ final class AppDefaults: Sendable {
 		}
 	}
 
+	var loadVideoFirstFramePreview: Bool {
+		get { AppDefaults.bool(for: Key.loadVideoFirstFramePreview) }
+		set {
+			guard newValue != loadVideoFirstFramePreview else { return }
+			AppDefaults.setBool(for: Key.loadVideoFirstFramePreview, newValue)
+			NotificationCenter.default.post(name: .videoPreviewSettingsDidChange, object: nil)
+		}
+	}
+
 	var autoFullscreenVideo: Bool {
 		get {
 			return AppDefaults.bool(for: Key.autoFullscreenVideo)
@@ -252,6 +263,7 @@ final class AppDefaults: Sendable {
 		}
 		set {
 			AppDefaults.setBool(for: Key.prefetchNextArticleContent, newValue)
+			NotificationCenter.default.post(name: .videoPreviewSettingsDidChange, object: nil)
 		}
 	}
 
@@ -558,6 +570,7 @@ final class AppDefaults: Sendable {
 		let defaults: [String: Any] = [Key.userInterfaceColorPalette: UserInterfaceColorPalette.automatic.rawValue,
 										Key.refreshFeeds: true,
 										Key.cacheVideoContent: false,
+										Key.loadVideoFirstFramePreview: false,
 									Key.autoFullscreenVideo: false,
 									Key.useNativeVideoPlayer: false,
 									Key.autoplayVideo: false,

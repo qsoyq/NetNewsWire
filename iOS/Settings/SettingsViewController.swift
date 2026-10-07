@@ -59,14 +59,7 @@ final class SettingsViewController: UITableViewController {
 		case theme
 		case openLinksInNetNewsWire
 		case enableJavaScript
-		case autoFullscreenVideo
-		case nativeVideoPlayer
-		case autoplayVideo
-		case autoGotoNextAfterVideo
-		case pipAutoPlayNextVideo
-		case cacheVideoContent
-		case prefetchNextArticle
-		case clearVideoCache
+		case media
 		case translation
 		case automaticallyExpandArticleDetails
 		case enableFullScreenArticles
@@ -92,13 +85,6 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var doubleTapToGoBackSwitch: UISwitch!
 	@IBOutlet var colorPaletteDetailLabel: UILabel!
 	@IBOutlet var openLinksInNetNewsWire: UISwitch!
-	@IBOutlet var cacheVideoContentSwitch: UISwitch!
-	@IBOutlet var autoFullscreenVideoSwitch: UISwitch!
-	@IBOutlet var useNativeVideoPlayerSwitch: UISwitch!
-	@IBOutlet var autoplayVideoSwitch: UISwitch!
-	@IBOutlet var autoGotoNextAfterVideoSwitch: UISwitch!
-	@IBOutlet var pipAutoPlayNextVideoSwitch: UISwitch!
-	@IBOutlet var prefetchNextArticleSwitch: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
 	@IBOutlet var automaticallyExpandArticleDetailsSwitch: UISwitch!
 	@IBOutlet var logLevelDetailLabel: UILabel!
@@ -167,13 +153,6 @@ final class SettingsViewController: UITableViewController {
 			enableJavaScriptSwitch.isOn = false
 		}
 
-		cacheVideoContentSwitch.isOn = AppDefaults.shared.cacheVideoContent
-		autoFullscreenVideoSwitch.isOn = AppDefaults.shared.autoFullscreenVideo
-		useNativeVideoPlayerSwitch.isOn = AppDefaults.shared.useNativeVideoPlayer
-		autoplayVideoSwitch.isOn = AppDefaults.shared.autoplayVideo
-		autoGotoNextAfterVideoSwitch.isOn = AppDefaults.shared.autoGotoNextAfterVideo
-		pipAutoPlayNextVideoSwitch.isOn = AppDefaults.shared.pipAutoPlayNextVideo
-		prefetchNextArticleSwitch.isOn = AppDefaults.shared.prefetchNextArticleContent
 		automaticallyExpandArticleDetailsSwitch.isOn = AppDefaults.shared.automaticallyExpandArticleDetails
 		automaticallyExpandArticleDetailsSwitch.accessibilityLabel = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
 		automaticallyExpandArticleDetailsSwitch.accessibilityIdentifier = "articles.autoExpandDetails"
@@ -260,9 +239,15 @@ final class SettingsViewController: UITableViewController {
 
 		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.translation.rawValue {
 			(cell.viewWithTag(941) as? UILabel)?.text = ArticleTranslationStrings.text("Article Translation")
+			cell.accessibilityIdentifier = "articles.translation"
 		}
 		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.automaticallyExpandArticleDetails.rawValue {
 			(cell.viewWithTag(942) as? UILabel)?.text = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
+			cell.accessibilityIdentifier = "articles.autoExpandDetails.row"
+		}
+		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.media.rawValue {
+			(cell.viewWithTag(944) as? UILabel)?.text = NSLocalizedString("Media", comment: "Media settings title")
+			cell.accessibilityIdentifier = "articles.media"
 		}
 		return cell
 	}
@@ -318,9 +303,9 @@ final class SettingsViewController: UITableViewController {
 			case .theme:
 				let articleThemes = UIStoryboard.settings.instantiateController(ofType: ArticleThemesTableViewController.self)
 				self.navigationController?.pushViewController(articleThemes, animated: true)
-			case .clearVideoCache:
+			case .media:
 				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
-				clearVideoCache()
+				self.navigationController?.pushViewController(UIHostingController(rootView: MediaSettingsView()), animated: true)
 			case .translation:
 				self.navigationController?.pushViewController(UIHostingController(rootView: ArticleTranslationSettingsView()), animated: true)
 			default:
@@ -470,34 +455,6 @@ final class SettingsViewController: UITableViewController {
 		} else {
 			AppDefaults.shared.useSystemBrowser = true
 		}
-	}
-
-	@IBAction func switchCacheVideoContent(_ sender: Any) {
-		AppDefaults.shared.cacheVideoContent = cacheVideoContentSwitch.isOn
-	}
-
-	@IBAction func switchAutoFullscreenVideo(_ sender: Any) {
-		AppDefaults.shared.autoFullscreenVideo = autoFullscreenVideoSwitch.isOn
-	}
-
-	@IBAction func switchUseNativeVideoPlayer(_ sender: Any) {
-		AppDefaults.shared.useNativeVideoPlayer = useNativeVideoPlayerSwitch.isOn
-	}
-
-	@IBAction func switchAutoplayVideo(_ sender: Any) {
-		AppDefaults.shared.autoplayVideo = autoplayVideoSwitch.isOn
-	}
-
-	@IBAction func switchAutoGotoNextAfterVideo(_ sender: Any) {
-		AppDefaults.shared.autoGotoNextAfterVideo = autoGotoNextAfterVideoSwitch.isOn
-	}
-
-	@IBAction func switchPipAutoPlayNextVideo(_ sender: Any) {
-		AppDefaults.shared.pipAutoPlayNextVideo = pipAutoPlayNextVideoSwitch.isOn
-	}
-
-	@IBAction func switchPrefetchNextArticle(_ sender: Any) {
-		AppDefaults.shared.prefetchNextArticleContent = prefetchNextArticleSwitch.isOn
 	}
 
 	@IBAction func switchAutomaticallyExpandArticleDetails(_ sender: Any) {
@@ -771,22 +728,6 @@ private extension SettingsViewController {
 	func presentRebuildArticleContentResult(title: String, message: String) {
 		let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
 		alert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: "OK"), style: .default))
-		present(alert, animated: true)
-	}
-
-	func clearVideoCache() {
-		let title = NSLocalizedString("Clear Video Cache", comment: "Clear Video Cache")
-		let message = NSLocalizedString("Are you sure you want to clear the video cache?", comment: "Clear Video Cache Message")
-		let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-
-		let cancelTitle = NSLocalizedString("Cancel", comment: "Cancel")
-		alert.addAction(UIAlertAction(title: cancelTitle, style: .cancel))
-
-		let clearTitle = NSLocalizedString("Clear", comment: "Clear")
-		alert.addAction(UIAlertAction(title: clearTitle, style: .destructive) { _ in
-			VideoCacheDatabase.shared.clearAll()
-		})
-
 		present(alert, animated: true)
 	}
 

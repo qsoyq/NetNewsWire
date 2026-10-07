@@ -109,12 +109,27 @@ final class WebViewPiPManager {
     static let shared = WebViewPiPManager()
     var isPiPActive = false
 }
+final class PreviewController {
+    var active = false
+    func setActive(_ value: Bool) { active = value }
+}
+final class ArticlePrefetcher {
+    static let shared = ArticlePrefetcher()
+    var requests = 0
+    func prefetchNextArticle(after article: String?, coordinator: Int) {
+        precondition(article != nil && coordinator == 1)
+        requests += 1
+    }
+}
 final class WebController {
     var viewIfLoaded: View? = View()
     var delegate: Any? = ArticleViewController()
     var presentedViewController: Int?
     var isBeingDismissed = false
     var videoPresentationEnabled = false
+    let videoPreviewController = PreviewController()
+    var article: String? = "first"
+    var coordinator = 1
     var autoplayAttempts = 0
     func startNativeVideoDirectly() { autoplayAttempts += 1 }
     ${resume}
@@ -122,6 +137,7 @@ final class WebController {
 let page = WebController()
 page.resumeNativeVideoAfterPageTransition()
 precondition(page.videoPresentationEnabled && page.autoplayAttempts == 1)
+precondition(page.videoPreviewController.active && ArticlePrefetcher.shared.requests == 1)
 for blocker in 0..<7 {
     let page = WebController()
     switch blocker {
@@ -135,6 +151,7 @@ for blocker in 0..<7 {
     }
     page.resumeNativeVideoAfterPageTransition()
     precondition(!page.videoPresentationEnabled && page.autoplayAttempts == 0)
+    precondition(!page.videoPreviewController.active && ArticlePrefetcher.shared.requests == 1)
     UIApplication.shared.applicationState = .active
     VideoPlayerManager.shared.isPiPActive = false
     WebViewPiPManager.shared.isPiPActive = false

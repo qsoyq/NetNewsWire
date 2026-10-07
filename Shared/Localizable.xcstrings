@@ -1,6 +1,282 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Cancel Media Cache Clear" : {
+      "comment" : "Cancel media cache clear",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } }
+      }
+    },
+    "Confirm Media Cache Clear" : {
+      "comment" : "Confirm media cache clear",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除" } }
+      }
+    },
+    "Media": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "媒体"
+          }
+        }
+      }
+    },
+    "Video Playback": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video Playback"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频播放"
+          }
+        }
+      }
+    },
+    "Loading and Previews": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading and Previews"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载与预览"
+          }
+        }
+      }
+    },
+    "Media Cache": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media Cache"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "媒体缓存"
+          }
+        }
+      }
+    },
+    "Play Videos in Full Screen": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play Videos in Full Screen"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频自动全屏播放"
+          }
+        }
+      }
+    },
+    "Use Native Video Player": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Native Video Player"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用原生视频播放器"
+          }
+        }
+      }
+    },
+    "Autoplay Video": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoplay Video"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动播放视频"
+          }
+        }
+      }
+    },
+    "Go to Next Article After Video Ends": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to Next Article After Video Ends"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放结束后进入下一篇"
+          }
+        }
+      }
+    },
+    "Autoplay Next Video in PiP": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoplay Next Video in PiP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画中画自动播放下一个视频"
+          }
+        }
+      }
+    },
+    "Cache Video Content": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache Video Content"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存视频内容"
+          }
+        }
+      }
+    },
+    "Prefetch Next Article": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefetch Next Article"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预加载下一篇"
+          }
+        }
+      }
+    },
+    "Clear Media Cache": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Media Cache"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除媒体缓存"
+          }
+        }
+      }
+    },
+    "Clear cached article images, videos, and first-frame previews?": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear cached article images, videos, and first-frame previews?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除已缓存的文章图片、视频和首帧预览？"
+          }
+        }
+      }
+    },
+    "Prefetching loads images for the next article. Videos and first-frame previews follow their own switches. Loading previews and prefetching may use additional data.": {
+      "comment": "Media settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefetching loads images for the next article. Videos and first-frame previews follow their own switches. Loading previews and prefetching may use additional data."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预加载下一篇会提前加载文章图片。视频内容与首帧预览分别由对应开关控制。加载预览和预加载可能产生额外流量。"
+          }
+        }
+      }
+    },
+    "Load Video First Frame Preview" : {
+      "comment" : "Load video previews",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Load Video First Frame Preview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载视频首帧预览" } }
+      }
+    },
     "Automatically Expand Collapsed Content" : {
       "comment" : "Automatically expand article details elements",
       "extractionState" : "manual",

@@ -19,6 +19,11 @@ nonisolated final class VideoCacheDatabase: Sendable {
 	/// Maximum total cache size in bytes (500 MB).
 	private static let maxTotalCacheSize: Int64 = 500 * 1024 * 1024
 
+	// Copy Swift's temporary string and Data buffers before their scoped pointers expire.
+	private static var transientDestructor: sqlite3_destructor_type {
+		unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+	}
+
 	private struct DatabasePointer: @unchecked Sendable {
 		var pointer: OpaquePointer?
 	}
@@ -48,7 +53,7 @@ nonisolated final class VideoCacheDatabase: Sendable {
 			}
 			defer { sqlite3_finalize(statement) }
 
-			sqlite3_bind_text(statement, 1, (url as NSString).utf8String, -1, nil)
+			sqlite3_bind_text(statement, 1, (url as NSString).utf8String, -1, Self.transientDestructor)
 
 			guard sqlite3_step(statement) == SQLITE_ROW else {
 				return nil
@@ -86,11 +91,11 @@ nonisolated final class VideoCacheDatabase: Sendable {
 			}
 			defer { sqlite3_finalize(statement) }
 
-			sqlite3_bind_text(statement, 1, (url as NSString).utf8String, -1, nil)
+			sqlite3_bind_text(statement, 1, (url as NSString).utf8String, -1, Self.transientDestructor)
 			_ = data.withUnsafeBytes { rawBuffer in
-				sqlite3_bind_blob(statement, 2, rawBuffer.baseAddress, Int32(data.count), nil)
+				sqlite3_bind_blob(statement, 2, rawBuffer.baseAddress, Int32(data.count), Self.transientDestructor)
 			}
-			sqlite3_bind_text(statement, 3, (contentType as NSString).utf8String, -1, nil)
+			sqlite3_bind_text(statement, 3, (contentType as NSString).utf8String, -1, Self.transientDestructor)
 			sqlite3_bind_double(statement, 4, Date().timeIntervalSince1970)
 
 			if sqlite3_step(statement) != SQLITE_DONE {
@@ -117,7 +122,7 @@ nonisolated final class VideoCacheDatabase: Sendable {
 				return false
 			}
 			defer { sqlite3_finalize(stmt) }
-			sqlite3_bind_text(stmt, 1, (url as NSString).utf8String, -1, nil)
+			sqlite3_bind_text(stmt, 1, (url as NSString).utf8String, -1, Self.transientDestructor)
 			return sqlite3_step(stmt) == SQLITE_ROW
 		}
 	}

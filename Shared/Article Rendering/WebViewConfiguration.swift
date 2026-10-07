@@ -166,6 +166,9 @@ private extension WebViewConfiguration {
 
 #if os(iOS)
 		scripts.insert(feedInfoLabelScript, at: 0)
+		if let previewScript = VideoPreviewController.userScript {
+			scripts.append(previewScript)
+		}
 #endif
 		return scripts
 	}()

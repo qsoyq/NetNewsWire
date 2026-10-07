@@ -40,7 +40,7 @@ import SwiftUI
 			previousWindow?.makeKeyAndVisible()
 		}
 		settings.loadViewIfNeeded()
-		let translationRow = IndexPath(row: 12, section: 4)
+		let translationRow = try articleSettingsRow("articles.translation", in: settings)
 		let cell = settings.tableView(settings.tableView, cellForRowAt: translationRow)
 		XCTAssertEqual((cell.viewWithTag(941) as? UILabel)?.text, ArticleTranslationStrings.text("Article Translation"))
 		XCTAssertEqual(cell.accessoryType, .disclosureIndicator)
