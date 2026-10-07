@@ -157,6 +157,9 @@ private extension WebViewConfiguration {
 			let scriptSource = try! String(contentsOf: scriptURL, encoding: .utf8)
 			return WKUserScript(source: scriptSource, injectionTime: .atDocumentStart, forMainFrameOnly: true)
 		}
+		if let disclosureScript = ArticleDisclosureController.userScript {
+			scripts.append(disclosureScript)
+		}
 		if let translationScript = ArticleTranslationController.userScript {
 			scripts.append(translationScript)
 		}

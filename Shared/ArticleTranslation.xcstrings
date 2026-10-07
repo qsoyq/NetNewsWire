@@ -718,6 +718,40 @@
           }
         }
       }
+    },
+    "Translate Next Article in Advance": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translate Next Article in Advance"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提前翻译下一篇"
+          }
+        }
+      }
+    },
+    "Translate the next article in advance and save the result for when you open it. This makes additional translation service requests and works independently of image and video prefetching.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translate the next article in advance and save the result for when you open it. This makes additional translation service requests and works independently of image and video prefetching."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提前翻译下一篇文章并缓存，打开时复用译文。此功能会额外调用翻译服务，与图片和视频预加载相互独立。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -12,6 +12,9 @@ struct ArticleTranslationSettingsView: View {
 		Form {
 			Section {
 				Toggle(ArticleTranslationStrings.text("Automatically Translate"), isOn: $preferences.automaticallyTranslate)
+				Toggle(ArticleTranslationStrings.text("Translate Next Article in Advance"), isOn: $preferences.prefetchNextArticleTranslation)
+					.disabled(!preferences.automaticallyTranslate)
+					.accessibilityIdentifier("translation.prefetchNextArticle")
 				Toggle(ArticleTranslationStrings.text("Show Translation Button"), isOn: $preferences.manuallyTranslate)
 				Picker(ArticleTranslationStrings.text("Translation Display"), selection: $preferences.displayMode) {
 					ForEach(ArticleTranslationDisplayMode.allCases) { mode in
@@ -21,7 +24,8 @@ struct ArticleTranslationSettingsView: View {
 			} header: {
 				Text(ArticleTranslationStrings.text("Translation"))
 			} footer: {
-				Text(ArticleTranslationStrings.text("Translate automatically when you open an article, or use the translation button. Choose to show translations below the original or replace the original. Article titles stay unchanged."))
+				Text(ArticleTranslationStrings.text("Translate automatically when you open an article, or use the translation button. Choose to show translations below the original or replace the original. Article titles stay unchanged.")
+					+ "\n\n" + ArticleTranslationStrings.text("Translate the next article in advance and save the result for when you open it. This makes additional translation service requests and works independently of image and video prefetching."))
 			}
 			Section {
 				TextField(ArticleTranslationStrings.text("Base URL"), text: $preferences.baseURL)

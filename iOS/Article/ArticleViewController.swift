@@ -43,6 +43,8 @@ final class ArticleViewController: UIViewController {
 	private var pageViewController: UIPageViewController!
 	private var isPageTransitionInProgress = false
 	private var pendingSetViewController: WebViewController?
+	private let translationPrefetcher = ArticleTranslationPrefetcher()
+	private var isTranslationPrefetchActive = false
 
 	private var currentWebViewController: WebViewController? {
 		return pageViewController?.viewControllers?.first as? WebViewController
@@ -72,6 +74,7 @@ final class ArticleViewController: UIViewController {
 			Self.logger.debug("ArticleViewController: article didSet: \(self.article?.accountID ?? "nil") \(self.article?.articleID ?? "nil") \(self.article?.title ?? "nil")")
 
 			if oldValue != article {
+				translationPrefetcher.select(article)
 				// The launch-restoration scroll position belongs only to the restored article.
 				// <https://github.com/Ranchero-Software/NetNewsWire/issues/5243>
 				restoreScrollPosition = nil
@@ -110,6 +113,8 @@ final class ArticleViewController: UIViewController {
 									return
 								}
 								controller.resumeNativeVideoAfterPageTransition()
+								self.updateTranslationButton()
+								self.scheduleNextArticleTranslation()
 							}
 							self.syncArticleExtractorButtonState()
 						}
@@ -267,6 +272,13 @@ final class ArticleViewController: UIViewController {
 
 	override func viewDidAppear(_ animated: Bool) {
 		super.viewDidAppear(animated)
+		updateTranslationButton()
+		isTranslationPrefetchActive = true
+		scheduleNextArticleTranslation()
+		NotificationCenter.default.addObserver(self, selector: #selector(translationPrefetchSettingsChanged), name: ArticleTranslationSettings.didChange, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(translationPrefetchSettingsChanged), name: .CurrentArticleThemeDidChangeNotification, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(cancelTranslationPrefetch), name: UIApplication.didEnterBackgroundNotification, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(scheduleNextArticleTranslation), name: UIApplication.didBecomeActiveNotification, object: nil)
 		if #available(iOS 26, *) {
 			navigationController?.navigationBar.topItem?.subtitle = nil
 		}
@@ -285,6 +297,12 @@ final class ArticleViewController: UIViewController {
 
 	override func viewWillDisappear(_ animated: Bool) {
 		super.viewWillDisappear(animated)
+		isTranslationPrefetchActive = false
+		translationPrefetcher.cancel()
+		NotificationCenter.default.removeObserver(self, name: ArticleTranslationSettings.didChange, object: nil)
+		NotificationCenter.default.removeObserver(self, name: .CurrentArticleThemeDidChangeNotification, object: nil)
+		NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
+		NotificationCenter.default.removeObserver(self, name: UIApplication.didBecomeActiveNotification, object: nil)
 		if searchBar != nil && !searchBar.isHidden {
 			endFind()
 			searchBar.shouldBeginEditing = false
@@ -302,6 +320,24 @@ final class ArticleViewController: UIViewController {
 	override func viewSafeAreaInsetsDidChange() {
 		// This will animate if the show/hide bars animation is happening.
 		view.layoutIfNeeded()
+	}
+
+	@objc private func cancelTranslationPrefetch() {
+		translationPrefetcher.cancel()
+	}
+
+	@objc private func translationPrefetchSettingsChanged() {
+		translationPrefetcher.cancel()
+		scheduleNextArticleTranslation()
+	}
+
+	@objc private func scheduleNextArticleTranslation() {
+		guard isTranslationPrefetchActive, UIApplication.shared.applicationState == .active,
+			!isPageTransitionInProgress, let controller = currentWebViewController else { return }
+		translationPrefetcher.select(controller.article)
+		guard controller.isArticleDocumentReady, let current = controller.article else { return }
+		let size = controller.translationViewportSize
+		translationPrefetcher.prefetch(coordinator.findNextArticle(current), size: CGSize(width: max(1, size.width), height: max(1, size.height)))
 	}
 
 	func updateUI() {
@@ -558,6 +594,10 @@ extension ArticleViewController {
 // MARK: WebViewControllerDelegate
 
 extension ArticleViewController: WebViewControllerDelegate {
+	func webViewControllerDidLoadArticle(_ controller: WebViewController) {
+		guard isCurrentWebViewController(controller) else { return }
+		scheduleNextArticleTranslation()
+	}
 
 	func webViewController(_ webViewController: WebViewController, articleExtractorButtonStateDidUpdate buttonState: ArticleExtractorButtonState) {
 		guard webViewController === currentWebViewController else {
@@ -604,6 +644,8 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 		isPageTransitionInProgress = false
 		// A preloaded page may have finished rendering before it became current.
 		currentWebViewController?.resumeNativeVideoAfterPageTransition()
+		updateTranslationButton()
+		scheduleNextArticleTranslation()
 
 		if let pending = pendingSetViewController {
 			pendingSetViewController = nil
@@ -618,6 +660,8 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 							return
 						}
 						pending.resumeNativeVideoAfterPageTransition()
+						self.updateTranslationButton()
+						self.scheduleNextArticleTranslation()
 					}
 					self.syncArticleExtractorButtonState()
 				}
@@ -704,19 +748,21 @@ private extension ArticleViewController {
 		let controller = WebViewController()
 		controller.coordinator = coordinator
 		controller.delegate = self
-		controller.translationStateDidChange = { [weak self] state in
-			self?.updateTranslationButton(state: state)
+		controller.translationStateDidChange = { [weak self, weak controller] _ in
+			guard let self, let controller, self.isCurrentWebViewController(controller) else { return }
+			self.updateTranslationButton()
 		}
 		controller.setArticle(article, updateView: updateView)
 		return controller
 	}
 
-	func updateTranslationButton(state: String? = nil) {
+	func updateTranslationButton() {
 		guard ArticleTranslationSettings.preferences.isEnabled else {
 			translationBarButtonItem.isEnabled = false
 			return
 		}
 		translationBarButtonItem.isEnabled = true
+		let state = currentWebViewController?.translationState
 		if state == "translated" {
 			translationBarButtonItem.image = UIImage(systemName: "arrow.uturn.backward.circle")
 			translationBarButtonItem.accessibilityLabel = ArticleTranslationStrings.text("Show Original")

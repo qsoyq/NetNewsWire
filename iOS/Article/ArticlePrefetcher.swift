@@ -49,13 +49,5 @@ import RSCore
 			}
 		}
 
-		let translationPreferences = ArticleTranslationSettings.preferences
-		if translationPreferences.automaticallyTranslate, let text = nextArticle.contentText, !text.isEmpty {
-			Task {
-				guard let configuration = try? ArticleTranslationSettings.configuration() else { return }
-				let segment = ArticleTranslationSegment(id: "prefetch", text: text)
-				try? await ArticleTranslationService.shared.translate([segment], articleID: nextArticle.articleID, configuration: configuration, maxConcurrentRequests: translationPreferences.concurrentRequests) { _, _, _ in }
-			}
-		}
 	}
 }

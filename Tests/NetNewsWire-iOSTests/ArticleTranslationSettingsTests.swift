@@ -16,6 +16,7 @@ import SwiftUI
 		preferences.language = .traditionalChinese
 		preferences.displayMode = .replaceOriginal
 		preferences.automaticallyTranslate = true
+		preferences.prefetchNextArticleTranslation = true
 		preferences.manuallyTranslate = true
 		try ArticleTranslationSettings.save(preferences, apiKey: "nnw-validation-key")
 		XCTAssertEqual(ArticleTranslationSettings.preferences, preferences)

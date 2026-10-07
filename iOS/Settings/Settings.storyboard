@@ -722,6 +722,39 @@
                                             </constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="dsc-00-new" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="1057" width="374" height="52"/>
+                                        <autoresizingMask key="autoresizingMask"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="dsc-00-new" id="dsc-01-new">
+                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
+                                            <autoresizingMask key="autoresizingMask"/>
+                                            <subviews>
+                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" tag="942" text="Automatically Expand Collapsed Content" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dsc-02-new">
+                                                    <rect key="frame" x="20" y="15" width="175" height="21.5"/>
+                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
+                                                    <nil key="textColor"/>
+                                                    <nil key="highlightedColor"/>
+                                                </label>
+                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="dsc-03-new">
+                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
+                                                    <color key="onTintColor" name="primaryAccentColor"/>
+                                                    <connections>
+                                                        <action selector="switchAutomaticallyExpandArticleDetails:" destination="a0p-rk-skQ" eventType="valueChanged" id="dsc-04-new"/>
+                                                    </connections>
+                                                </switch>
+                                            </subviews>
+                                            <constraints>
+                                                <constraint firstItem="dsc-02-new" firstAttribute="top" secondItem="dsc-01-new" secondAttribute="topMargin" id="dsc-05-new"/>
+                                                <constraint firstItem="dsc-03-new" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="dsc-02-new" secondAttribute="trailing" constant="8" id="dsc-06-new"/>
+                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="dsc-03-new" secondAttribute="bottom" constant="6" id="dsc-07-new"/>
+                                                <constraint firstItem="dsc-03-new" firstAttribute="centerY" secondItem="dsc-01-new" secondAttribute="centerY" id="dsc-08-new"/>
+                                                <constraint firstAttribute="bottomMargin" secondItem="dsc-02-new" secondAttribute="bottom" id="dsc-09-new"/>
+                                                <constraint firstAttribute="trailingMargin" secondItem="dsc-03-new" secondAttribute="trailing" constant="0" id="dsc-10-new"/>
+                                                <constraint firstItem="dsc-03-new" firstAttribute="top" relation="greaterThanOrEqual" secondItem="dsc-01-new" secondAttribute="top" constant="6" id="dsc-11-new"/>
+                                                <constraint firstItem="dsc-02-new" firstAttribute="leading" secondItem="dsc-01-new" secondAttribute="leadingMargin" id="dsc-12-new"/>
+                                            </constraints>
+                                        </tableViewCellContentView>
+                                    </tableViewCell>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="WR6-xo-ty2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
                                         <rect key="frame" x="20" y="1004" width="374" height="92"/>
                                         <autoresizingMask key="autoresizingMask"/>
@@ -1060,6 +1093,7 @@
                         <outlet property="autoplayVideoSwitch" destination="qWM-I2-xY5" id="nTU-F9-UV8"/>
                         <outlet property="autoGotoNextAfterVideoSwitch" destination="dJZ-V5-KL8" id="oUV-G0-VW9"/>
                         <outlet property="pipAutoPlayNextVideoSwitch" destination="sDM-G0-HN9" id="CNW-Q0-RX9"/>
+                        <outlet property="automaticallyExpandArticleDetailsSwitch" destination="dsc-03-new" id="dsc-switch-outlet"/>
                         <outlet property="prefetchNextArticleSwitch" destination="sID-A4-nE5" id="CSN-R1-SY0"/>
                         <outlet property="showFullscreenArticlesSwitch" destination="2Md-2E-7Z4" id="lEN-VP-wEO"/>
                         <outlet property="timelineSortOrderSwitch" destination="Keq-Np-l9O" id="Zm7-HG-r5h"/>

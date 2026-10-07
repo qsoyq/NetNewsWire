@@ -27,6 +27,7 @@ final class ArticleTranslationTests: XCTestCase {
 			XCTAssertEqual(preferences.language, .english)
 			XCTAssertEqual(preferences.displayMode, .bilingual)
 			XCTAssertTrue(preferences.automaticallyTranslate && preferences.manuallyTranslate)
+			XCTAssertFalse(preferences.prefetchNextArticleTranslation)
 		}
 	}
 
@@ -37,6 +38,7 @@ final class ArticleTranslationTests: XCTestCase {
 			var preferences = ArticleTranslationPreferences()
 			preferences.path = "/custom/responses"
 			preferences.displayMode = .replaceOriginal
+			preferences.prefetchNextArticleTranslation = true
 			preferences.language = language
 			let encoded = try JSONEncoder().encode(preferences)
 			XCTAssertEqual(try JSONDecoder().decode(ArticleTranslationPreferences.self, from: encoded), preferences)

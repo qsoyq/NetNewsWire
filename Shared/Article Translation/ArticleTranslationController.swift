@@ -19,7 +19,7 @@ import Foundation
 	private var isTranslating = false
 	private var shouldAutomaticallyTranslate = true
 	private var articleID: String?
-	private var state = "idle"
+	private(set) var state = "idle"
 	var stateDidChange: ((String) -> Void)?
 
 	override init() {
@@ -41,6 +41,7 @@ import Foundation
 		isReady = false
 		isTranslating = false
 		shouldAutomaticallyTranslate = true
+		updateState("idle")
 	}
 
 	func documentDidLoad(_ webView: WKWebView, articleID: String? = nil) {
@@ -54,6 +55,23 @@ import Foundation
 		}
 		let id = documentID
 		let preferences = ArticleTranslationSettings.preferences
+		setupTask = Task { [weak self] in
+			guard let self else { return }
+			do {
+				try await Self.configureDocument(webView, documentID: id, preferences: preferences)
+				guard !Task.isCancelled, id == self.documentID else { return }
+				self.isReady = true
+				self.startAutomaticallyIfNeeded()
+			} catch {
+				// A replaced or terminated document will be configured on its next successful load.
+			}
+		}
+	}
+
+	static func configureDocument(_ webView: WKWebView, documentID: String, preferences: ArticleTranslationPreferences) async throws {
+#if os(iOS)
+		try await ArticleDisclosureController.configure(webView, enabled: AppDefaults.shared.automaticallyExpandArticleDetails)
+#endif
 		let labels = [
 			"title": ArticleTranslationStrings.text("Translation"),
 			"translate": ArticleTranslationStrings.text("Translate"),
@@ -66,20 +84,16 @@ import Foundation
 			"failed": ArticleTranslationStrings.text("Translation failed"),
 			"original": ArticleTranslationStrings.text("Original")
 		]
-		setupTask = Task { [weak self] in
-			guard let self else { return }
-			do {
-				_ = try await webView.callAsyncJavaScript("window.nnwTranslation.configure(configuration);", arguments: ["configuration": [
-					"documentID": id, "enabled": preferences.isEnabled, "manualEnabled": preferences.manuallyTranslate,
-					"displayMode": preferences.displayMode.rawValue, "languageTag": preferences.language.languageTag, "labels": labels
-				]], in: nil, contentWorld: Self.contentWorld)
-				guard !Task.isCancelled, id == self.documentID else { return }
-				self.isReady = true
-				self.startAutomaticallyIfNeeded()
-			} catch {
-				// A replaced or terminated document will be configured on its next successful load.
-			}
-		}
+		_ = try await webView.callAsyncJavaScript("window.nnwTranslation.configure(configuration);", arguments: ["configuration": [
+			"documentID": documentID, "enabled": preferences.isEnabled, "manualEnabled": preferences.manuallyTranslate,
+			"displayMode": preferences.displayMode.rawValue, "languageTag": preferences.language.languageTag, "labels": labels
+		]], in: nil, contentWorld: Self.contentWorld)
+	}
+
+	static func collectSegments(_ webView: WKWebView) async throws -> [ArticleTranslationSegment] {
+		let snapshot = try await webView.callAsyncJavaScript("return window.nnwTranslation.collect();", arguments: [:], in: nil, contentWorld: Self.contentWorld)
+		guard let json = snapshot as? String else { throw ArticleTranslationError.invalidResponse }
+		return try JSONDecoder().decode([ArticleTranslationSegment].self, from: Data(json.utf8))
 	}
 
 	func setActive(_ active: Bool) {
@@ -104,15 +118,23 @@ import Foundation
 		operationID = UUID()
 		let operation = operationID
 		let document = documentID
-		updateState("running")
 		translationTask = Task { [weak self] in
 			guard let self, let webView = self.webView else { return }
 			do {
 				let configuration = try ArticleTranslationSettings.configuration()
-				let snapshot = try await webView.callAsyncJavaScript("return window.nnwTranslation.collect();", arguments: [:], in: nil, contentWorld: Self.contentWorld)
-				guard let json = snapshot as? String else { throw ArticleTranslationError.invalidResponse }
-				let segments = try JSONDecoder().decode([ArticleTranslationSegment].self, from: Data(json.utf8))
+				let segments = try await Self.collectSegments(webView)
 				guard self.isCurrent(operation, document: document) else { return }
+				let cached = try await ArticleTranslationService.shared.cachedTranslations(for: segments, articleID: self.articleID, configuration: configuration)
+				guard self.isCurrent(operation, document: document) else { return }
+				if let cached {
+					try await self.receive(cached, completed: segments.count, total: segments.count, operation: operation, document: document, publishesProgress: false)
+					guard self.isCurrent(operation, document: document) else { return }
+					self.isTranslating = false
+					self.translationTask = nil
+					self.updateState("translated")
+					return
+				}
+				self.updateState("running")
 				let preferences = ArticleTranslationSettings.preferences
 				try await ArticleTranslationService.shared.translate(segments, articleID: self.articleID, configuration: configuration, maxConcurrentRequests: preferences.concurrentRequests) { [weak self] translations, completed, total in
 					guard let self else { throw CancellationError() }
@@ -139,12 +161,13 @@ import Foundation
 		operation == operationID && document == documentID && isActive
 	}
 
-	private func receive(_ translations: [ArticleTranslationSegment], completed: Int, total: Int, operation: UUID, document: String) async throws {
+	private func receive(_ translations: [ArticleTranslationSegment], completed: Int, total: Int, operation: UUID, document: String, publishesProgress: Bool = true) async throws {
 		try Task.checkCancellation()
 		guard isCurrent(operation, document: document), let webView else { throw CancellationError() }
 		let values = translations.map { ["id": $0.id, "text": $0.text] }
 		_ = try await webView.callAsyncJavaScript("window.nnwTranslation.apply(documentID, translations);", arguments: ["documentID": document, "translations": values], in: nil, contentWorld: Self.contentWorld)
 		guard isCurrent(operation, document: document) else { throw CancellationError() }
+		guard publishesProgress else { return }
 		let progress = String.localizedStringWithFormat(ArticleTranslationStrings.text("Translating %ld of %ld paragraphs"), completed, total)
 		updateState("running", detail: progress)
 	}

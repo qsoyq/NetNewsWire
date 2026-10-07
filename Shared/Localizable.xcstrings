@@ -1,6 +1,14 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Automatically Expand Collapsed Content" : {
+      "comment" : "Automatically expand article details elements",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Automatically Expand Collapsed Content" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动展开折叠正文" } }
+      }
+    },
     "" : {
 
     },

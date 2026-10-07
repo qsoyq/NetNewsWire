@@ -1,7 +1,31 @@
 import XCTest
 import WebKit
+@testable import NetNewsWire
 
 @MainActor final class ArticleTranslationDOMTests: XCTestCase {
+	func testBackgroundDocumentCollectsTheSameDOMUnitsInBothDisplayModes() async throws {
+		for mode in ArticleTranslationDisplayMode.allCases {
+			var preferences = ArticleTranslationPreferences()
+			preferences.automaticallyTranslate = true
+			preferences.displayMode = mode
+			let foreground = try await makeWebView(contentJavaScript: false)
+			try await configure(foreground, document: "foreground", replacement: mode == .replaceOriginal)
+			let snapshot = try await evaluate("return window.nnwTranslation.collect();", in: foreground)
+			let json = try XCTUnwrap(snapshot as? String)
+			let expected = try JSONDecoder().decode([ArticleTranslationSegment].self, from: Data(json.utf8))
+			let background = try await ArticleTranslationDocument().segments(html: Self.html, baseURL: nil, preferences: preferences, size: CGSize(width: 375, height: 800))
+			XCTAssertEqual(background, expected)
+		}
+	}
+
+	func testBackgroundDocumentDoesNotRunPageScripts() async throws {
+		var preferences = ArticleTranslationPreferences()
+		preferences.automaticallyTranslate = true
+		let html = "<div class='articleBody'><p>Original paragraph</p></div><script>document.querySelector('p').textContent='Page script ran';</script>"
+		let segments = try await ArticleTranslationDocument().segments(html: html, baseURL: nil, preferences: preferences, size: CGSize(width: 375, height: 800))
+		XCTAssertEqual(segments.map(\.text), ["Original paragraph"])
+	}
+
 	func testBilingualTranslationPreservesContentAndRestoresOriginalHTML() async throws {
 		let webView = try await makeWebView()
 		let original = try await evaluate("return document.querySelector('.articleBody').innerHTML;", in: webView) as? String

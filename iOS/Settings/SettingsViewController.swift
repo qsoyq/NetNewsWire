@@ -68,6 +68,7 @@ final class SettingsViewController: UITableViewController {
 		case prefetchNextArticle
 		case clearVideoCache
 		case translation
+		case automaticallyExpandArticleDetails
 		case enableFullScreenArticles
 	}
 
@@ -99,6 +100,7 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var pipAutoPlayNextVideoSwitch: UISwitch!
 	@IBOutlet var prefetchNextArticleSwitch: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
+	@IBOutlet var automaticallyExpandArticleDetailsSwitch: UISwitch!
 	@IBOutlet var logLevelDetailLabel: UILabel!
 
 	var scrollToArticlesSection = false
@@ -172,6 +174,9 @@ final class SettingsViewController: UITableViewController {
 		autoGotoNextAfterVideoSwitch.isOn = AppDefaults.shared.autoGotoNextAfterVideo
 		pipAutoPlayNextVideoSwitch.isOn = AppDefaults.shared.pipAutoPlayNextVideo
 		prefetchNextArticleSwitch.isOn = AppDefaults.shared.prefetchNextArticleContent
+		automaticallyExpandArticleDetailsSwitch.isOn = AppDefaults.shared.automaticallyExpandArticleDetails
+		automaticallyExpandArticleDetailsSwitch.accessibilityLabel = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
+		automaticallyExpandArticleDetailsSwitch.accessibilityIdentifier = "articles.autoExpandDetails"
 		logLevelDetailLabel.text = AppDefaults.shared.errorLogLevel.name
 
 		colorPaletteDetailLabel.text = String(describing: AppDefaults.userInterfaceColorPalette)
@@ -255,6 +260,9 @@ final class SettingsViewController: UITableViewController {
 
 		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.translation.rawValue {
 			(cell.viewWithTag(941) as? UILabel)?.text = ArticleTranslationStrings.text("Article Translation")
+		}
+		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.automaticallyExpandArticleDetails.rawValue {
+			(cell.viewWithTag(942) as? UILabel)?.text = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
 		}
 		return cell
 	}
@@ -490,6 +498,10 @@ final class SettingsViewController: UITableViewController {
 
 	@IBAction func switchPrefetchNextArticle(_ sender: Any) {
 		AppDefaults.shared.prefetchNextArticleContent = prefetchNextArticleSwitch.isOn
+	}
+
+	@IBAction func switchAutomaticallyExpandArticleDetails(_ sender: Any) {
+		AppDefaults.shared.automaticallyExpandArticleDetails = automaticallyExpandArticleDetailsSwitch.isOn
 	}
 
 	@IBAction func switchJavaScriptPreference(_ sender: Any) {

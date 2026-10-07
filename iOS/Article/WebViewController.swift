@@ -19,6 +19,11 @@ import Images
 
 @MainActor protocol WebViewControllerDelegate: AnyObject {
 	func webViewController(_: WebViewController, articleExtractorButtonStateDidUpdate: ArticleExtractorButtonState)
+	func webViewControllerDidLoadArticle(_ controller: WebViewController)
+}
+
+extension WebViewControllerDelegate {
+	func webViewControllerDidLoadArticle(_ controller: WebViewController) {}
 }
 
 final class WebViewController: UIViewController {
@@ -89,11 +94,14 @@ final class WebViewController: UIViewController {
 	private var articleImageLoadTracker: ArticleImageLoadTracker?
 	private var articleImageSummaryTask: Task<Void, Never>?
 	private var videoDocumentReady = false
+	var isArticleDocumentReady: Bool { videoDocumentReady }
+	var translationViewportSize: CGSize { webView?.bounds.size ?? CGSize(width: 375, height: 800) }
 	private var videoDocumentGeneration = 0
 	private var nativeAutoplayPending = false
 	private var nativeAutoplayStarted = false
 	private var videoPresentationEnabled = false
 	private let articleTranslationController = ArticleTranslationController()
+	var translationState: String { articleTranslationController.state }
 	var translationStateDidChange: ((String) -> Void)? {
 		didSet { articleTranslationController.stateDidChange = translationStateDidChange }
 	}
@@ -164,6 +172,11 @@ final class WebViewController: UIViewController {
 
 	override func viewDidAppear(_ animated: Bool) {
 		super.viewDidAppear(animated)
+		if let webView {
+			Task {
+				try? await ArticleDisclosureController.configure(webView, enabled: AppDefaults.shared.automaticallyExpandArticleDetails)
+			}
+		}
 		articleTranslationController.setActive(true)
 		videoPresentationEnabled = true
 		startNativeVideoDirectly()
@@ -626,6 +639,7 @@ extension WebViewController: WKNavigationDelegate {
 		}
 
 		ArticlePrefetcher.shared.prefetchNextArticle(after: article, coordinator: coordinator)
+		delegate?.webViewControllerDidLoadArticle(self)
 	}
 
 	func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {

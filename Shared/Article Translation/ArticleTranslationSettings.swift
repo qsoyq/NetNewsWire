@@ -40,6 +40,7 @@ struct ArticleTranslationPreferences: Codable, Equatable {
 	var language = ArticleTranslationLanguage.simplifiedChinese
 	var displayMode = ArticleTranslationDisplayMode.bilingual
 	var automaticallyTranslate = false
+	var prefetchNextArticleTranslation = false
 	var manuallyTranslate = false
 	var concurrentRequests = 4
 
@@ -47,7 +48,7 @@ struct ArticleTranslationPreferences: Codable, Equatable {
 	init() {}
 
 	private enum CodingKeys: String, CodingKey {
-		case baseURL, path, model, language, displayMode, automaticallyTranslate, manuallyTranslate, concurrentRequests
+		case baseURL, path, model, language, displayMode, automaticallyTranslate, prefetchNextArticleTranslation, manuallyTranslate, concurrentRequests
 	}
 
 	init(from decoder: Decoder) throws {
@@ -57,6 +58,7 @@ struct ArticleTranslationPreferences: Codable, Equatable {
 		model = try values.decodeIfPresent(String.self, forKey: .model) ?? model
 		displayMode = try values.decodeIfPresent(ArticleTranslationDisplayMode.self, forKey: .displayMode) ?? .bilingual
 		automaticallyTranslate = try values.decodeIfPresent(Bool.self, forKey: .automaticallyTranslate) ?? false
+		prefetchNextArticleTranslation = try values.decodeIfPresent(Bool.self, forKey: .prefetchNextArticleTranslation) ?? false
 		manuallyTranslate = try values.decodeIfPresent(Bool.self, forKey: .manuallyTranslate) ?? false
 		concurrentRequests = min(8, max(1, try values.decodeIfPresent(Int.self, forKey: .concurrentRequests) ?? 4))
 		let savedLanguage = try values.decodeIfPresent(String.self, forKey: .language) ?? language.rawValue
