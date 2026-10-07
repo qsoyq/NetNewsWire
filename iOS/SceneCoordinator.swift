@@ -21,6 +21,7 @@ import Images
 enum SearchScope: Int {
 	case timeline = 0
 	case global = 1
+	case feeds = 2
 }
 
 enum ShowFeedName {
@@ -1420,12 +1421,29 @@ struct SidebarItemNode: Hashable, Sendable {
 				setTimelineFeed(SmartFeed(delegate: SearchFeedDelegate(searchString: searchString)), animated: true)
 			case .timeline:
 				setTimelineFeed(SmartFeed(delegate: SearchTimelineFeedDelegate(searchString: searchString, articleIDs: savedSearchArticleIDs!)), animated: true)
+			case .feeds:
+				return
 			}
 
 			lastSearchString = searchString
 			lastSearchScope = searchScope
 		}
 
+	}
+
+	func searchFeeds(byAuthor searchString: String) -> [Feed] {
+		let query = searchString.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !query.isEmpty else { return [] }
+		let feeds = AccountManager.shared.sortedActiveAccounts.flatMap { $0.flattenedFeeds() }
+		let uniqueFeeds = Dictionary(uniqueKeysWithValues: feeds.map { ("\($0.accountID):\($0.feedID)", $0) }).values
+		return uniqueFeeds
+			.filter { feed in
+				feed.authors?.contains { author in
+					guard let name = author.name else { return false }
+					return name.localizedCaseInsensitiveContains(query)
+				} == true
+			}
+			.sorted { $0.nameForDisplay.localizedStandardCompare($1.nameForDisplay) == .orderedAscending }
 	}
 
 	func findPrevArticle(_ article: Article) -> Article? {

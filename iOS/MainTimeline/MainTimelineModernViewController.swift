@@ -177,7 +177,15 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	}
 
 	// MARK: Private Constants
-	private let searchController = UISearchController(searchResultsController: nil)
+	private lazy var feedSearchResultsController: FeedSearchResultsViewController = {
+		let controller = FeedSearchResultsViewController()
+		controller.onFeedSelected = { [weak self] feed in
+			self?.selectFeedSearchResult(feed)
+		}
+		return controller
+	}()
+	private lazy var searchController = UISearchController(searchResultsController: feedSearchResultsController)
+	private var pendingFeedSearchSelection: Feed?
 	private let keyboardManager = KeyboardManager(type: .timeline)
 	private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "MainTimelineModernViewController")
 
@@ -424,6 +432,19 @@ final class MainTimelineModernViewController: UIViewController, UndoableCommandR
 	func focus() {
 		Self.logger.debug("MainTimelineModernViewController: focus")
 		becomeFirstResponder()
+	}
+
+	private func selectFeedSearchResult(_ feed: Feed) {
+		pendingFeedSearchSelection = feed
+		hideSearch()
+	}
+
+	private func updateSearchScope(_ scope: SearchScope) {
+		let feedsScope = scope == .feeds
+		feedSearchResultsController.view.isHidden = !feedsScope
+		searchController.searchBar.placeholder = feedsScope
+			? NSLocalizedString("Search Feed Authors", comment: "Search Feed Authors")
+			: NSLocalizedString("Search Articles", comment: "Search Articles")
 	}
 
 	// MARK: - Reloading
@@ -788,10 +809,13 @@ extension MainTimelineModernViewController {
 		searchController.searchResultsUpdater = self
 		searchController.obscuresBackgroundDuringPresentation = false
 		searchController.searchBar.delegate = self
+		feedSearchResultsController.coordinator = coordinator
+		feedSearchResultsController.view.isHidden = true
 		searchController.searchBar.placeholder = NSLocalizedString("Search Articles", comment: "Search Articles")
 		searchController.searchBar.scopeButtonTitles = [
 			NSLocalizedString("Here", comment: "Here"),
-			NSLocalizedString("All Articles", comment: "All Articles")
+			NSLocalizedString("All Articles", comment: "All Articles"),
+			NSLocalizedString("Feed Authors", comment: "Feed Authors")
 		]
 		searchController.searchBar.barTintColor = .clear
 		searchController.searchBar.scopeBarBackgroundImage = UIImage()
@@ -1368,7 +1392,13 @@ extension MainTimelineModernViewController: UISearchControllerDelegate {
 		// Async to avoid iOS 26 UINavigationBar crashes during the search-bar dismissal
 		// transition — endSearching() mutates the timeline and the navigation stack.
 		DispatchQueue.main.async {
-			self.coordinator?.endSearching()
+			if let feed = self.pendingFeedSearchSelection {
+				self.pendingFeedSearchSelection = nil
+				self.coordinator?.endSearching()
+				self.coordinator?.discloseFeed(feed, animations: [.scroll, .navigation])
+			} else {
+				self.coordinator?.endSearching()
+			}
 			self.updateToolbar()
 		}
 	}
@@ -1378,7 +1408,12 @@ extension MainTimelineModernViewController: UISearchResultsUpdating {
 
 	func updateSearchResults(for searchController: UISearchController) {
 		let searchScope = SearchScope(rawValue: searchController.searchBar.selectedScopeButtonIndex)!
-		searchArticles(searchController.searchBar.text!, searchScope)
+		updateSearchScope(searchScope)
+		if searchScope == .feeds {
+			feedSearchResultsController.update(feeds: coordinator?.searchFeeds(byAuthor: searchController.searchBar.text ?? "") ?? [])
+		} else {
+			searchArticles(searchController.searchBar.text!, searchScope)
+		}
 	}
 
 }
@@ -1386,7 +1421,12 @@ extension MainTimelineModernViewController: UISearchResultsUpdating {
 extension MainTimelineModernViewController: UISearchBarDelegate {
 	func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange selectedScope: Int) {
 		let searchScope = SearchScope(rawValue: selectedScope)!
-		searchArticles(searchBar.text!, searchScope)
+		updateSearchScope(searchScope)
+		if searchScope == .feeds {
+			feedSearchResultsController.update(feeds: coordinator?.searchFeeds(byAuthor: searchBar.text ?? "") ?? [])
+		} else {
+			searchArticles(searchBar.text!, searchScope)
+		}
 	}
 }
 

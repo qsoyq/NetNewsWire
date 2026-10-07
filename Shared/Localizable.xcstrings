@@ -117,6 +117,9 @@
     "All Articles" : {
       "comment" : "All Articles"
     },
+    "Feed Authors" : {
+      "comment" : "Search scope for feed authors"
+    },
     "All Unread" : {
       "comment" : "All Unread pseudo-feed title"
     },
@@ -921,6 +924,9 @@
     },
     "Search Articles" : {
       "comment" : "Search Articles"
+    },
+    "Search Feed Authors" : {
+      "comment" : "Search Feed Authors"
     },
     "Search: " : {
       "comment" : "Search smart feed title prefix"
