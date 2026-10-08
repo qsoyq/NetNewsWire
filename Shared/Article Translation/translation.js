@@ -25,6 +25,28 @@
         return display !== "contents" && !display.startsWith("inline");
     }
 
+    function isURLText(text) {
+        if (!text || /\s/.test(text)) return false;
+        try {
+            const url = new URL(text);
+            return ["http:", "https:", "ftp:"].includes(url.protocol) && !!url.hostname;
+        } catch {
+            return false;
+        }
+    }
+
+    function preserveURL(node, text) {
+        if (isURLText(text)) return true;
+        const link = node.parentElement?.closest("a");
+        if (!link) return false;
+        const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
+        let label = "";
+        while (walker.nextNode()) {
+            if (!walker.currentNode.parentElement.closest("[data-nnw-translation]")) label += originalText(walker.currentNode);
+        }
+        return isURLText(label.trim());
+    }
+
     function collect() {
         units = new Map();
         const boundaryCache = new WeakMap();
@@ -45,7 +67,7 @@
                     const context = Array.from(parts.map(part => part.original).join("").replace(/[\t ]+/g, " ").trim()).slice(0, 600).join("");
                     const group = { root, container, anchor, parts, units: [] };
                     parts.forEach(part => {
-                        if (!part.text) return;
+                        if (!part.text || part.preserve) return;
                         let identity = identities.get(part.node);
                         if (!identity || identity.original !== part.original || identity.context !== context || identity.parent !== part.parent || identity.root !== root) {
                             identity = { id: String(nextID++), original: part.original, context, parent: part.parent, root };
@@ -62,8 +84,9 @@
                 function visit(node, path, insertionAnchor) {
                     if (node.nodeType === Node.TEXT_NODE) {
                         const original = originalText(node);
+                        const text = original.trim();
                         parts.push({ node, parent: node.parentNode, path: { root: rootIndex, children: path }, original,
-                            text: original.trim(), leading: original.match(/^\s*/)[0], trailing: original.match(/\s*$/)[0] });
+                            text, preserve: preserveURL(node, text), leading: original.match(/^\s*/)[0], trailing: original.match(/\s*$/)[0] });
                         anchor = insertionAnchor;
                     } else if (node.nodeType === Node.ELEMENT_NODE) {
                         // Our own inserted output must not change subsequent snapshots or groups.
@@ -145,7 +168,7 @@
         const changedGroups = new Set();
         translations.forEach(item => {
             const unit = units.get(item.id);
-            if (!unit || typeof item.text !== "string" || !item.text.trim() || !validPart(unit, unit.group)) return;
+            if (!unit || typeof item.text !== "string" || !item.text.trim() || !validPart(unit, unit.group) || preserveURL(unit.node, unit.text)) return;
             if (options.displayMode === "replaceOriginal") {
                 unit.node.data = unit.leading + item.text.trim() + unit.trailing;
                 replacements.set(unit.node, { original: unit.original, translated: unit.node.data });

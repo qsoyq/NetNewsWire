@@ -158,6 +158,46 @@ import Articles
 		}
 	}
 
+	func testV2EXURLLabelsRemainIntactInRenderedReaderInBothModes() async throws {
+		let article = Article(accountID: "url-test", articleID: "1791422483050063", feedID: "android", uniqueID: "v2ex-1246886",
+			title: "我等的那一天是不是来了？", contentHTML: ArticleTranslationDOMTests.v2exURLArticleContent,
+			contentText: nil, markdown: nil, url: "https://www.v2ex.com/t/1246886", externalURL: nil, summary: nil,
+			imageURL: nil, datePublished: Date(timeIntervalSince1970: 1791419847), dateModified: nil, authors: nil,
+			status: ArticleStatus(articleID: "1791422483050063", read: false, dateArrived: Date()))
+		let rendered = try ArticleTranslationPrefetcher.render(article)
+		let webView = try await makeWebView(html: rendered.html, baseURL: rendered.baseURL)
+		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+		let previousWindow = scene.windows.first(where: \.isKeyWindow)
+		let window = UIWindow(windowScene: scene)
+		let controller = UIViewController()
+		controller.view = webView
+		window.rootViewController = controller
+		window.makeKeyAndVisible()
+		defer { window.isHidden = true; previousWindow?.makeKeyAndVisible() }
+		let original = try await evaluate("return document.querySelector('.articleBody').innerHTML;", in: webView) as? String
+		for mode in ArticleTranslationDisplayMode.allCases {
+			var preferences = ArticleTranslationPreferences()
+			preferences.manuallyTranslate = true
+			preferences.displayMode = mode
+			try await ArticleTranslationController.configureDocument(webView, documentID: "url-preview", preferences: preferences)
+			let segments = try await ArticleTranslationController.collectSegments(webView)
+			XCTAssertEqual(segments.count, 4)
+			XCTAssertFalse(segments.contains { $0.text.hasPrefix("https://") })
+			_ = try await webView.callAsyncJavaScript("window.nnwTranslation.apply('url-preview', translations); document.querySelector('.articleBody').scrollIntoView();", arguments: ["translations": segments.map { ["id": $0.id, "text": "译:" + $0.text] }], in: nil, contentWorld: ArticleTranslationController.contentWorld)
+			let labels = try await evaluate("return Array.from(document.querySelectorAll('.articleBody a'), a => a.textContent);", in: webView) as? [String]
+			XCTAssertEqual(labels, ["https://www.v2ex.com/t/1003989", "https://easyalarm.pages.dev", mode == .replaceOriginal ? "译:查看原贴" : "查看原贴"])
+			try await Task.sleep(for: .milliseconds(200))
+			let image = try await snapshot(webView)
+			let attachment = XCTAttachment(image: image)
+			attachment.name = "V2EX URL Translation \(mode.rawValue)"
+			attachment.lifetime = .keepAlways
+			add(attachment)
+			_ = try await webView.callAsyncJavaScript("window.nnwTranslation.restore('url-preview');", arguments: [:], in: nil, contentWorld: ArticleTranslationController.contentWorld)
+			let restored = try await evaluate("return document.querySelector('.articleBody').innerHTML;", in: webView) as? String
+			XCTAssertEqual(restored, original)
+		}
+	}
+
 	func testArticleSettingInLightAndDarkAppearance() async throws {
 		let original = AppDefaults.shared.automaticallyExpandArticleDetails
 		defer { AppDefaults.shared.automaticallyExpandArticleDetails = original }
@@ -190,7 +230,7 @@ import Articles
 		return controller
 	}
 
-	private func makeWebView(pageJavaScript: Bool = false) async throws -> WKWebView {
+	private func makeWebView(pageJavaScript: Bool = false, html: String? = nil, baseURL: URL? = nil) async throws -> WKWebView {
 		let configuration = WKWebViewConfiguration()
 		configuration.websiteDataStore = .nonPersistent()
 		configuration.defaultWebpagePreferences.allowsContentJavaScript = pageJavaScript
@@ -201,7 +241,7 @@ import Articles
 		webView.navigationDelegate = loader
 		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
 			loader.continuation = continuation
-			webView.loadHTMLString(Self.html, baseURL: nil)
+			webView.loadHTMLString(html ?? Self.html, baseURL: baseURL)
 		}
 		webView.navigationDelegate = nil
 		return webView

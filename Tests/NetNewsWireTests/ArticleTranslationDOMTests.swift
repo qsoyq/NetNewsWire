@@ -292,6 +292,65 @@ import WebKit
 		XCTAssertEqual(segments.last?.text, longText)
 	}
 
+	func testV2EXURLLabelsArePreservedInBothModesAndNotSentForTranslation() async throws {
+		for replacement in [false, true] {
+			let webView = try await makeWebView(html: "<div class='articleBody'>" + Self.v2exURLArticleContent + "</div>")
+			let original = try await evaluate("return document.querySelector('.articleBody').innerHTML;", in: webView) as? String
+			try await configure(webView, document: "v2ex", replacement: replacement)
+			let segments = try await collect(webView)
+			XCTAssertEqual(segments.count, 4)
+			XCTAssertFalse(segments.contains { $0.text.hasPrefix("https://") })
+			XCTAssertEqual(segments.last?.text, "查看原贴")
+			XCTAssertTrue(segments.first?.context?.contains("https://www.v2ex.com/t/1003989") == true)
+			_ = try await evaluate("window.nnwTranslation.apply('v2ex', translations);", arguments: ["translations": segments.map { ["id": $0.id, "text": "译:" + $0.text] }], in: webView)
+			let labels = try await evaluate("return Array.from(document.querySelectorAll('a'), a => a.textContent);", in: webView) as? [String]
+			XCTAssertEqual(labels, ["https://www.v2ex.com/t/1003989", "https://easyalarm.pages.dev", replacement ? "译:查看原贴" : "查看原贴"])
+			let hrefs = try await evaluate("return Array.from(document.querySelectorAll('a'), a => a.getAttribute('href'));", in: webView) as? [String]
+			XCTAssertEqual(hrefs, ["https://www.v2ex.com/t/1003989", "https://easyalarm.pages.dev/", "https://www.v2ex.com/t/1246886"])
+			if !replacement {
+				let translated = try await evaluate("return document.querySelector('.nnw-translation-text').textContent;", in: webView) as? String
+				XCTAssertTrue(translated?.contains("（ https://www.v2ex.com/t/1003989 ") == true)
+				XCTAssertTrue(translated?.contains("（ https://easyalarm.pages.dev ") == true)
+			}
+			let repeated = try await collect(webView)
+			XCTAssertEqual(repeated, segments)
+			_ = try await evaluate("window.nnwTranslation.restore('v2ex');", in: webView)
+			let restored = try await evaluate("return document.querySelector('.articleBody').innerHTML;", in: webView) as? String
+			XCTAssertEqual(restored, original)
+		}
+	}
+
+	func testCollectorPreservesBareAndSplitURLsWhileTranslatingDescriptiveLinks() async throws {
+		let html = "<div class='articleBody'><p>https://example.com/bare</p><p><a href='https://example.com/split'><span>https://</span><b>example.com</b><span>/split</span></a></p><p><a href='https://example.com'>Example website</a> and visit https://example.com today</p></div>"
+		for replacement in [false, true] {
+			let webView = try await makeWebView(html: html)
+			try await configure(webView, document: "url-labels", replacement: replacement)
+			let segments = try await collect(webView)
+			XCTAssertEqual(segments.map(\.text), ["Example website", "and visit https://example.com today"])
+			_ = try await evaluate("window.nnwTranslation.apply('url-labels', translations);", arguments: ["translations": segments.map { ["id": $0.id, "text": "译:" + $0.text] }], in: webView)
+			let bareURL = try await evaluate("return document.querySelector('p').textContent;", in: webView) as? String
+			XCTAssertEqual(bareURL, "https://example.com/bare")
+			let splitURL = try await evaluate("return document.querySelector('a').innerHTML;", in: webView) as? String
+			XCTAssertEqual(splitURL, "<span>https://</span><b>example.com</b><span>/split</span>")
+		}
+	}
+
+	func testReplacementDescriptiveLinkRetainsItsSnapshotWhenOutputLooksLikeURL() async throws {
+		let webView = try await makeWebView(html: "<div class='articleBody'><a href='https://example.com'>Example website</a></div>")
+		try await configure(webView, document: "link-retry", replacement: true)
+		let original = try await collect(webView)
+		let id = try XCTUnwrap(original.first?.id)
+		_ = try await evaluate("window.nnwTranslation.apply('link-retry', translations);", arguments: ["translations": [["id": id, "text": "https://example.com"]]], in: webView)
+		let repeated = try await collect(webView)
+		XCTAssertEqual(repeated, original)
+		_ = try await evaluate("window.nnwTranslation.apply('link-retry', translations);", arguments: ["translations": [["id": id, "text": "Example translated"]]], in: webView)
+		let retried = try await evaluate("return document.querySelector('a').textContent;", in: webView) as? String
+		XCTAssertEqual(retried, "Example translated")
+		_ = try await evaluate("window.nnwTranslation.restore('link-retry');", in: webView)
+		let restored = try await evaluate("return document.querySelector('a').textContent;", in: webView) as? String
+		XCTAssertEqual(restored, "Example website")
+	}
+
 	private func collect(_ webView: WKWebView) async throws -> [Segment] {
 		let result = try await evaluate("return window.nnwTranslation.collect();", in: webView)
 		return try JSONDecoder().decode([Segment].self, from: Data(try XCTUnwrap(result as? String).utf8))
@@ -360,6 +419,10 @@ import WebKit
 			continuation = nil
 		}
 	}
+
+	static let v2exURLArticleContent = """
+	我在三年前发了一个提问（ <a href="https://www.v2ex.com/t/1003989">https://www.v2ex.com/t/1003989</a> ），问未来国内安卓系统是否会允许 app 长期在后台运行，那时候大部分机型都不支持，app 在运行一段时间后，特别是在锁屏一段时间后，就被系统杀掉，停止运行了。最近一段时间观察下来，好像真的不杀后台程序了，我的红米 9 都不杀了,这样我几年前创建的 app （ <a href="https://easyalarm.pages.dev/">https://easyalarm.pages.dev</a> ），就有了很好的用户体验。有感兴趣的朋友可以去试试。<p><a href="https://www.v2ex.com/t/1246886">查看原贴</a></p>
+	"""
 
 	private static let foldedArticleHTML = """
 	<div class="articleBody"><details><summary>查看正文</summary><p>10月6日，有网友发视频称，2026出现一个新词“怨气产品”。视频中指出，当一线基层员工的待遇被压榨到极限时，产品的品质和服务概率会大幅下降，消费者购买到的可能只是一盒包装精美的“怨气盲盒”。</p>

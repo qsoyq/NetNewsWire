@@ -8,8 +8,9 @@ final class ArticleTranslationServiceTests: XCTestCase {
 		defer { fixture.cleanUp() }
 		let configuration = try fixture.configuration()
 		let segments = [ArticleTranslationSegment(id: "0", text: "查看正文", context: "查看正文")]
-		func legacyKey(text: String, context: String) -> String {
-			let identity = [configuration.endpoint.absoluteString, configuration.apiKey, configuration.model, configuration.language, text, context].joined(separator: "\u{0}")
+		func legacyKey(text: String, context: String, version: String? = nil) -> String {
+			let fields = [configuration.endpoint.absoluteString, configuration.apiKey, configuration.model, configuration.language, text, context]
+			let identity = ((version.map { [$0] } ?? []) + fields).joined(separator: "\u{0}")
 			return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
 		}
 		let encoder = JSONEncoder()
@@ -17,7 +18,9 @@ final class ArticleTranslationServiceTests: XCTestCase {
 		let fingerprint = String(decoding: try encoder.encode(segments), as: UTF8.self)
 		let oldArticle = String(decoding: try encoder.encode(["0": "Old incorrect article translation"]), as: UTF8.self)
 		let cache = [legacyKey(text: "查看正文", context: "查看正文"): "Old incorrect fragment translation",
-			legacyKey(text: "article-v2:article", context: fingerprint): oldArticle]
+			legacyKey(text: "article-v2:article", context: fingerprint): oldArticle,
+			legacyKey(text: "查看正文", context: "查看正文", version: "text-nodes-v1"): "Old context-contaminated fragment",
+			legacyKey(text: "article-v3:article", context: fingerprint, version: "text-nodes-v1"): oldArticle]
 		fixture.defaults.set(try encoder.encode(cache), forKey: "ArticleTranslationFragmentCache")
 		let service = fixture.service()
 		let cached = try await service.cachedTranslations(for: segments, articleID: "article", configuration: configuration)
