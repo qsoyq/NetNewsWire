@@ -71,7 +71,7 @@ struct ArticleTranslationConfiguration: Equatable, Sendable {
 	}
 
 	func cacheKey(for text: String, context: String? = nil) -> String {
-		let identity = [endpoint.absoluteString, apiKey, model, language, text, context ?? ""].joined(separator: "\u{0}")
+		let identity = ["text-nodes-v1", endpoint.absoluteString, apiKey, model, language, text, context ?? ""].joined(separator: "\u{0}")
 		return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
 	}
 }
@@ -321,7 +321,7 @@ actor ArticleTranslationService {
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .sortedKeys
 		let fingerprint = String(decoding: try encoder.encode(originals), as: UTF8.self)
-		return configuration.cacheKey(for: "article-v2:\(articleID)", context: fingerprint)
+		return configuration.cacheKey(for: "article-v3:\(articleID)", context: fingerprint)
 	}
 
 	private func translation(for segment: ArticleTranslationSegment, configuration: ArticleTranslationConfiguration,

@@ -139,6 +139,23 @@ import Articles
 		attachment.name = "FreshRSS Collapsed Article Automatically Expanded"
 		attachment.lifetime = .keepAlways
 		add(attachment)
+		for mode in ArticleTranslationDisplayMode.allCases {
+			var previewPreferences = preferences
+			previewPreferences.manuallyTranslate = true
+			previewPreferences.displayMode = mode
+			try await ArticleTranslationController.configureDocument(webView, documentID: "native-preview", preferences: previewPreferences)
+			let segments = try await ArticleTranslationController.collectSegments(webView)
+			XCTAssertEqual(segments.first { $0.text == "查看正文" }?.context, "查看正文")
+			_ = try await webView.callAsyncJavaScript("window.nnwTranslation.apply('native-preview', translations); document.querySelector('summary').scrollIntoView();", arguments: ["translations": segments.map { ["id": $0.id, "text": "译:" + $0.text] }], in: nil, contentWorld: ArticleTranslationController.contentWorld)
+			let summary = try await evaluate("return document.querySelector('summary').textContent;", in: webView) as? String
+			XCTAssertEqual(summary, mode == .replaceOriginal ? "译:查看正文" : "查看正文译:查看正文")
+			let translatedImage = try await snapshot(webView)
+			let translatedAttachment = XCTAttachment(image: translatedImage)
+			translatedAttachment.name = "Native Folded Article Translation \(mode.rawValue)"
+			translatedAttachment.lifetime = .keepAlways
+			add(translatedAttachment)
+			_ = try await webView.callAsyncJavaScript("window.nnwTranslation.restore('native-preview');", arguments: [:], in: nil, contentWorld: ArticleTranslationController.contentWorld)
+		}
 	}
 
 	func testArticleSettingInLightAndDarkAppearance() async throws {

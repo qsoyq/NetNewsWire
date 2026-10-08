@@ -1,10 +1,12 @@
 (() => {
     "use strict";
-    const ignored = "script,style,noscript,pre,textarea,input,button,select,svg,math,video,audio,.articleTitle,.article-title,[hidden],[aria-hidden='true'],[translate='no'],.notranslate,[data-nnw-translation]";
+    const ignored = "script,style,noscript,pre,code,textarea,input,button,select,svg,math,video,audio,.articleTitle,.article-title,[hidden],[aria-hidden='true'],[translate='no'],.notranslate,[data-nnw-translation]";
+    const boundaries = new Set("summary,p,div,li,blockquote,td,th,h1,h2,h3,h4,h5,h6,dt,dd,figcaption,details,section,article,header,footer,ul,ol,dl,table,thead,tbody,tfoot,tr,figure,address,hr,fieldset".toUpperCase().split(","));
     let documentID = "", options = {}, units = new Map(), identities = new WeakMap(), nextID = 0;
     let state = "idle";
     const rendered = new Map();
     const replacements = new Map();
+    const translated = new Map();
 
     function originalText(node) {
         const replacement = replacements.get(node);
@@ -17,81 +19,120 @@
         return style.display === "none" || style.visibility === "hidden";
     }
 
-    function textOf(nodes) {
-        function text(node) {
-            if (node.nodeType === Node.TEXT_NODE) return originalText(node);
-            if (node.nodeType !== Node.ELEMENT_NODE || excluded(node)) return "";
-            if (node.tagName === "BR") return "\n";
-            if (node.tagName === "CODE") return "`" + node.textContent + "`";
-            return Array.from(node.childNodes).map(text).join("");
-        }
-        return nodes.map(text).join("").replace(/[\t ]+/g, " ").trim();
+    function isBoundary(element) {
+        if (boundaries.has(element.tagName)) return true;
+        const display = getComputedStyle(element).display;
+        return display !== "contents" && !display.startsWith("inline");
     }
 
     function collect() {
         units = new Map();
+        const boundaryCache = new WeakMap();
+        function boundary(element) {
+            if (boundaryCache.has(element)) return boundaryCache.get(element);
+            // An inline wrapper containing blocks gets its own runs so output can stay beside its source.
+            const result = isBoundary(element) || Array.from(element.children).some(child => !excluded(child) && boundary(child));
+            boundaryCache.set(element, result);
+            return result;
+        }
         const roots = Array.from(document.querySelectorAll(".articleBody,.article-body"));
         const uniqueRoots = roots.filter(root => !roots.some(other => other !== root && other.contains(root)));
-        if (options.displayMode === "replaceOriginal") {
-            function visit(node) {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const text = originalText(node).trim();
-                    if (!text || excluded(node.parentElement)) return;
-                    let id = identities.get(node);
-                    if (id === undefined) {
-                        id = String(nextID++);
-                        identities.set(node, id);
-                    }
-                    const paragraph = node.parentElement.closest("p,li,div,blockquote,td,th,h1,h2,h3,h4,h5,h6,dt,dd,figcaption");
-                    const context = paragraph ? Array.from(textOf([paragraph])).slice(0, 600).join("") : undefined;
-                    units.set(id, { id, text, context, anchor: node, nodes: [node] });
-                } else if (node.nodeType === Node.ELEMENT_NODE && !excluded(node) && node.tagName !== "CODE") {
-                    Array.from(node.childNodes).forEach(visit);
+        uniqueRoots.forEach((root, rootIndex) => {
+            function scan(container, containerPath) {
+                if (excluded(container)) return;
+                let parts = [], anchor;
+                function flush() {
+                    const context = Array.from(parts.map(part => part.original).join("").replace(/[\t ]+/g, " ").trim()).slice(0, 600).join("");
+                    const group = { root, container, anchor, parts, units: [] };
+                    parts.forEach(part => {
+                        if (!part.text) return;
+                        let identity = identities.get(part.node);
+                        if (!identity || identity.original !== part.original || identity.context !== context || identity.parent !== part.parent || identity.root !== root) {
+                            identity = { id: String(nextID++), original: part.original, context, parent: part.parent, root };
+                            identities.set(part.node, identity);
+                        }
+                        const unit = { ...part, id: identity.id, context, group };
+                        group.units.push(unit);
+                        units.set(unit.id, unit);
+                    });
+                    group.id = group.units[0]?.id;
+                    parts = [];
+                    anchor = undefined;
                 }
+                function visit(node, path, insertionAnchor) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        const original = originalText(node);
+                        parts.push({ node, parent: node.parentNode, path: { root: rootIndex, children: path }, original,
+                            text: original.trim(), leading: original.match(/^\s*/)[0], trailing: original.match(/\s*$/)[0] });
+                        anchor = insertionAnchor;
+                    } else if (node.nodeType === Node.ELEMENT_NODE) {
+                        // Our own inserted output must not change subsequent snapshots or groups.
+                        if (node.hasAttribute("data-nnw-translation")) return;
+                        if (excluded(node)) {
+                            if (node === insertionAnchor) flush();
+                            return;
+                        }
+                        if (node.tagName === "BR") {
+                            parts.push({ node, parent: node.parentNode, original: "\n" });
+                            anchor = insertionAnchor;
+                        } else if (boundary(node)) {
+                            flush();
+                            scan(node, path);
+                        } else {
+                            Array.from(node.childNodes).forEach((child, index) => visit(child, [...path, index], insertionAnchor));
+                        }
+                    }
+                }
+                Array.from(container.childNodes).forEach((child, index) => visit(child, [...containerPath, index], child));
+                flush();
             }
-            uniqueRoots.forEach(visit);
-            return JSON.stringify(Array.from(units.values(), unit => ({ id: unit.id, text: unit.text, context: unit.context })));
-        }
-        function scan(element) {
-            if (excluded(element)) return;
-            let group = [];
-            function flush() {
-                const text = textOf(group);
-                if (text && group.length) {
-                    const anchor = group[group.length - 1];
-                    let id = identities.get(anchor);
-                    if (id === undefined) {
-                        id = String(nextID++);
-                        identities.set(anchor, id);
-                    }
-                    units.set(id, { id, text, anchor, nodes: group.slice() });
-                }
-                group = [];
+            scan(root, []);
+        });
+        translated.forEach((_, id) => { if (!units.has(id)) translated.delete(id); });
+        rendered.forEach((element, id) => {
+            if (!units.has(id)) {
+                element.remove();
+                rendered.delete(id);
             }
-            Array.from(element.childNodes).forEach(node => {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    group.push(node);
-                } else if (node.nodeType === Node.ELEMENT_NODE) {
-                    if (excluded(node)) { flush(); return; }
-                    const display = getComputedStyle(node).display;
-                    if (node.tagName !== "BR" && !display.startsWith("inline") && display !== "contents") {
-                        flush();
-                        scan(node);
-                    } else {
-                        group.push(node);
-                    }
-                }
-            });
-            flush();
+        });
+        new Set(Array.from(units.values(), unit => unit.group)).forEach(renderGroup);
+        return JSON.stringify(Array.from(units.values(), unit => ({ id: unit.id, text: unit.text, context: unit.context })));
+    }
+
+    function validPart(part, group) {
+        return group.root.isConnected && group.root.contains(part.node) && group.container.contains(part.node) &&
+            part.node.parentNode === part.parent && (part.node.nodeType === Node.TEXT_NODE ? originalText(part.node) === part.original : part.node.tagName === "BR");
+    }
+
+    function renderGroup(group) {
+        // A group is displayed only when all its text nodes have a result, even when batches finish out of order.
+        if (!group.anchor?.isConnected || group.anchor.parentNode !== group.container || !group.parts.every(part => validPart(part, group)) ||
+            !group.units.every(unit => translated.get(unit.id)?.original === unit.original)) {
+            rendered.get(group.id)?.remove();
+            rendered.delete(group.id);
+            return;
         }
-        uniqueRoots.forEach(scan);
-        return JSON.stringify(Array.from(units.values(), unit => ({ id: unit.id, text: unit.text })));
+        let element = rendered.get(group.id);
+        if (!element?.isConnected) {
+            element = document.createElement("span");
+            element.dataset.nnwTranslation = "text";
+            element.className = "nnw-translation-text";
+            group.container.insertBefore(element, group.anchor.nextSibling);
+            rendered.set(group.id, element);
+        }
+        const byNode = new Map(group.units.map(unit => [unit.node, unit]));
+        element.lang = options.languageTag || "";
+        element.textContent = group.parts.map(part => {
+            const unit = byNode.get(part.node);
+            return unit ? unit.leading + translated.get(unit.id).text + unit.trailing : part.original;
+        }).join("").trim();
     }
 
     function restore(expectedID) {
         if (expectedID !== documentID) return;
         rendered.forEach(element => element.remove());
         rendered.clear();
+        translated.clear();
         replacements.forEach((replacement, node) => {
             if (node.data === replacement.translated) node.data = replacement.original;
         });
@@ -101,31 +142,19 @@
 
     function apply(expectedID, translations) {
         if (expectedID !== documentID) return;
+        const changedGroups = new Set();
         translations.forEach(item => {
             const unit = units.get(item.id);
-            if (!unit || !unit.anchor.isConnected) return;
-            const currentText = options.displayMode === "replaceOriginal" ? originalText(unit.anchor).trim() : textOf(unit.nodes);
-            if (currentText !== unit.text) return;
+            if (!unit || typeof item.text !== "string" || !item.text.trim() || !validPart(unit, unit.group)) return;
             if (options.displayMode === "replaceOriginal") {
-                const node = unit.anchor;
-                const original = originalText(node);
-                const leading = original.match(/^\s*/)[0];
-                const trailing = original.match(/\s*$/)[0];
-                node.data = leading + item.text.trim() + trailing;
-                replacements.set(node, { original, translated: node.data });
+                unit.node.data = unit.leading + item.text.trim() + unit.trailing;
+                replacements.set(unit.node, { original: unit.original, translated: unit.node.data });
                 return;
             }
-            let element = rendered.get(item.id);
-            if (!element || !element.isConnected) {
-                element = document.createElement("div");
-                element.dataset.nnwTranslation = "text";
-                element.className = "nnw-translation-text";
-                unit.anchor.parentNode.insertBefore(element, unit.anchor.nextSibling);
-                rendered.set(item.id, element);
-            }
-            element.lang = options.languageTag || "";
-            element.textContent = item.text;
+            translated.set(unit.id, { original: unit.original, text: item.text.trim() });
+            changedGroups.add(unit.group);
         });
+        changedGroups.forEach(renderGroup);
     }
 
     function setState(expectedID, value, detail) {
@@ -145,7 +174,7 @@
             const style = document.createElement("style");
             style.id = "nnw-translation-style";
             style.textContent = `
-                .nnw-translation-text { margin: .5em 0 1em; font-weight: normal; white-space: pre-wrap; overflow-wrap: anywhere; opacity: .85; }
+                .nnw-translation-text { display: block; margin: .5em 0 1em; font-weight: normal; white-space: pre-wrap; overflow-wrap: anywhere; opacity: .85; }
             `;
             document.head.appendChild(style);
         }

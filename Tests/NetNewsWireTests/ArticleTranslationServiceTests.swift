@@ -1,7 +1,33 @@
 import XCTest
+import CryptoKit
 @testable import NetNewsWire
 
 final class ArticleTranslationServiceTests: XCTestCase {
+	func testLegacyFragmentAndArticleCacheAreNotReused() async throws {
+		let fixture = TranslationFixture()
+		defer { fixture.cleanUp() }
+		let configuration = try fixture.configuration()
+		let segments = [ArticleTranslationSegment(id: "0", text: "查看正文", context: "查看正文")]
+		func legacyKey(text: String, context: String) -> String {
+			let identity = [configuration.endpoint.absoluteString, configuration.apiKey, configuration.model, configuration.language, text, context].joined(separator: "\u{0}")
+			return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+		}
+		let encoder = JSONEncoder()
+		encoder.outputFormatting = .sortedKeys
+		let fingerprint = String(decoding: try encoder.encode(segments), as: UTF8.self)
+		let oldArticle = String(decoding: try encoder.encode(["0": "Old incorrect article translation"]), as: UTF8.self)
+		let cache = [legacyKey(text: "查看正文", context: "查看正文"): "Old incorrect fragment translation",
+			legacyKey(text: "article-v2:article", context: fingerprint): oldArticle]
+		fixture.defaults.set(try encoder.encode(cache), forKey: "ArticleTranslationFragmentCache")
+		let service = fixture.service()
+		let cached = try await service.cachedTranslations(for: segments, articleID: "article", configuration: configuration)
+		XCTAssertNil(cached)
+		try await service.translate(segments, articleID: "article", configuration: configuration) { _, _, _ in }
+		XCTAssertEqual(fixture.requestCount, 1)
+		let newCache = try await fixture.service().cachedTranslations(for: segments, articleID: "article", configuration: configuration)
+		XCTAssertEqual(newCache, [ArticleTranslationSegment(id: "0", text: "译:查看正文")])
+	}
+
 	func testCompletedPrefetchIsReusedAfterRecreatingService() async throws {
 		let fixture = TranslationFixture()
 		defer { fixture.cleanUp() }
