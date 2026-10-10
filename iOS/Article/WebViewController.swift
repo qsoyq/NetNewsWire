@@ -967,6 +967,7 @@ private struct ImageClickMessage: Codable {
 	let imageTitle: String?
 	let imageURL: String
 	let resourceURL: String?
+	let images: [ArticleGalleryImage]?
 }
 
 // MARK: Private
@@ -1553,6 +1554,7 @@ private extension WebViewController {
 		latestMediaContextPress = 0
 		didConfigureContextMenuForCurrentPress = false
 		nativeAutoplayPending = false
+		html = ArticleMediaThumbnails.prepareHTML(html)
 		webView.loadHTMLString(html, baseURL: URL(string: rendering.baseURL))
 	}
 
@@ -1642,7 +1644,7 @@ private extension WebViewController {
 
 		transition.originImage = image
 
-		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, resourceURL: clickMessage.resourceURL, transition: transition, saveAllImagesHandler: { [weak self] in
+		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, resourceURL: clickMessage.resourceURL, transition: transition, images: clickMessage.images ?? [], saveAllImagesHandler: { [weak self] in
 			self?.confirmSaveAllMedia(for: .image)
 		})
 	}

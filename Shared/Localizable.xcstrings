@@ -1,6 +1,13 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Unable to Load Image" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unable to Load Image" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "图片加载失败，请重试" } }
+      }
+    },
     "Hide Images and Videos in Article Body" : {
       "extractionState" : "manual",
       "localizations" : {

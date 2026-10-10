@@ -1832,11 +1832,12 @@ struct SidebarItemNode: Hashable, Sendable {
 		mainFeedCollectionViewController.present(hostingController, animated: true)
 	}
 
-	func showFullScreenImage(image: UIImage, imageTitle: String?, resourceURL: String?, transition: ImageTransition, saveAllImagesHandler: (() -> Void)? = nil) {
+	func showFullScreenImage(image: UIImage, imageTitle: String?, resourceURL: String?, transition: ImageTransition, images: [ArticleGalleryImage] = [], saveAllImagesHandler: (() -> Void)? = nil) {
 		let imageVC = UIStoryboard.main.instantiateController(ofType: ImageViewController.self)
 		imageVC.image = image
 		imageVC.imageTitle = imageTitle
 		imageVC.resourceURL = resourceURL
+		imageVC.gallery = images
 		imageVC.transition = transition
 		imageVC.saveAllImagesHandler = saveAllImagesHandler
 		let navController = UINavigationController(rootViewController: imageVC)

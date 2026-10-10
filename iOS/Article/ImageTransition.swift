@@ -13,6 +13,7 @@ final class ImageTransition: NSObject, UIViewControllerAnimatedTransitioning {
 	private weak var webViewController: WebViewController?
 	private let duration = 0.4
 	var presenting = true
+	var returnsWithoutZoom = false
 	var originFrame: CGRect!
 	var maskFrame: CGRect!
 	var originImage: UIImage!
@@ -69,6 +70,18 @@ final class ImageTransition: NSObject, UIViewControllerAnimatedTransitioning {
 		// so it must be restored on every path out of here.
 		guard let toView = transitionContext.view(forKey: .to) else {
 			transitionContext.completeTransition(false)
+			return
+		}
+
+		if returnsWithoutZoom, let fromView = transitionContext.view(forKey: .from) {
+			transitionContext.containerView.insertSubview(toView, belowSubview: fromView)
+			UIView.animate(withDuration: 0.2, animations: {
+				fromView.alpha = 0
+			}, completion: { _ in
+				fromView.removeFromSuperview()
+				fromView.alpha = 1
+				transitionContext.completeTransition(true)
+			})
 			return
 		}
 
@@ -137,6 +150,7 @@ extension ImageTransition: UIViewControllerTransitioningDelegate {
 
 	func animationController(forPresented presented: UIViewController, presenting: UIViewController, source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
 		self.presenting = true
+		returnsWithoutZoom = false
 		return self
 	}
 

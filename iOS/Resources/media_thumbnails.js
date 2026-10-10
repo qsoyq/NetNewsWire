@@ -211,7 +211,10 @@
         window.webkit.messageHandlers.imageWasClicked.postMessage(JSON.stringify({
             x: rect.x, y: rect.y, width: rect.width, height: rect.height,
             imageTitle: entry.element.title || entry.element.alt || "",
-            imageURL: entry.url, resourceURL: entry.url
+            imageURL: entry.url, resourceURL: entry.url,
+            images: Array.from(entries.values()).filter(item => !item.video).map(item => ({
+                url: item.url, title: item.element.title || item.element.alt || ""
+            }))
         }));
     }
 
@@ -321,4 +324,13 @@
     }
 
     window.nnwMediaThumbnails = { configure, setActive };
+    const initialStyle = document.getElementById("nnw-media-initial-visibility");
+    if (initialStyle) {
+        try {
+            const initial = JSON.parse(initialStyle.dataset.configuration);
+            // Replace the first-paint rule synchronously; no visible frame between the two states.
+            initialStyle.remove();
+            configure(initial.enabled, initial.nativeVideo, initial.labels, initial.hideBodyMedia);
+        } catch (_) { /* Keep the initial rule if configuration is unavailable. */ }
+    }
 })();

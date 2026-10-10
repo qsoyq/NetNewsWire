@@ -152,9 +152,14 @@ import RSParser
 			context.fill(CGRect(x: 0, y: 0, width: 400, height: 300))
 		}
 		let imageURL = "data:image/png;base64," + (try XCTUnwrap(image.pngData())).base64EncodedString()
+		let secondImage = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 400)).image { context in
+			UIColor.systemOrange.setFill()
+			context.fill(CGRect(x: 0, y: 0, width: 300, height: 400))
+		}
+		let secondURL = "data:image/png;base64," + (try XCTUnwrap(secondImage.pngData())).base64EncodedString()
 		let item = ParsedItem(syncServiceID: nil, uniqueID: token, feedURL: feed.url,
 			url: nil, externalURL: nil, title: "Media thumbnail preview", language: nil,
-			contentHTML: "<p>A photo from this article.</p><img src='\(imageURL)' alt='Preview image'><p>Continue reading below the image.</p>",
+			contentHTML: "<p>A photo from this article.</p><img src='\(imageURL)' alt='Preview image'><p>Continue reading below the image.</p><img src='\(secondURL)' alt='Second image'>",
 			contentText: nil, markdown: nil, summary: nil, imageURL: nil, bannerImageURL: nil,
 			datePublished: Date(), dateModified: nil, authors: nil, tags: nil, attachments: nil)
 		_ = await account.updateAsync(feedID: feed.feedID, parsedItems: [item], deleteOlder: false)
@@ -186,8 +191,34 @@ import RSParser
 		_ = try await evaluate("document.querySelector('[data-nnw-media-thumbnails] button').click();", in: webView)
 		try await waitUntil { root.presentedViewController != nil }
 		let viewer = try XCTUnwrap(root.presentedViewController as? UINavigationController)
-		XCTAssertTrue(viewer.viewControllers.first is ImageViewController)
+		let gallery = try XCTUnwrap(viewer.viewControllers.first as? ImageViewController)
 		try await Task.sleep(for: .milliseconds(500))
+		XCTAssertEqual(gallery.gallery.count, 2)
+		XCTAssertEqual(gallery.galleryIndex, 0)
+		XCTAssertEqual(gallery.view.gestureRecognizers?.compactMap { $0 as? UISwipeGestureRecognizer }.count, 2)
+		gallery.showAdjacentImage(offset: 1)
+		try await waitUntil { gallery.galleryIndex == 1 }
+		XCTAssertEqual(gallery.resourceURL, secondURL)
+		XCTAssertEqual(gallery.titleLabel.text, "Second image")
+		XCTAssertEqual(gallery.navigationItem.title, "2 / 2")
+		gallery.showAdjacentImage(offset: 1)
+		XCTAssertEqual(gallery.galleryIndex, 1)
+		gallery.imageScrollView.zoomScale = gallery.imageScrollView.maximumZoomScale
+		XCTAssertFalse(gallery.gestureRecognizerShouldBegin(UISwipeGestureRecognizer()))
+		gallery.imageScrollView.zoomScale = gallery.imageScrollView.minimumZoomScale
+		XCTAssertTrue(gallery.gestureRecognizerShouldBegin(UISwipeGestureRecognizer()))
+		gallery.showAdjacentImage(offset: -1)
+		try await waitUntil { gallery.galleryIndex == 0 }
+		XCTAssertEqual(gallery.resourceURL, imageURL)
+		gallery.showAdjacentImage(offset: 1)
+		try await waitUntil { gallery.galleryIndex == 1 }
+		try await Task.sleep(for: .milliseconds(250))
+		let galleryShot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+			window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+		})
+		galleryShot.name = "Article Gallery Second Image"
+		galleryShot.lifetime = .keepAlways
+		add(galleryShot)
 		await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
 			viewer.dismiss(animated: true) { continuation.resume() }
 		}
@@ -198,6 +229,42 @@ import RSParser
 		AppDefaults.shared.hideArticleBodyMedia = true
 		try await waitForScript("return document.querySelector('.articleBody img').getClientRects().length === 0;", in: webView)
 		try await waitForScript("return !!document.querySelector('[data-nnw-media-thumbnails] button');", in: webView)
+	}
+
+	func testInitialHTMLHidesMediaBeforeDocumentEndAndBootstrapsWithoutNativeCallback() async throws {
+		let originalHide = AppDefaults.shared.hideArticleBodyMedia
+		let originalThumbnails = AppDefaults.shared.showArticleMediaThumbnails
+		defer {
+			AppDefaults.shared.hideArticleBodyMedia = originalHide
+			AppDefaults.shared.showArticleMediaThumbnails = originalThumbnails
+		}
+		AppDefaults.shared.showArticleMediaThumbnails = true
+		AppDefaults.shared.hideArticleBodyMedia = false
+		XCTAssertEqual(ArticleMediaThumbnails.prepareHTML(Self.html), Self.html)
+		AppDefaults.shared.hideArticleBodyMedia = true
+		// This inline probe runs while parsing the body, before the atDocumentEnd user script.
+		let probe = """
+		<script>document.body.dataset.initialImageDisplay = getComputedStyle(document.querySelector('.articleBody img')).display;</script>
+		"""
+		let unprepared = Self.html.replacingOccurrences(of: "</body>", with: probe + "</body>")
+		let (baseline, _) = try await makeWebView(pageScripts: true, html: unprepared)
+		let baselineDisplay = try await evaluate("return document.body.dataset.initialImageDisplay;", in: baseline) as? String
+		XCTAssertNotEqual(baselineDisplay, "none", "Without the initial stylesheet, body media is visible before native configuration")
+		let html = ArticleMediaThumbnails.prepareHTML(unprepared)
+		let (webView, _) = try await makeWebView(pageScripts: true, html: html)
+		let result = try await evaluate("""
+		return { initial: document.body.dataset.initialImageDisplay,
+		    current: getComputedStyle(document.querySelector('.articleBody img')).display,
+		    thumbnails: document.querySelectorAll('[data-nnw-media-thumbnails] button').length,
+		    initialStyleRemoved: !document.getElementById('nnw-media-initial-visibility') };
+		""", in: webView) as? [String: Any]
+		XCTAssertEqual(result?["initial"] as? String, "none")
+		XCTAssertEqual(result?["current"] as? String, "none")
+		XCTAssertEqual(result?["thumbnails"] as? Int, 3)
+		XCTAssertEqual(result?["initialStyleRemoved"] as? Bool, true)
+		let (disabledScriptPage, _) = try await makeWebView(pageScripts: false, html: html)
+		let hidden = try await evaluate("return getComputedStyle(document.querySelector('.articleBody img')).display === 'none' && !!document.querySelector('[data-nnw-media-thumbnails]');", in: disabledScriptPage) as? Bool
+		XCTAssertEqual(hidden, true)
 	}
 
 	func testHideSettingDefaultsOffAndPersists() {
