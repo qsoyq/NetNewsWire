@@ -121,7 +121,14 @@ final class ArticlePrefetcher {
         requests += 1
     }
 }
+final class ThumbnailWebView { var thumbnailsActive = false }
+enum ArticleMediaThumbnails {
+    static func configure(_ webView: ThumbnailWebView, active: Bool) {
+        webView.thumbnailsActive = active
+    }
+}
 final class WebController {
+    var webView: ThumbnailWebView? = ThumbnailWebView()
     var viewIfLoaded: View? = View()
     var delegate: Any? = ArticleViewController()
     var presentedViewController: Int?
@@ -138,6 +145,7 @@ let page = WebController()
 page.resumeNativeVideoAfterPageTransition()
 precondition(page.videoPresentationEnabled && page.autoplayAttempts == 1)
 precondition(page.videoPreviewController.active && ArticlePrefetcher.shared.requests == 1)
+precondition(page.webView?.thumbnailsActive == true)
 for blocker in 0..<7 {
     let page = WebController()
     switch blocker {
@@ -152,6 +160,7 @@ for blocker in 0..<7 {
     page.resumeNativeVideoAfterPageTransition()
     precondition(!page.videoPresentationEnabled && page.autoplayAttempts == 0)
     precondition(!page.videoPreviewController.active && ArticlePrefetcher.shared.requests == 1)
+    precondition(page.webView?.thumbnailsActive == false)
     UIApplication.shared.applicationState = .active
     VideoPlayerManager.shared.isPiPActive = false
     WebViewPiPManager.shared.isPiPActive = false

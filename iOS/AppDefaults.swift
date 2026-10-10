@@ -74,6 +74,7 @@ final class AppDefaults: Sendable {
 		static let refreshFeeds = "refreshFeeds"
 		static let cacheVideoContent = "cacheVideoContent"
 		static let loadVideoFirstFramePreview = "loadVideoFirstFramePreview"
+		static let showArticleMediaThumbnails = "showArticleMediaThumbnails"
 		static let autoFullscreenVideo = "autoFullscreenVideo"
 		static let useNativeVideoPlayer = "useNativeVideoPlayer"
 		static let autoplayVideo = "autoplayVideo"
@@ -196,6 +197,11 @@ final class AppDefaults: Sendable {
 		set {
 			AppDefaults.setBool(for: Key.cacheVideoContent, newValue)
 		}
+	}
+
+	var showArticleMediaThumbnails: Bool {
+		get { AppDefaults.bool(for: Key.showArticleMediaThumbnails) }
+		set { AppDefaults.setBool(for: Key.showArticleMediaThumbnails, newValue) }
 	}
 
 	var loadVideoFirstFramePreview: Bool {
@@ -571,6 +577,7 @@ final class AppDefaults: Sendable {
 										Key.refreshFeeds: true,
 										Key.cacheVideoContent: false,
 										Key.loadVideoFirstFramePreview: false,
+										Key.showArticleMediaThumbnails: false,
 									Key.autoFullscreenVideo: false,
 									Key.useNativeVideoPlayer: false,
 									Key.autoplayVideo: false,

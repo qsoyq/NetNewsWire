@@ -80,6 +80,7 @@ final class WebViewController: UIViewController {
 	private var imageDownloadTask: Task<Void, Never>?
 	private var imagePresentationEnabled = false
 	private var imageRequestGeneration = 0
+	private var imageOpenedFromThumbnail = false
 	private var mediaSourceURLs = Set<String>()
 	private var clickedImageCompletion: (() -> Void)?
 	private var mediaContextTargetState: MediaContextTargetState?
@@ -102,6 +103,7 @@ final class WebViewController: UIViewController {
 	private var videoPresentationEnabled = false
 	private let articleTranslationController = ArticleTranslationController()
 	private let videoPreviewController = VideoPreviewController()
+	private var thumbnailSettings = [AppDefaults.shared.showArticleMediaThumbnails, AppDefaults.shared.useNativeVideoPlayer]
 	var translationState: String { articleTranslationController.state }
 	var translationStateDidChange: ((String) -> Void)? {
 		didSet { articleTranslationController.stateDidChange = translationStateDidChange }
@@ -169,6 +171,9 @@ final class WebViewController: UIViewController {
 		super.viewWillAppear(animated)
 		imagePresentationEnabled = true
 		webView?.evaluateJavaScript("resumeImageViewer();")
+		if let webView {
+			ArticleMediaThumbnails.configure(webView, active: true)
+		}
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -247,6 +252,13 @@ final class WebViewController: UIViewController {
 	}
 
 	private func userDefaultsDidChange() {
+		let settings = [AppDefaults.shared.showArticleMediaThumbnails, AppDefaults.shared.useNativeVideoPlayer]
+		if thumbnailSettings != settings {
+			thumbnailSettings = settings
+			if let webView {
+				ArticleMediaThumbnails.configure(webView, active: imagePresentationEnabled)
+			}
+		}
 		guard isArticleContentJavascriptEnabled != AppDefaults.shared.isArticleContentJavascriptEnabled else {
 			return
 		}
@@ -346,10 +358,17 @@ final class WebViewController: UIViewController {
 	}
 
 	func hideClickedImage() {
+		guard !imageOpenedFromThumbnail else {
+			return
+		}
 		webView?.evaluateJavaScript("hideClickedImage();")
 	}
 
 	func showClickedImage(completion: @escaping () -> Void) {
+		if imageOpenedFromThumbnail {
+			completion()
+			return
+		}
 		clickedImageCompletion = completion
 		webView?.evaluateJavaScript("showClickedImage();")
 	}
@@ -424,6 +443,9 @@ final class WebViewController: UIViewController {
 		imagePresentationEnabled = false
 		invalidateImageDownload()
 		if isViewLoaded {
+			if let webView {
+				ArticleMediaThumbnails.setActive(false, in: webView)
+			}
 			webView?.evaluateJavaScript("suspendImageViewer();")
 		}
 	}
@@ -615,6 +637,7 @@ extension WebViewController: WKNavigationDelegate {
 			return
 		}
 		videoDocumentReady = true
+		ArticleMediaThumbnails.configure(webView, active: imagePresentationEnabled)
 		videoPreviewController.documentDidLoad(webView)
 		videoPreviewController.setActive(viewIfLoaded?.window != nil && ((delegate as? ArticleViewController)?.isCurrentWebViewController(self) ?? true))
 		articleTranslationController.setActive(viewIfLoaded?.window != nil && (delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true)
@@ -756,7 +779,7 @@ extension WebViewController: WKScriptMessageHandler {
 			guard canPresentArticleImage, message.webView === webView else {
 				return
 			}
-			imageWasClicked(body: message.body as? String)
+			imageWasClicked(body: message.body as? String, fromThumbnail: message.world == ArticleMediaThumbnails.contentWorld)
 		case MessageName.showFeedInspector:
 			if let feed = article?.feed {
 				coordinator.showFeedInspector(for: feed)
@@ -874,6 +897,9 @@ extension WebViewController: WKScriptMessageHandler {
 			return
 		}
 		// Programmatic navigation can reuse this controller without viewDidAppear.
+		if let webView {
+			ArticleMediaThumbnails.configure(webView, active: true)
+		}
 		videoPreviewController.setActive(true)
 		ArticlePrefetcher.shared.prefetchNextArticle(after: article, coordinator: coordinator)
 		videoPresentationEnabled = true
@@ -1407,6 +1433,12 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.articleImageLoad)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.mediaSourceURLs)
 
+				// The thumbnail script also works when article JavaScript is disabled.
+				for name in [MessageName.imageWasClicked, MessageName.nativeVideoPlay] {
+					webView.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: ArticleMediaThumbnails.contentWorld)
+					webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), contentWorld: ArticleMediaThumbnails.contentWorld, name: name)
+				}
+
 				// Add handlers
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasClicked)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasShown)
@@ -1562,7 +1594,7 @@ private extension WebViewController {
 		}
 	}
 
-	func imageWasClicked(body: String?) {
+	func imageWasClicked(body: String?, fromThumbnail: Bool = false) {
 		guard canPresentArticleImage, let article, let webView, let body else {
 			return
 		}
@@ -1577,17 +1609,21 @@ private extension WebViewController {
 		invalidateImageDownload()
 		let generation = imageRequestGeneration
 		imageDownloadTask = Task { [weak self] in
-			guard let downloadResponse = try? await Downloader.shared.download(imageURL, userAgentStyle: .browser) else {
-				return
+			let imageData: Data?
+			if imageURL.scheme == "data" {
+				imageData = try? ArticleMediaSaver.dataURLData(clickMessage.imageURL)
+			} else {
+				imageData = try? await Downloader.shared.download(imageURL, userAgentStyle: .browser).data
 			}
 			// A late completion must not present the viewer over a different article
 			// or a returning app.
 			guard !Task.isCancelled, let self, self.canPresentArticleImage,
 				  self.imageRequestGeneration == generation, self.article === article, self.webView === webView,
-				  let data = downloadResponse.data, !data.isEmpty,
+				  let data = imageData, !data.isEmpty,
 				  let image = UIImage(data: data) else {
 				return
 			}
+			self.imageOpenedFromThumbnail = fromThumbnail
 			self.showFullScreenImage(image: image, clickMessage: clickMessage, webView: webView)
 		}
 	}

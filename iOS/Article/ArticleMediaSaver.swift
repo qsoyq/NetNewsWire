@@ -202,6 +202,9 @@ private extension ArticleMediaSaver {
 		}
 	}
 
+}
+
+extension ArticleMediaSaver {
 	nonisolated static func dataURLData(_ source: String) throws -> Data {
 		guard let commaIndex = source.firstIndex(of: ",") else {
 			throw SaveError.invalidSource
@@ -217,7 +220,9 @@ private extension ArticleMediaSaver {
 		}
 		throw SaveError.invalidSource
 	}
+}
 
+private extension ArticleMediaSaver {
 	func validate(_ response: URLResponse) throws {
 		guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
 			throw SaveError.unsuccessfulResponse

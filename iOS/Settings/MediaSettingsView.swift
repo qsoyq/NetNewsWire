@@ -8,6 +8,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 	case pipAutoPlayNextVideo
 	case cacheVideoContent
 	case loadVideoFirstFramePreview
+	case showArticleMediaThumbnails
 	case prefetchNextArticleContent
 
 	var id: String { rawValue }
@@ -20,6 +21,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 		case .pipAutoPlayNextVideo: return NSLocalizedString("Autoplay Next Video in PiP", comment: "Media settings")
 		case .cacheVideoContent: return NSLocalizedString("Cache Video Content", comment: "Media settings")
 		case .loadVideoFirstFramePreview: return NSLocalizedString("Load Video First Frame Preview", comment: "Load video previews")
+		case .showArticleMediaThumbnails: return NSLocalizedString("Show Media Thumbnails Above Article", comment: "Media settings")
 		case .prefetchNextArticleContent: return NSLocalizedString("Prefetch Next Article", comment: "Media settings")
 		}
 	}
@@ -35,6 +37,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 		case .pipAutoPlayNextVideo: return \.pipAutoPlayNextVideo
 		case .cacheVideoContent: return \.cacheVideoContent
 		case .loadVideoFirstFramePreview: return \.loadVideoFirstFramePreview
+		case .showArticleMediaThumbnails: return \.showArticleMediaThumbnails
 		case .prefetchNextArticleContent: return \.prefetchNextArticleContent
 		}
 	}
@@ -87,7 +90,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 				Text(NSLocalizedString("Video Playback", comment: "Media settings section"))
 			}
 			Section {
-				settings([.cacheVideoContent, .loadVideoFirstFramePreview, .prefetchNextArticleContent])
+				settings([.showArticleMediaThumbnails, .cacheVideoContent, .loadVideoFirstFramePreview, .prefetchNextArticleContent])
 			} header: {
 				Text(NSLocalizedString("Loading and Previews", comment: "Media settings section"))
 			} footer: {

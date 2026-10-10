@@ -1,6 +1,34 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Show Media Thumbnails Above Article" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show Media Thumbnails Above Article" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文章顶部显示媒体缩略图" } }
+      }
+    },
+    "Article Media" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Article Media" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文章媒体" } }
+      }
+    },
+    "Enlarge Image" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enlarge Image" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "放大图片" } }
+      }
+    },
+    "Play Video" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Play Video" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "播放视频" } }
+      }
+    },
     "Cancel Media Cache Clear" : {
       "comment" : "Cancel media cache clear",
       "extractionState" : "manual",
