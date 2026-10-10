@@ -125,6 +125,8 @@ import RSParser
 	func testNativeReaderSettingToggleAndImagePresentationRoundTrip() async throws {
 		let original = AppDefaults.shared.showArticleMediaThumbnails
 		let originalJavaScript = AppDefaults.shared.isArticleContentJavascriptEnabled
+		let originalHide = AppDefaults.shared.hideArticleBodyMedia
+		AppDefaults.shared.hideArticleBodyMedia = true
 		AppDefaults.shared.showArticleMediaThumbnails = true
 		AppDefaults.shared.isArticleContentJavascriptEnabled = false
 		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first)
@@ -143,6 +145,7 @@ import RSParser
 			AccountManager.shared.deleteAccount(account)
 			AppDefaults.shared.showArticleMediaThumbnails = original
 			AppDefaults.shared.isArticleContentJavascriptEnabled = originalJavaScript
+			AppDefaults.shared.hideArticleBodyMedia = originalHide
 		}
 		let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 300)).image { context in
 			UIColor.systemTeal.setFill()
@@ -177,7 +180,7 @@ import RSParser
 		let snapshot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
 			window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
 		})
-		snapshot.name = "Media Thumbnails in Native Reader"
+		snapshot.name = "Hidden Body Media in Native Reader"
 		snapshot.lifetime = .keepAlways
 		add(snapshot)
 		_ = try await evaluate("document.querySelector('[data-nnw-media-thumbnails] button').click();", in: webView)
@@ -190,7 +193,97 @@ import RSParser
 		}
 		XCTAssertNil(root.presentedViewController)
 		XCTAssertNotNil(reader.view.window)
+		AppDefaults.shared.hideArticleBodyMedia = false
+		try await waitForScript("return document.querySelector('.articleBody img').getClientRects().length > 0;", in: webView)
+		AppDefaults.shared.hideArticleBodyMedia = true
+		try await waitForScript("return document.querySelector('.articleBody img').getClientRects().length === 0;", in: webView)
 		try await waitForScript("return !!document.querySelector('[data-nnw-media-thumbnails] button');", in: webView)
+	}
+
+	func testHideSettingDefaultsOffAndPersists() {
+		let key = AppDefaults.Key.hideArticleBodyMedia
+		let original = AppDefaults.store.object(forKey: key)
+		defer {
+			if let original { AppDefaults.store.set(original, forKey: key) }
+			else { AppDefaults.store.removeObject(forKey: key) }
+		}
+		AppDefaults.store.removeObject(forKey: key)
+		AppDefaults.registerDefaults()
+		XCTAssertFalse(AppDefaults.shared.hideArticleBodyMedia)
+		MediaSettingsModel().binding(for: .hideArticleBodyMedia).wrappedValue = true
+		XCTAssertTrue(MediaSettingsModel().binding(for: .hideArticleBodyMedia).wrappedValue)
+	}
+
+	func testAllVisibilityCombinationsPreserveThumbnailsLinksCaptionsAndRestoreDOM() async throws {
+		for scripts in [false, true] {
+			let (webView, _) = try await makeWebView(pageScripts: scripts)
+			_ = try await evaluate("""
+			const body = document.querySelector('.articleBody');
+			body.insertAdjacentHTML('beforeend', '<figure id="captioned"><img src="https://example.test/caption.jpg"><figcaption>Keep this caption</figcaption></figure><div id="emptyWrapper" style="height:400px"><p><img src="https://example.test/only.jpg"></p></div>');
+			window.originalBody = body.innerHTML;
+			""", in: webView)
+			for thumbnails in [false, true] {
+				for hide in [false, true] {
+					_ = try await evaluate("window.nnwMediaThumbnails.configure(\(thumbnails), true, {media:'Media',image:'Image',video:'Video',link:'Open link'}, \(hide));", in: webView)
+					let result = try await evaluate("""
+					return {
+					    count: document.querySelectorAll('[data-nnw-media-thumbnails] button').length,
+					    hidden: Array.from(document.querySelectorAll('.articleBody img,.articleBody video')).every(node => getComputedStyle(node).display === 'none'),
+					    caption: document.querySelector('figcaption').getClientRects().length > 0,
+					    empty: document.getElementById('emptyWrapper').getClientRects().length === 0,
+					    linked: document.querySelector('.articleBody a').textContent,
+					    header: document.getElementById('nnwImageIcon').getClientRects().length > 0
+					};
+					""", in: webView) as? [String: Any]
+					XCTAssertEqual(result?["count"] as? Int, thumbnails ? 5 : 0)
+					XCTAssertEqual(result?["hidden"] as? Bool, hide)
+					XCTAssertEqual(result?["caption"] as? Bool, true)
+					XCTAssertEqual(result?["empty"] as? Bool, hide)
+					XCTAssertEqual(result?["linked"] as? String, hide ? "Open link" : "")
+					XCTAssertEqual(result?["header"] as? Bool, true)
+				}
+			}
+			try await configure(webView, enabled: false)
+			let restored = try await evaluate("return document.querySelector('.articleBody').innerHTML === window.originalBody;", in: webView) as? Bool
+			XCTAssertEqual(restored, true)
+		}
+	}
+
+	func testHiddenMediaSavingDynamicUpdatesAndWebVideoFallback() async throws {
+		let (webView, _) = try await makeWebView()
+		let scriptURL = try XCTUnwrap(Bundle.main.url(forResource: "main_ios", withExtension: "js"))
+		let mainScript = try String(contentsOf: scriptURL, encoding: .utf8)
+		_ = try await evaluate(mainScript + "\nwindow.collectMediaForSaving = collectMediaForSaving;", in: webView)
+		_ = try await evaluate("""
+		document.querySelector('.articleBody').insertAdjacentHTML('beforeend', '<img hidden src="https://example.test/already-hidden.jpg">');
+		window.nnwMediaThumbnails.configure(true, false, {media:'Media',image:'Image',video:'Video'}, true);
+		""", in: webView)
+		let prevented = try await evaluate("""
+		const hiddenVideo = document.querySelector('video');
+		let paused = false, handedOff = false;
+		hiddenVideo.pause = () => { paused = true; };
+		hiddenVideo.addEventListener('playing', () => { handedOff = true; });
+		hiddenVideo.dispatchEvent(new Event('playing'));
+		return paused && !handedOff;
+		""", in: webView) as? Bool
+		XCTAssertEqual(prevented, true)
+		let saved = try await evaluate("return JSON.parse(collectMediaForSaving('image')).urls;", in: webView) as? [String]
+		XCTAssertEqual(saved?.count, 3)
+		XCTAssertFalse(saved?.contains("https://example.test/already-hidden.jpg") ?? true)
+		_ = try await evaluate("""
+		document.querySelector('.articleBody').insertAdjacentHTML('beforeend', '<p id="late"><img src="https://example.test/late.jpg"></p>');
+		""", in: webView)
+		try await waitForScript("return getComputedStyle(document.getElementById('late')).display === 'none' && document.querySelectorAll('[data-nnw-media-thumbnails] button').length === 4;", in: webView)
+		_ = try await evaluate("""
+		const video = document.querySelector('video');
+		video.play = () => Promise.reject(new Error('Unavailable test video'));
+		video.webkitEnterFullscreen = () => { throw new Error('Fullscreen unavailable'); };
+		document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].click();
+		""", in: webView)
+		let fallback = try await evaluate("return document.querySelector('video').getClientRects().length > 0 && document.querySelector('video').controls;", in: webView) as? Bool
+		XCTAssertEqual(fallback, true)
+		_ = try await evaluate("document.querySelector('video').dispatchEvent(new Event('webkitendfullscreen'));", in: webView)
+		try await waitForScript("return getComputedStyle(document.querySelector('video')).display === 'none';", in: webView)
 	}
 
 	private func configure(_ webView: WKWebView, enabled: Bool = true) async throws {

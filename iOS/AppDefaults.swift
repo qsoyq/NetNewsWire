@@ -75,6 +75,7 @@ final class AppDefaults: Sendable {
 		static let cacheVideoContent = "cacheVideoContent"
 		static let loadVideoFirstFramePreview = "loadVideoFirstFramePreview"
 		static let showArticleMediaThumbnails = "showArticleMediaThumbnails"
+		static let hideArticleBodyMedia = "hideArticleBodyMedia"
 		static let autoFullscreenVideo = "autoFullscreenVideo"
 		static let useNativeVideoPlayer = "useNativeVideoPlayer"
 		static let autoplayVideo = "autoplayVideo"
@@ -197,6 +198,11 @@ final class AppDefaults: Sendable {
 		set {
 			AppDefaults.setBool(for: Key.cacheVideoContent, newValue)
 		}
+	}
+
+	var hideArticleBodyMedia: Bool {
+		get { AppDefaults.bool(for: Key.hideArticleBodyMedia) }
+		set { AppDefaults.setBool(for: Key.hideArticleBodyMedia, newValue) }
 	}
 
 	var showArticleMediaThumbnails: Bool {
@@ -578,6 +584,7 @@ final class AppDefaults: Sendable {
 										Key.cacheVideoContent: false,
 										Key.loadVideoFirstFramePreview: false,
 										Key.showArticleMediaThumbnails: false,
+										Key.hideArticleBodyMedia: false,
 									Key.autoFullscreenVideo: false,
 									Key.useNativeVideoPlayer: false,
 									Key.autoplayVideo: false,

@@ -300,6 +300,7 @@ function nativeVideoAutoplaySource() {
 }
 
 function setupVideoAutoplay() {
+	if (document.documentElement.hasAttribute("data-nnw-hide-body-media")) return;
 	var videos = document.querySelectorAll("video:not(.nnwAnimatedGIF)");
 	if (videos.length > 0) {
 		videos[0].play();
@@ -361,7 +362,7 @@ function collectMediaForSaving(mediaType) {
 	var skipped = 0;
 
 	document.querySelectorAll(selector).forEach(element => {
-		if (!isVisibleMedia(element)) return;
+		if (!isVisibleMedia(element) && !element.hasAttribute("data-nnw-body-media-saveable")) return;
 		if (mediaType === "image" && isArticleHeaderElement(element)) return;
 		if (mediaType === "video" && isAnimatedGIFVideo(element)) return;
 

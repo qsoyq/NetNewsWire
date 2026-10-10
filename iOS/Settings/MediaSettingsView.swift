@@ -8,6 +8,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 	case pipAutoPlayNextVideo
 	case cacheVideoContent
 	case loadVideoFirstFramePreview
+	case hideArticleBodyMedia
 	case showArticleMediaThumbnails
 	case prefetchNextArticleContent
 
@@ -21,6 +22,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 		case .pipAutoPlayNextVideo: return NSLocalizedString("Autoplay Next Video in PiP", comment: "Media settings")
 		case .cacheVideoContent: return NSLocalizedString("Cache Video Content", comment: "Media settings")
 		case .loadVideoFirstFramePreview: return NSLocalizedString("Load Video First Frame Preview", comment: "Load video previews")
+		case .hideArticleBodyMedia: return NSLocalizedString("Hide Images and Videos in Article Body", comment: "Media settings")
 		case .showArticleMediaThumbnails: return NSLocalizedString("Show Media Thumbnails Above Article", comment: "Media settings")
 		case .prefetchNextArticleContent: return NSLocalizedString("Prefetch Next Article", comment: "Media settings")
 		}
@@ -37,6 +39,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 		case .pipAutoPlayNextVideo: return \.pipAutoPlayNextVideo
 		case .cacheVideoContent: return \.cacheVideoContent
 		case .loadVideoFirstFramePreview: return \.loadVideoFirstFramePreview
+		case .hideArticleBodyMedia: return \.hideArticleBodyMedia
 		case .showArticleMediaThumbnails: return \.showArticleMediaThumbnails
 		case .prefetchNextArticleContent: return \.prefetchNextArticleContent
 		}
@@ -90,10 +93,11 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 				Text(NSLocalizedString("Video Playback", comment: "Media settings section"))
 			}
 			Section {
-				settings([.showArticleMediaThumbnails, .cacheVideoContent, .loadVideoFirstFramePreview, .prefetchNextArticleContent])
+				settings([.showArticleMediaThumbnails, .hideArticleBodyMedia, .cacheVideoContent, .loadVideoFirstFramePreview, .prefetchNextArticleContent])
 			} header: {
 				Text(NSLocalizedString("Loading and Previews", comment: "Media settings section"))
 			} footer: {
+				Text(NSLocalizedString("Hidden images and videos remain available in thumbnails when enabled. Hiding changes the layout, not downloads, and pauses inline video autoplay.", comment: "Body media visibility explanation"))
 				Text(NSLocalizedString("Prefetching loads images for the next article. Videos and first-frame previews follow their own switches. Loading previews and prefetching may use additional data.", comment: "Media prefetch behavior"))
 			}
 			Section {

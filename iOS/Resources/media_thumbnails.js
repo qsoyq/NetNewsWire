@@ -1,6 +1,14 @@
 (() => {
     "use strict";
     let enabled = false;
+    let hideBodyMedia = false;
+    const hiddenNodes = new Set();
+    const linkLabels = new Set();
+    const permittedVideos = new Set();
+    const boundVideos = new WeakSet();
+    const originalControls = new Map();
+    const hiddenAttribute = "data-nnw-body-media-hidden";
+    const saveAttribute = "data-nnw-body-media-saveable";
     let active = true;
     let nativeVideo = false;
     let labels = {};
@@ -21,10 +29,111 @@
         return element.currentSrc || element.src || element.querySelector("source[src]")?.src || "";
     }
 
+    function bodyMedia() {
+        return Array.from(document.querySelectorAll(rootSelector.split(",").map(root => `${root} img,${root} video`).join(",")));
+    }
+
+    function restoreBodyLayout() {
+        hiddenNodes.forEach(node => {
+            node.removeAttribute(hiddenAttribute);
+            node.removeAttribute(saveAttribute);
+        });
+        hiddenNodes.clear();
+        linkLabels.forEach(node => node.remove());
+        linkLabels.clear();
+    }
+
+    function markHidden(node) {
+        node.setAttribute(hiddenAttribute, "");
+        hiddenNodes.add(node);
+    }
+
+    function hasContent(node) {
+        if (node.nodeType === Node.TEXT_NODE) return Boolean(node.textContent.trim());
+        if (node.nodeType !== Node.ELEMENT_NODE) return false;
+        if (node.hasAttribute(hiddenAttribute)) return false;
+        if (["BR", "SOURCE"].includes(node.tagName)) return false;
+        if (["A", "P", "DIV", "SPAN", "PICTURE", "FIGURE"].includes(node.tagName)) {
+            return Array.from(node.childNodes).some(hasContent);
+        }
+        return true;
+    }
+
+    function applyBodyVisibility() {
+        if (!hideBodyMedia) return;
+        for (const element of bodyMedia()) {
+            if (element.closest("header,.headerContainer,.header-container") || element.id === "nnwImageIcon") continue;
+            if (permittedVideos.has(element) || element.webkitDisplayingFullscreen ||
+                ["fullscreen", "picture-in-picture"].includes(element.webkitPresentationMode)) continue;
+            const originallyVisible = element.getClientRects().length > 0 &&
+                !element.closest("[hidden],[aria-hidden='true']") && getComputedStyle(element).visibility !== "hidden";
+            if (originallyVisible) element.setAttribute(saveAttribute, "");
+            markHidden(element);
+            if (element.tagName === "VIDEO") element.pause();
+        }
+        // Preserve an image-only link's destination without retaining its image-sized box.
+        for (const element of hiddenNodes) {
+            if (!element.matches("img,video")) continue;
+            const link = element.closest("a[href]");
+            if (link && !Array.from(link.childNodes).some(hasContent)) {
+                const label = document.createElement("span");
+                label.textContent = labels.link || "Open Media Link";
+                label.setAttribute("data-nnw-media-link-label", "");
+                label.setAttribute("translate", "no");
+                link.appendChild(label);
+                linkLabels.add(label);
+            }
+        }
+        // Collapse only media ancestors that now contain no text, captions or controls.
+        for (const element of Array.from(hiddenNodes)) {
+            let parent = element.parentElement;
+            while (parent && !parent.matches(rootSelector) &&
+                parent.matches("p,div,span,picture,figure,a") && !Array.from(parent.childNodes).some(hasContent)) {
+                markHidden(parent);
+                parent = parent.parentElement;
+            }
+        }
+    }
+
+    function guardHiddenPlayback(event) {
+        const video = event.target;
+        if (hideBodyMedia && video.matches?.("video") && video.closest(rootSelector) &&
+            !permittedVideos.has(video) && !video.webkitDisplayingFullscreen &&
+            !["fullscreen", "picture-in-picture"].includes(video.webkitPresentationMode)) {
+            video.pause();
+            event.stopImmediatePropagation();
+        }
+    }
+
+    function revealVideo(video) {
+        permittedVideos.add(video);
+        if (!boundVideos.has(video)) {
+            boundVideos.add(video);
+            const conceal = () => {
+                if (video.webkitPresentationMode === "picture-in-picture") return;
+                permittedVideos.delete(video);
+                if (originalControls.has(video)) {
+                    video.controls = originalControls.get(video);
+                    originalControls.delete(video);
+                }
+                schedule();
+            };
+            video.addEventListener("webkitendfullscreen", conceal);
+            video.addEventListener("ended", conceal);
+            video.addEventListener("fullscreenchange", () => {
+                if (!document.fullscreenElement) conceal();
+            });
+        }
+        refresh();
+        // If fullscreen entry fails, the restored inline controls remain usable.
+        if (!originalControls.has(video)) originalControls.set(video, video.controls);
+        video.controls = true;
+    }
+
     function collect() {
         const seen = new Set();
         const result = [];
-        document.querySelectorAll(`${rootSelector.split(",").map(root => `${root} img,${root} video`).join(",")}`).forEach(element => {
+        bodyMedia().forEach(element => {
             if (element.closest("[data-nnw-media-thumbnails],header,.headerContainer,.header-container,[hidden],[aria-hidden='true']") ||
                 element.id === "nnwImageIcon" || element.classList.contains("activityIndicator") ||
                 element.classList.contains("nnwAnimatedGIF")) return;
@@ -46,6 +155,7 @@
         const style = document.createElement("style");
         style.id = "nnw-media-thumbnails-style";
         style.textContent = `
+            [data-nnw-body-media-hidden] { display:none!important; }
             [data-nnw-media-thumbnails] {
                 display:flex!important; gap:8px!important; overflow-x:auto!important;
                 max-width:100%!important; min-width:0!important; box-sizing:border-box!important;
@@ -86,6 +196,7 @@
                 window.webkit.messageHandlers.nativeVideoPlay.postMessage(entry.url);
             } else {
                 const video = entry.element;
+                if (hideBodyMedia) revealVideo(video);
                 // Keep fullscreen entry in the user's tap, without waiting for a native round trip.
                 try {
                     const playback = video.play();
@@ -106,8 +217,12 @@
 
     function refresh() {
         timer = null;
-        if (!enabled || !active) return;
-        const items = collect();
+        observer?.disconnect();
+        restoreBodyLayout();
+        if (enabled || hideBodyMedia) installStyle();
+        const items = enabled ? collect() : [];
+        applyBodyVisibility();
+        observe();
         const root = document.querySelector(rootSelector);
         if (!root || !items.length) {
             strip?.remove();
@@ -152,42 +267,57 @@
 
     function schedule(event) {
         if (event && !event.target.closest?.(rootSelector)) return;
-        if (enabled && active && timer === null) timer = setTimeout(refresh, 60);
+        if ((enabled || hideBodyMedia) && active && timer === null) timer = setTimeout(refresh, 60);
     }
 
-    function configure(value, useNativeVideo, localizedLabels) {
+    function configure(value, useNativeVideo, localizedLabels, hideMedia = false) {
         nativeVideo = Boolean(useNativeVideo);
         labels = localizedLabels;
-        if (enabled === Boolean(value)) { if (enabled) refresh(); return; }
         enabled = Boolean(value);
-        if (!enabled) {
+        hideBodyMedia = Boolean(hideMedia);
+        if (!hideBodyMedia) {
+            originalControls.forEach((controls, video) => { video.controls = controls; });
+            originalControls.clear();
+            permittedVideos.clear();
+        }
+        document.documentElement.toggleAttribute("data-nnw-hide-body-media", hideBodyMedia);
+        if (!enabled && !hideBodyMedia) {
             observer?.disconnect();
             observer = null;
             clearTimeout(timer);
             timer = null;
             document.removeEventListener("load", schedule, true);
             document.removeEventListener("error", schedule, true);
+            document.removeEventListener("play", guardHiddenPlayback, true);
+            document.removeEventListener("playing", guardHiddenPlayback, true);
+            restoreBodyLayout();
+            permittedVideos.clear();
             strip?.remove();
             strip = null;
             entries.clear();
             return;
         }
-        observer = new MutationObserver(records => {
+        if (!observer) observer = new MutationObserver(records => {
             if (records.some(record => !record.target.closest?.("[data-nnw-media-thumbnails]") &&
                 (record.target.closest?.(rootSelector) || Array.from(record.addedNodes).some(node =>
                     node.nodeType === 1 && (node.matches(rootSelector) || node.querySelector(rootSelector)))))) schedule();
         });
-        observer.observe(document.body, { childList: true, subtree: true, attributes: true,
-            attributeFilter: ["src", "srcset", "poster", "hidden", "class"] });
+        document.addEventListener("play", guardHiddenPlayback, true);
+        document.addEventListener("playing", guardHiddenPlayback, true);
         document.addEventListener("load", schedule, true);
         document.addEventListener("error", schedule, true);
         refresh();
     }
 
+    function observe() {
+        observer?.observe(document.body, { childList: true, subtree: true, attributes: true,
+            attributeFilter: ["src", "srcset", "poster", "hidden", "class"] });
+    }
+
     function setActive(value) {
         active = Boolean(value);
         if (!active) { clearTimeout(timer); timer = null; }
-        else if (enabled) refresh();
+        else if (enabled || hideBodyMedia) refresh();
     }
 
     window.nnwMediaThumbnails = { configure, setActive };

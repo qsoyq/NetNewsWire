@@ -1,6 +1,27 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Hide Images and Videos in Article Body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hide Images and Videos in Article Body" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "隐藏正文中的图片和视频" } }
+      }
+    },
+    "Open Media Link" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Media Link" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开媒体链接" } }
+      }
+    },
+    "Hidden images and videos remain available in thumbnails when enabled. Hiding changes the layout, not downloads, and pauses inline video autoplay." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hidden images and videos remain available in thumbnails when enabled. Hiding changes the layout, not downloads, and pauses inline video autoplay." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "配合顶部缩略图，可继续查看隐藏的图片和视频。隐藏仅改变排版，不会阻止下载，并暂停正文视频自动播放。" } }
+      }
+    },
     "Show Media Thumbnails Above Article" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -103,7 +103,7 @@ final class WebViewController: UIViewController {
 	private var videoPresentationEnabled = false
 	private let articleTranslationController = ArticleTranslationController()
 	private let videoPreviewController = VideoPreviewController()
-	private var thumbnailSettings = [AppDefaults.shared.showArticleMediaThumbnails, AppDefaults.shared.useNativeVideoPlayer]
+	private var thumbnailSettings = [AppDefaults.shared.showArticleMediaThumbnails, AppDefaults.shared.hideArticleBodyMedia, AppDefaults.shared.useNativeVideoPlayer]
 	var translationState: String { articleTranslationController.state }
 	var translationStateDidChange: ((String) -> Void)? {
 		didSet { articleTranslationController.stateDidChange = translationStateDidChange }
@@ -252,7 +252,7 @@ final class WebViewController: UIViewController {
 	}
 
 	private func userDefaultsDidChange() {
-		let settings = [AppDefaults.shared.showArticleMediaThumbnails, AppDefaults.shared.useNativeVideoPlayer]
+		let settings = [AppDefaults.shared.showArticleMediaThumbnails, AppDefaults.shared.hideArticleBodyMedia, AppDefaults.shared.useNativeVideoPlayer]
 		if thumbnailSettings != settings {
 			thumbnailSettings = settings
 			if let webView {
@@ -660,9 +660,9 @@ extension WebViewController: WKNavigationDelegate {
 		} else if AppDefaults.shared.autoFullscreenVideo {
 			webView.evaluateJavaScript("setupVideoAutoFullscreen();")
 		}
-		if AppDefaults.shared.useNativeVideoPlayer && AppDefaults.shared.autoplayVideo {
+		if !AppDefaults.shared.hideArticleBodyMedia && AppDefaults.shared.useNativeVideoPlayer && AppDefaults.shared.autoplayVideo {
 			startNativeVideoDirectly()
-		} else if AppDefaults.shared.autoplayVideo {
+		} else if !AppDefaults.shared.hideArticleBodyMedia && AppDefaults.shared.autoplayVideo {
 			webView.evaluateJavaScript("setupVideoAutoplay();")
 		}
 		if AppDefaults.shared.autoGotoNextAfterVideo {
@@ -855,7 +855,7 @@ extension WebViewController: WKScriptMessageHandler {
 	}
 
 	func startNativeVideoDirectly() {
-		guard AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo,
+		guard !AppDefaults.shared.hideArticleBodyMedia, AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo,
 			!nativeAutoplayStarted, !nativeAutoplayPending, let articleID = article?.articleID else {
 			return
 		}
@@ -872,7 +872,7 @@ extension WebViewController: WKScriptMessageHandler {
 			}
 			self.nativeAutoplayPending = false
 			guard self.canPresentNativeVideo, !self.nativeAutoplayStarted,
-				AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo else {
+				!AppDefaults.shared.hideArticleBodyMedia, AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo else {
 				self.logMediaEvent(.info, operation: "Native video autoplay", message: "articleID=\(articleID) outcome=ignored-late-result")
 				return
 			}

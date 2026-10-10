@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const source = readFileSync(process.env.NNW_VIDEO_SCRIPT || resolve(__dirname, '../../iOS/Resources/main_ios.js'), 'utf8');
 
-function page({ src = 'https://example.test/video.mp4', currentSrc = '', sourceURL = '', gif = false } = {}) {
+function page({ src = 'https://example.test/video.mp4', currentSrc = '', sourceURL = '', gif = false, hiddenBody = false } = {}) {
 	const messages = [];
 	const listeners = [];
 	const video = {
@@ -20,7 +20,7 @@ function page({ src = 'https://example.test/video.mp4', currentSrc = '', sourceU
 	const context = vm.createContext({
 		URL,
 		window: { addEventListener() {}, webkit: { messageHandlers: { nativeVideoPlay: { postMessage: url => messages.push(url) } } } },
-		document: { querySelector: () => gif ? null : video, querySelectorAll: () => [video] }
+		document: { documentElement: { hasAttribute: () => hiddenBody }, querySelector: () => gif ? null : video, querySelectorAll: () => [video] }
 	});
 	vm.runInContext(source, context);
 	return { context, video, listeners, messages, snapshot: () => vm.runInContext('nativeVideoAutoplaySource()', context) };
@@ -63,6 +63,11 @@ test('queued playing events do not duplicate direct autoplay; later manual playb
 	fixture.video.paused = false;
 	fixture.listeners[0]();
 	assert.deepEqual(fixture.messages, ['https://example.test/video.mp4']);
+});
+
+test('hidden body media suppresses WebKit autoplay without trying play', () => {
+	const fixture = page({ hiddenBody: true });
+	assert.doesNotThrow(() => vm.runInContext('setupVideoAutoplay();', fixture.context));
 });
 
 test('media errors remain visible in the direct source diagnostics', () => {

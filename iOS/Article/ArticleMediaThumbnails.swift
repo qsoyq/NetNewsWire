@@ -15,12 +15,14 @@ import WebKit
 	static func configure(_ webView: WKWebView, active: Bool) {
 		webView.callAsyncJavaScript("""
 		window.nnwMediaThumbnails.setActive(active);
-		window.nnwMediaThumbnails.configure(enabled, nativeVideo, labels);
+		window.nnwMediaThumbnails.configure(enabled, nativeVideo, labels, hideBodyMedia);
 		""", arguments: [
 			"active": active,
 			"enabled": AppDefaults.shared.showArticleMediaThumbnails,
+			"hideBodyMedia": AppDefaults.shared.hideArticleBodyMedia,
 			"nativeVideo": AppDefaults.shared.useNativeVideoPlayer,
 			"labels": [
+				"link": NSLocalizedString("Open Media Link", comment: "Link replacing a hidden linked image"),
 				"media": NSLocalizedString("Article Media", comment: "Article thumbnail strip accessibility label"),
 				"image": NSLocalizedString("Enlarge Image", comment: "Image thumbnail accessibility action"),
 				"video": NSLocalizedString("Play Video", comment: "Video thumbnail accessibility action")
