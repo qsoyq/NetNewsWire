@@ -16,6 +16,7 @@ import Foundation
 	private var isActive = false
 	private var attempted = Set<String>()
 	private var lastEnabled = AppDefaults.shared.loadVideoFirstFramePreview
+	private var lastPreload = AppDefaults.shared.preloadVideoContent
 	private let service: VideoPreviewService
 
 	init(service: VideoPreviewService = .shared) {
@@ -48,6 +49,17 @@ import Foundation
 			configure()
 		} else {
 			cancelRequests()
+			releasePreload()
+		}
+	}
+
+	private func releasePreload() {
+		guard let webView else { return }
+		let id = documentID
+		let enabled = AppDefaults.shared.loadVideoFirstFramePreview
+		Task { [weak webView] in
+			guard let webView else { return }
+			_ = try? await webView.callAsyncJavaScript("window.nnwVideoPreview.configure(id, enabled, preload);", arguments: ["id": id, "enabled": enabled, "preload": false], in: nil, contentWorld: Self.contentWorld)
 		}
 	}
 
@@ -63,10 +75,11 @@ import Foundation
 		cancelRequests()
 		let id = documentID
 		let enabled = AppDefaults.shared.loadVideoFirstFramePreview
+		let preload = AppDefaults.shared.preloadVideoContent && isActive
 		setupTask = Task { [weak self, weak webView] in
 			guard let self, let webView else { return }
 			do {
-				_ = try await webView.callAsyncJavaScript("window.nnwVideoPreview.configure(id, enabled);", arguments: ["id": id, "enabled": enabled], in: nil, contentWorld: Self.contentWorld)
+				_ = try await webView.callAsyncJavaScript("window.nnwVideoPreview.configure(id, enabled, preload);", arguments: ["id": id, "enabled": enabled, "preload": preload], in: nil, contentWorld: Self.contentWorld)
 				guard !Task.isCancelled, self.documentID == id, enabled, self.isActive else { return }
 				let sources = try await Self.collect(webView, documentID: id)
 				guard !Task.isCancelled, self.documentID == id else { return }
@@ -80,6 +93,12 @@ import Foundation
 								self.isActive, AppDefaults.shared.loadVideoFirstFramePreview else { return }
 							self.attempted.insert(source.id)
 							_ = try await Self.apply(data, source: source, documentID: id, in: webView)
+						} catch let error as VideoPreviewService.Unavailable {
+							guard !Task.isCancelled, let self, let webView, self.documentID == id, self.isActive,
+								AppDefaults.shared.loadVideoFirstFramePreview else { return }
+							self.attempted.insert(source.id)
+							_ = try? await Self.markUnavailable(source: source, documentID: id, in: webView)
+							ArticleMediaLog.log(.debug, operation: "Video preview", message: "source=\(ArticleMediaLog.urlDescription(source.url, level: .info)) outcome=unavailable status=\(error.statusCode)")
 						} catch {
 							if !Task.isCancelled {
 								if let self, self.documentID == id { self.attempted.insert(source.id) }
@@ -103,11 +122,23 @@ import Foundation
 		return result as? Bool ?? false
 	}
 
+	@discardableResult static func markUnavailable(source: Source, documentID: String, in webView: WKWebView) async throws -> Bool {
+		let label = NSLocalizedString("Video cannot be played", comment: "Accessibility label for an unavailable video preview")
+		let result = try await webView.callAsyncJavaScript("return window.nnwVideoPreview.markUnavailable(documentID, id, url, label);", arguments: ["documentID": documentID, "id": source.id, "url": source.url, "label": label], in: nil, contentWorld: contentWorld)
+		return result as? Bool ?? false
+	}
+
 	@objc private func settingsChanged() {
-		guard lastEnabled != AppDefaults.shared.loadVideoFirstFramePreview else { return }
-		lastEnabled = AppDefaults.shared.loadVideoFirstFramePreview
-		documentID = UUID().uuidString
-		attempted.removeAll()
+		let enabled = AppDefaults.shared.loadVideoFirstFramePreview
+		let preload = AppDefaults.shared.preloadVideoContent
+		guard lastEnabled != enabled || lastPreload != preload else { return }
+		let previewChanged = lastEnabled != enabled
+		lastEnabled = enabled
+		lastPreload = preload
+		if previewChanged {
+			documentID = UUID().uuidString
+			attempted.removeAll()
+		}
 		configure()
 	}
 }

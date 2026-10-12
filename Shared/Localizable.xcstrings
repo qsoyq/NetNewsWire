@@ -333,6 +333,30 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载视频首帧预览" } }
       }
     },
+    "Preload Videos" : {
+      "comment" : "Media settings",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Preload Videos" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "预加载视频" } }
+      }
+    },
+    "Preloading videos allows the current article's videos to load before playback and may use more data. It does not guarantee that a preview frame appears." : {
+      "comment" : "Video preload behavior",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Preloading videos allows the current article's videos to load before playback and may use more data. It does not guarantee that a preview frame appears." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "预加载视频会允许当前文章的视频在播放前开始加载，并可能使用更多流量，不保证一定显示预览画面。" } }
+      }
+    },
+    "Video cannot be played" : {
+      "comment" : "Accessibility label for an unavailable video preview",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Video cannot be played" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视频无法播放" } }
+      }
+    },
     "Automatically Expand Collapsed Content" : {
       "comment" : "Automatically expand article details elements",
       "extractionState" : "manual",

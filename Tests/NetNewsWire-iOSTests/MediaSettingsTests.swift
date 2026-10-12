@@ -10,11 +10,11 @@ import SwiftUI
 		defer { restoreSettings(original) }
 		for setting in MediaSetting.allCases { AppDefaults.store.set(false, forKey: setting.rawValue) }
 		let notifications = expectation(description: "Preview and prefetch change notifications")
-		notifications.expectedFulfillmentCount = 4
+		notifications.expectedFulfillmentCount = 6
 		let observer = NotificationCenter.default.addObserver(forName: .videoPreviewSettingsDidChange, object: nil, queue: .main) { _ in notifications.fulfill() }
 		defer { NotificationCenter.default.removeObserver(observer) }
 		let model = MediaSettingsModel()
-		XCTAssertEqual(MediaSetting.allCases.count, 10)
+		XCTAssertEqual(MediaSetting.allCases.count, 11)
 		for setting in MediaSetting.allCases {
 			let binding = model.binding(for: setting)
 			XCTAssertFalse(binding.wrappedValue)

@@ -169,6 +169,33 @@ import Articles
 		XCTAssertNil(data)
 	}
 
+	func testHTTP404CachesUnavailableWithoutGeneratingAndTransientProbeFailureContinues() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let counter = PreviewCounter()
+		let service = VideoPreviewService(cache: VideoPreviewCache(directory: directory), generate: { _ in
+			await counter.increment()
+			return Data([1])
+		}, probe: { _ in 404 })
+		let missing = try XCTUnwrap(URL(string: "https://example.test/missing.mp4"))
+		for _ in 0..<2 {
+			do {
+				_ = try await service.preview(for: missing)
+				XCTFail("404 must be unavailable")
+			} catch let error as VideoPreviewService.Unavailable { XCTAssertEqual(error.statusCode, 404) }
+		}
+		var count = await counter.value
+		XCTAssertEqual(count, 0)
+		let transient = VideoPreviewService(cache: VideoPreviewCache(directory: temporaryDirectory()), generate: { _ in
+			await counter.increment()
+			return Data([2])
+		}, probe: { _ in throw URLError(.timedOut) })
+		let data = try await transient.preview(for: try XCTUnwrap(URL(string: "https://example.test/slow.mp4")))
+		XCTAssertEqual(data, Data([2]))
+		count = await counter.value
+		XCTAssertEqual(count, 1)
+	}
+
 	func testNativeTimeoutCancelsExtraction() async throws {
 		do {
 			_ = try await VideoPreviewService.generatePreview(for: fixtureURL(), timeout: .zero)
@@ -196,6 +223,22 @@ import Articles
 			let existing = try await evaluate("return document.getElementById('covered').getAttribute('poster');", in: webView) as? String
 			XCTAssertEqual(existing, "cover.jpg")
 		}
+	}
+
+	func testPreloadSettingDefaultsOffAndNotifiesPreviewConsumers() {
+		let key = AppDefaults.Key.preloadVideoContent
+		let original = AppDefaults.store.object(forKey: key)
+		defer {
+			if let original { AppDefaults.store.set(original, forKey: key) } else { AppDefaults.store.removeObject(forKey: key) }
+		}
+		AppDefaults.store.removeObject(forKey: key)
+		AppDefaults.registerDefaults()
+		XCTAssertFalse(AppDefaults.shared.preloadVideoContent)
+		XCTAssertEqual(MediaSetting.preloadVideoContent.title, NSLocalizedString("Preload Videos", comment: ""))
+		let notification = expectation(forNotification: .videoPreviewSettingsDidChange, object: nil)
+		AppDefaults.shared.preloadVideoContent = true
+		wait(for: [notification], timeout: 1)
+		XCTAssertTrue(AppDefaults.shared.preloadVideoContent)
 	}
 
 	func testControllerToggleClearsPreviewAndRejectsPendingWork() async throws {

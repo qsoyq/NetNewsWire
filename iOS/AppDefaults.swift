@@ -74,6 +74,7 @@ final class AppDefaults: Sendable {
 		static let refreshFeeds = "refreshFeeds"
 		static let cacheVideoContent = "cacheVideoContent"
 		static let loadVideoFirstFramePreview = "loadVideoFirstFramePreview"
+		static let preloadVideoContent = "preloadVideoContent"
 		static let showArticleMediaThumbnails = "showArticleMediaThumbnails"
 		static let hideArticleBodyMedia = "hideArticleBodyMedia"
 		static let autoFullscreenVideo = "autoFullscreenVideo"
@@ -215,6 +216,15 @@ final class AppDefaults: Sendable {
 		set {
 			guard newValue != loadVideoFirstFramePreview else { return }
 			AppDefaults.setBool(for: Key.loadVideoFirstFramePreview, newValue)
+			NotificationCenter.default.post(name: .videoPreviewSettingsDidChange, object: nil)
+		}
+	}
+
+	var preloadVideoContent: Bool {
+		get { AppDefaults.bool(for: Key.preloadVideoContent) }
+		set {
+			guard newValue != preloadVideoContent else { return }
+			AppDefaults.setBool(for: Key.preloadVideoContent, newValue)
 			NotificationCenter.default.post(name: .videoPreviewSettingsDidChange, object: nil)
 		}
 	}
@@ -583,6 +593,7 @@ final class AppDefaults: Sendable {
 										Key.refreshFeeds: true,
 										Key.cacheVideoContent: false,
 										Key.loadVideoFirstFramePreview: false,
+										Key.preloadVideoContent: false,
 										Key.showArticleMediaThumbnails: false,
 										Key.hideArticleBodyMedia: false,
 									Key.autoFullscreenVideo: false,
