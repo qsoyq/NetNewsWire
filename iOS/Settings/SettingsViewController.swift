@@ -61,6 +61,7 @@ final class SettingsViewController: UITableViewController {
 		case enableJavaScript
 		case media
 		case translation
+		case cache
 		case automaticallyExpandArticleDetails
 		case enableFullScreenArticles
 	}
@@ -237,17 +238,9 @@ final class SettingsViewController: UITableViewController {
 
 		}
 
-		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.translation.rawValue {
-			(cell.viewWithTag(941) as? UILabel)?.text = ArticleTranslationStrings.text("Article Translation")
-			cell.accessibilityIdentifier = "articles.translation"
-		}
 		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.automaticallyExpandArticleDetails.rawValue {
 			(cell.viewWithTag(942) as? UILabel)?.text = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
 			cell.accessibilityIdentifier = "articles.autoExpandDetails.row"
-		}
-		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.media.rawValue {
-			(cell.viewWithTag(944) as? UILabel)?.text = NSLocalizedString("Media", comment: "Media settings title")
-			cell.accessibilityIdentifier = "articles.media"
 		}
 		return cell
 	}
@@ -308,6 +301,9 @@ final class SettingsViewController: UITableViewController {
 				self.navigationController?.pushViewController(UIHostingController(rootView: MediaSettingsView()), animated: true)
 			case .translation:
 				self.navigationController?.pushViewController(UIHostingController(rootView: ArticleTranslationSettingsView()), animated: true)
+			case .cache:
+				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
+				self.navigationController?.pushViewController(UIHostingController(rootView: CacheSettingsView()), animated: true)
 			default:
 				break
 			}

@@ -25,6 +25,8 @@ extension Notification.Name {
 	private let imageDownloader = ImageDownloader.shared
 	private var homePagesWithNoIconURL = Set<String>()
 	private var cache = [Feed: IconImage]()
+	private var cachedURLs = [Feed: String]()
+	private var generation = UUID()
 	private var waitingForFeedURLs = [String: Set<Feed>]()
 	private var feedsWaitingForHTMLMetadata = Set<Feed>()
 
@@ -46,8 +48,12 @@ extension Notification.Name {
 
 	public func icon(for feed: Feed) -> IconImage? {
 		let metadata = [feed.url, feed.homePageURL ?? "", feed.iconURL ?? "", feed.faviconURL ?? ""]
+		let currentGeneration = generation
+		if let url = cachedURLs[feed], !imageDownloader.isFresh(url) {
+			cache[feed] = nil
+		}
 		@MainActor func isCurrentMetadata() -> Bool {
-			metadata == [feed.url, feed.homePageURL ?? "", feed.iconURL ?? "", feed.faviconURL ?? ""]
+			currentGeneration == generation && metadata == [feed.url, feed.homePageURL ?? "", feed.iconURL ?? "", feed.faviconURL ?? ""]
 		}
 
 		if let cachedImage = cache[feed] {
@@ -191,7 +197,17 @@ extension Notification.Name {
 
 	/// Returns the in-memory icon for `feed` without triggering a download.
 	public func cachedIcon(for feed: Feed) -> IconImage? {
-		cache[feed]
+		_ = icon(for: feed)
+		return cache[feed]
+	}
+
+	public func clearCache() {
+		generation = UUID()
+		cache.removeAll()
+		cachedURLs.removeAll()
+		waitingForFeedURLs.removeAll()
+		feedsWaitingForHTMLMetadata.removeAll()
+		homePagesWithNoIconURL.removeAll()
 	}
 }
 
@@ -267,7 +283,9 @@ private extension FeedIconDownloader {
 		let url = Self.sanitizedIconURL(url)
 
 		let kind = ActivityKind.downloadFeedImage(feedURL: url)
-		if let imageData = imageDownloader.image(for: url, activityOwner: .feedImageDownloader, activityKind: kind, activityDetail: feed.nameForDisplay) {
+		let imageData = imageDownloader.image(for: url, activityOwner: .feedImageDownloader, activityKind: kind, activityDetail: feed.nameForDisplay)
+		if let imageData, imageDownloader.isFresh(url) {
+			cachedURLs[feed] = url
 			RSImage.image(with: imageData) { image in
 				imageResultBlock(image, true)
 			}

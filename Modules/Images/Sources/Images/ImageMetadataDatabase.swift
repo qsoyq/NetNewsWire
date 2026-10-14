@@ -53,6 +53,21 @@ import RSDatabaseObjC
 		}
 	}
 
+	public func clearCache() async {
+		homePageToFaviconURL.removeAll()
+		homePagesWithNoFavicon.removeAll()
+		feedURLToIconURL.removeAll()
+		failureDates.removeAll()
+		await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+			queue.runInDatabase { database in
+				for table in ["downloadFailure", "homePageFavicon", "feedIconURL"] {
+					database.executeUpdate("DELETE FROM \(table);", withArgumentsIn: [])
+				}
+				continuation.resume()
+			}
+		}
+	}
+
 	// MARK: - Vacuum
 
 	public func vacuum() async {

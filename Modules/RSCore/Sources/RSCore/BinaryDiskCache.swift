@@ -35,6 +35,17 @@ nonisolated public final class BinaryDiskCache: Sendable {
 		}
 	}
 
+	public func dataAndModificationDate(forKey key: String) throws -> (data: Data, modificationDate: Date)? {
+		try mutex.withLock { _ in
+			let url = urlForKey(key)
+			guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+				  let modificationDate = attributes[.modificationDate] as? Date else {
+				return nil
+			}
+			return (try Data(contentsOf: url), modificationDate)
+		}
+	}
+
 	// Subscript doesn’t throw. Use when you can ignore errors.
 
 	public subscript(_ key: String) -> Data? {

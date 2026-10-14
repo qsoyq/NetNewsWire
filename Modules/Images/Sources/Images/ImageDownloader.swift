@@ -19,7 +19,7 @@ extension Notification.Name {
 public struct ImageDownloadError: Error {
 	public let statusCode: Int?
 	public let decodingFailed: Bool
-	public let isTransient: Bool // No network, DNS issues, timeout, 5xx response, etc.
+	public let isTransient: Bool
 }
 
 extension ImageDownloadError: LocalizedError {
@@ -37,21 +37,49 @@ extension ImageDownloadError: LocalizedError {
 	}
 }
 
+public enum ImageCacheSettings {
+	public static let lifetime: TimeInterval = 3 * 24 * 60 * 60
+}
+
 @MainActor public final class ImageDownloader {
-	public static let shared = ImageDownloader()
+	public static let shared = ImageDownloader(cacheSubfolderName: "Images")
 
 	nonisolated static private let logger = Logger(subsystem: Logger.nnwSubsystem, category: "ImageDownloader")
+	private struct CachedImage {
+		let data: Data
+		let date: Date
+	}
 
 	nonisolated private let diskCache: BinaryDiskCache
 	private let queue: DispatchQueue
-	private var imageCache = [String: Data]() // url: image
+	private let now: @MainActor () -> Date
+	private let download: @MainActor (URLRequest) async throws -> DownloadResponse
+	private var imageCache = [String: CachedImage]()
 	private var urlsInProgress = Set<String>()
+	private var retryDates = [String: Date]()
+	private var generation = UUID()
+	private let cacheLifetime = ImageCacheSettings.lifetime
 
-	init() {
-		let folder = AppConfig.cacheSubfolder(named: "Images")
+	init(cacheSubfolderName: String) {
+		let folder = AppConfig.cacheSubfolder(named: cacheSubfolderName)
 		self.diskCache = BinaryDiskCache(folder: folder.path)
 		self.queue = DispatchQueue(label: "ImageDownloader serial queue - \(folder.path)")
+		self.now = { Date() }
+		self.download = { try await Downloader.shared.download($0, userAgentStyle: .browser) }
+		observeNotifications()
+	}
 
+	// A real temporary cache and local transport can exercise expiration without waiting three days.
+	init(diskCache: BinaryDiskCache, now: @escaping @MainActor () -> Date,
+		 download: @escaping @MainActor (URLRequest) async throws -> DownloadResponse) {
+		self.diskCache = diskCache
+		self.queue = DispatchQueue(label: "ImageDownloader test cache - \(diskCache.folder)")
+		self.now = now
+		self.download = download
+		observeNotifications()
+	}
+
+	private func observeNotifications() {
 		NotificationCenter.default.addObserver(self, selector: #selector(handleAppDidGoToBackground(_:)), name: .appDidGoToBackground, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(handleLowMemory(_:)), name: .lowMemory, object: nil)
 	}
@@ -64,48 +92,91 @@ extension ImageDownloadError: LocalizedError {
 		imageCache.removeAll()
 	}
 
-	/// Returns the data if in memory, else dispatches a disk-then-network fetch and returns nil.
-	/// Activity log fires only when the fetch reaches the network.
+	func isFresh(_ url: String) -> Bool {
+		guard let cached = imageCache[url] else {
+			return false
+		}
+		return now().timeIntervalSince(cached.date) < cacheLifetime
+	}
+
+	/// Invalidate both memory and disk. Queued disk work finishes before deletion; old downloads
+	/// are discarded by the generation check and cannot refill a cache the user just cleared.
+	public func clearCache() async throws {
+		generation = UUID()
+		imageCache.removeAll()
+		retryDates.removeAll()
+		urlsInProgress.removeAll()
+		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+			queue.async {
+				do {
+					let folder = self.diskCache.folder
+					if FileManager.default.fileExists(atPath: folder) {
+						try FileManager.default.removeItem(atPath: folder)
+					}
+					try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+					continuation.resume()
+				} catch {
+					continuation.resume(throwing: error)
+				}
+			}
+		}
+	}
+
+	/// Returns the last image immediately, revalidating expired bytes in the background.
 	@discardableResult
 	public func image(for url: String, activityOwner: ActivityOwner? = nil, activityKind: ActivityKind? = nil, activityDetail: String? = nil) -> Data? {
-		assert(Thread.isMainThread)
-		if !url.hasPrefix("http://") && !url.hasPrefix("https://") {
-			Self.logger.debug("Skipping non-http(s) URL: \(url)")
+		guard url.hasPrefix("http://") || url.hasPrefix("https://") else {
 			return nil
 		}
-		if let data = imageCache[url] {
-			return data
+		let cached = imageCache[url]
+		if isFresh(url) {
+			return cached?.data
+		}
+		if let retryDate = retryDates[url], now() < retryDate {
+			return cached?.data
 		}
 		if ImageMetadataDatabase.shared.recentlyFailed(url: url) {
-			Self.logger.debug("Skipping recently-failed URL: \(url)")
-			return nil
+			return cached?.data
 		}
-
+		let currentGeneration = generation
 		Task { @MainActor in
-			await findImage(url, activityOwner: activityOwner, activityKind: activityKind, activityDetail: activityDetail)
+			guard currentGeneration == self.generation else {
+				return
+			}
+			await self.findImage(url, activityOwner: activityOwner, activityKind: activityKind, activityDetail: activityDetail)
 		}
-
-		return nil
+		return cached?.data
 	}
 }
 
 private extension ImageDownloader {
-
-	func cacheImage(_ url: String, _ image: Data) {
-		assert(Thread.isMainThread)
-		imageCache[url] = image
-		postImageDidBecomeAvailableNotification(url)
+	func cacheImage(_ url: String, _ image: Data, date: Date) {
+		imageCache[url] = CachedImage(data: image, date: date)
+		NotificationCenter.default.post(name: .imageDidBecomeAvailable, object: self, userInfo: ["url": url])
 	}
 
 	func findImage(_ url: String, activityOwner: ActivityOwner?, activityKind: ActivityKind?, activityDetail: String?) async {
-		guard !urlsInProgress.contains(url) else {
+		guard !urlsInProgress.contains(url), !isFresh(url) else {
 			return
 		}
+		let currentGeneration = generation
 		urlsInProgress.insert(url)
+		defer {
+			if currentGeneration == generation {
+				urlsInProgress.remove(url)
+			}
+		}
 
-		if let image = await readFromDisk(url: url) {
-			cacheImage(url, image)
-			urlsInProgress.remove(url)
+		if imageCache[url] == nil, let cached = await readFromDisk(url: url) {
+			guard currentGeneration == generation else {
+				return
+			}
+			cacheImage(url, cached.data, date: cached.date)
+			if isFresh(url) {
+				return
+			}
+		}
+		guard currentGeneration == generation else {
 			return
 		}
 
@@ -114,45 +185,39 @@ private extension ImageDownloader {
 			activityLog.createActivity(owner: activityOwner, kind: activityKind, detail: activityDetail)
 			activityLog.didStart(activityOwner, kind: activityKind)
 		}
-
 		do {
-			let (image, downloadResponse) = try await downloadImage(url)
+			let (image, response) = try await downloadImage(url)
 			if let activityOwner, let activityKind {
-				let message = downloadResponse.data.map(ActivityLog.dataSizeMessage)
-				activityLog.didComplete(activityOwner, kind: activityKind, message: message, returnedFromCache: downloadResponse.returnedFromCache)
+				activityLog.didComplete(activityOwner, kind: activityKind, message: response.data.map(ActivityLog.dataSizeMessage), returnedFromCache: response.returnedFromCache)
 			}
-			cacheImage(url, image)
+			guard currentGeneration == generation else {
+				return
+			}
+			let date = now()
+			saveToDisk(url, image, date: date)
+			retryDates[url] = nil
+			cacheImage(url, image, date: date)
 			ImageMetadataDatabase.shared.clearFailure(url: url)
 		} catch {
 			if let activityOwner, let activityKind {
 				activityLog.didFail(activityOwner, kind: activityKind, error: error)
 			}
+			guard currentGeneration == generation else {
+				return
+			}
+			retryDates[url] = now().addingTimeInterval(30 * 60)
 			if !error.isTransient {
 				ImageMetadataDatabase.shared.recordFailure(url: url, statusCode: error.statusCode)
 			}
 		}
-		urlsInProgress.remove(url)
 	}
 
-	func readFromDisk(url: String) async -> Data? {
+	private func readFromDisk(url: String) async -> CachedImage? {
 		await withCheckedContinuation { continuation in
-			readFromDisk(url) { data in
-				continuation.resume(returning: data)
-			}
-		}
-	}
-
-	func readFromDisk(_ url: String, _ completion: @escaping @MainActor (Data?) -> Void) {
-		queue.async {
-			if let data = self.diskCache[self.diskKey(url)], !data.isEmpty {
-				DispatchQueue.main.async {
-					completion(data)
-				}
-				return
-			}
-
-			DispatchQueue.main.async {
-				completion(nil)
+			queue.async {
+				let cached = try? self.diskCache.dataAndModificationDate(forKey: url.md5String)
+				let result = cached.flatMap { $0.data.isEmpty ? nil : CachedImage(data: $0.data, date: $0.modificationDate) }
+				continuation.resume(returning: result)
 			}
 		}
 	}
@@ -161,42 +226,30 @@ private extension ImageDownloader {
 		guard let imageURL = URL(string: url) else {
 			throw ImageDownloadError(statusCode: nil, decodingFailed: false, isTransient: false)
 		}
-
-		let downloadResponse: DownloadResponse
+		var request = URLRequest(url: imageURL)
+		request.cachePolicy = .reloadIgnoringLocalCacheData
+		let response: DownloadResponse
 		do {
-			downloadResponse = try await Downloader.shared.download(imageURL, userAgentStyle: .browser)
+			response = try await download(request)
 		} catch {
-			Self.logger.error("Error downloading image at \(url) \(error.localizedDescription)")
 			throw ImageDownloadError(statusCode: nil, decodingFailed: false, isTransient: true)
 		}
-
-		if let data = downloadResponse.data, !data.isEmpty, let response = downloadResponse.response, response.statusIsOK {
+		if let data = response.data, !data.isEmpty, let httpResponse = response.response, httpResponse.statusIsOK {
 			let scaledData = RSImage.scaledImageData(data, maxPixelSize: RSImage.maxIconPixelSize) ?? data
-			saveToDisk(url, scaledData)
-			return (scaledData, downloadResponse)
+			guard await RSImage.image(data: scaledData) != nil else {
+				throw ImageDownloadError(statusCode: (httpResponse as? HTTPURLResponse)?.statusCode, decodingFailed: true, isTransient: false)
+			}
+			return (scaledData, response)
 		}
-
-		let statusCode = (downloadResponse.response as? HTTPURLResponse)?.statusCode
-		// 2xx with empty / missing body — server said OK but gave us no image bytes.
-		if let response = downloadResponse.response, response.statusIsOK {
-			throw ImageDownloadError(statusCode: statusCode, decodingFailed: true, isTransient: false)
-		}
-		let isTransient = statusCode.map { (500...599).contains($0) } ?? true
-		throw ImageDownloadError(statusCode: statusCode, decodingFailed: false, isTransient: isTransient)
+		let statusCode = (response.response as? HTTPURLResponse)?.statusCode
+		throw ImageDownloadError(statusCode: statusCode, decodingFailed: false, isTransient: statusCode.map { (500...599).contains($0) } ?? true)
 	}
 
-	func saveToDisk(_ url: String, _ data: Data) {
+	func saveToDisk(_ url: String, _ data: Data, date: Date) {
 		queue.async {
-			self.diskCache[self.diskKey(url)] = data
+			self.diskCache[url.md5String] = data
+			let path = (self.diskCache.folder as NSString).appendingPathComponent(url.md5String)
+			try? FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: path)
 		}
-	}
-
-	nonisolated func diskKey(_ url: String) -> String {
-		url.md5String
-	}
-
-	func postImageDidBecomeAvailableNotification(_ url: String) {
-		assert(Thread.isMainThread)
-		NotificationCenter.default.post(name: .imageDidBecomeAvailable, object: self, userInfo: ["url": url])
 	}
 }

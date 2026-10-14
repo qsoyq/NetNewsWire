@@ -53,6 +53,7 @@ final class FeedInspectorViewController: UITableViewController {
 		feedURLLabel.text = feed.url
 
 		NotificationCenter.default.addObserver(self, selector: #selector(feedIconDidBecomeAvailable(_:)), name: .feedIconDidBecomeAvailable, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(feedIconDidBecomeAvailable(_:)), name: .FaviconDidBecomeAvailable, object: nil)
 
 		NotificationCenter.default.addObserver(self, selector: #selector(updateNotificationSettings), name: UIApplication.willEnterForegroundNotification, object: nil)
 

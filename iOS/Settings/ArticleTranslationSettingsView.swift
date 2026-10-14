@@ -79,9 +79,7 @@ struct ArticleTranslationSettingsView: View {
 				Text(ArticleTranslationStrings.text("Base URL and Path form the request address. An empty Path uses /responses. Article text is sent directly to this service. Your API key is saved in Keychain."))
 			}
 			Section {
-				Button(ArticleTranslationStrings.text("Clear Translation Cache"), role: .destructive) {
-					Task { await ArticleTranslationService.shared.clearCache() }
-				}
+				Text(ArticleTranslationStrings.text("Translation cache controls are in Settings > Cache."))
 			} footer: {
 				Text(ArticleTranslationStrings.text("Saved translations are reused for the same article and service settings."))
 			}

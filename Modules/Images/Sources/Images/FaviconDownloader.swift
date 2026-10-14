@@ -65,6 +65,14 @@ extension Notification.Name {
 		}
 	}
 
+	public func clearCache() async throws {
+		for downloader in singleFaviconDownloaderCache.values { downloader.invalidate() }
+		cache.removeAll()
+		singleFaviconDownloaderCache.removeAll()
+		remainingFaviconURLs.removeAll()
+		try await SingleFaviconDownloader.imageDownloader.clearCache()
+	}
+
 	// MARK: - API
 
 	@objc func handleLowMemory(_ notification: Notification) {
@@ -104,6 +112,9 @@ extension Notification.Name {
 
 	public func faviconAsIcon(for feed: Feed) -> IconImage? {
 
+		if let faviconURL = cachedFaviconURL(for: feed) {
+			_ = singleFaviconDownloaderCache[faviconURL]?.downloadFaviconIfNeeded()
+		}
 		if let image = cache[feed] {
 			return image
 		}
@@ -118,6 +129,9 @@ extension Notification.Name {
 
 	/// Returns the in-memory favicon for `feed` without triggering a download.
 	public func cachedFaviconAsIcon(for feed: Feed) -> IconImage? {
+		if let faviconURL = cachedFaviconURL(for: feed) {
+			_ = singleFaviconDownloaderCache[faviconURL]?.downloadFaviconIfNeeded()
+		}
 		if let image = cache[feed] {
 			return image
 		}
@@ -148,6 +162,7 @@ extension Notification.Name {
 			return nil
 		}
 		let downloader = faviconDownloader(withURL: faviconURL, homePageURL: homePageURL)
+		_ = downloader.downloadFaviconIfNeeded()
 		return downloader.iconImage
 	}
 
@@ -188,7 +203,11 @@ extension Notification.Name {
 			ImageMetadataDatabase.shared.clearFailure(url: singleFaviconDownloader.faviconURL)
 		}
 
+		cache.removeAll()
 		guard let homePageURL = singleFaviconDownloader.homePageURL else {
+			if singleFaviconDownloader.iconImage != nil {
+				postFaviconDidBecomeAvailableNotification(singleFaviconDownloader.faviconURL)
+			}
 			return
 		}
 		guard singleFaviconDownloader.iconImage != nil else {

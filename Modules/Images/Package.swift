@@ -36,6 +36,14 @@ let package = Package(
 				.enableUpcomingFeature("InferIsolatedConformances"),
 				.unsafeFlags(["-warnings-as-errors"])
 			]
+		),
+		.testTarget(
+			name: "ImagesTests",
+			dependencies: ["Images", "RSCore", "RSWeb"],
+			swiftSettings: [
+				.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+				.enableUpcomingFeature("InferIsolatedConformances")
+			]
 		)
 	]
 )

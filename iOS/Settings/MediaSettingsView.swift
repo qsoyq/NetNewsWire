@@ -105,11 +105,7 @@ enum MediaSetting: String, CaseIterable, Identifiable {
 				Text(NSLocalizedString("Preloading videos allows the current article's videos to load before playback and may use more data. It does not guarantee that a preview frame appears.", comment: "Video preload behavior"))
 			}
 			Section {
-				Button(NSLocalizedString("Clear Media Cache", comment: "Media cache action"), role: .destructive) {
-					model.requestCacheClear()
-				}
-				.disabled(model.isClearingCache)
-				.accessibilityIdentifier("media.clearCache")
+				Text(NSLocalizedString("Media cache controls are in Settings > Cache.", comment: "Media cache settings location"))
 			} header: {
 				Text(NSLocalizedString("Media Cache", comment: "Media settings section"))
 			}

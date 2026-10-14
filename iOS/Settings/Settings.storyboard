@@ -472,21 +472,20 @@
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" accessoryType="disclosureIndicator" indentationWidth="10" id="trn-sl-ROW" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
                                         <rect key="frame" x="20" y="1004" width="374" height="44"/>
                                         <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="trn-sl-ROW" id="trn-sl-CNT">
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" tableViewCell="trn-sl-ROW" id="trn-sl-CNT">
                                             <rect key="frame" x="0.0" y="0.0" width="347" height="44"/>
                                             <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" tag="941" contentMode="left" text="Article Translation" numberOfLines="0" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="trn-sl-LBL">
-                                                    <rect key="frame" x="20" y="11" width="307" height="22"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                </label>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="trn-sl-LBL" firstAttribute="top" secondItem="trn-sl-CNT" secondAttribute="topMargin" id="trn-sl-TOP"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="trn-sl-LBL" secondAttribute="bottom" id="trn-sl-BOT"/>
-                                                <constraint firstItem="trn-sl-LBL" firstAttribute="leading" secondItem="trn-sl-CNT" secondAttribute="leadingMargin" id="trn-sl-LEA"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="trn-sl-LBL" secondAttribute="trailing" id="trn-sl-TRA"/>
-                                            </constraints>
+                                            <subviews><label opaque="NO" userInteractionEnabled="NO" tag="941" contentMode="left" text="Article Translation" numberOfLines="0" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="trn-sl-LBL"><rect key="frame" x="20" y="11" width="307" height="22"/><fontDescription key="fontDescription" style="UICTFontTextStyleBody"/></label></subviews>
+                                            <constraints><constraint firstItem="trn-sl-LBL" firstAttribute="top" secondItem="trn-sl-CNT" secondAttribute="topMargin" id="trn-sl-TOP"/><constraint firstAttribute="bottomMargin" secondItem="trn-sl-LBL" secondAttribute="bottom" id="trn-sl-BOT"/><constraint firstItem="trn-sl-LBL" firstAttribute="leading" secondItem="trn-sl-CNT" secondAttribute="leadingMargin" id="trn-sl-LEA"/><constraint firstAttribute="trailingMargin" secondItem="trn-sl-LBL" secondAttribute="trailing" id="trn-sl-TRA"/></constraints>
+                                        </tableViewCellContentView>
+                                    </tableViewCell>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" accessoryType="disclosureIndicator" indentationWidth="10" id="cache-ROW" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="1048" width="374" height="44"/>
+                                        <autoresizingMask key="autoresizingMask"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" tableViewCell="cache-ROW" id="cache-CNT">
+                                            <rect key="frame" x="0.0" y="0.0" width="347" height="44"/><autoresizingMask key="autoresizingMask"/>
+                                            <subviews><label opaque="NO" contentMode="left" text="Cache" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="cache-LBL"><rect key="frame" x="20" y="11" width="307" height="22"/><fontDescription key="fontDescription" style="UICTFontTextStyleBody"/></label></subviews>
+                                            <constraints><constraint firstItem="cache-LBL" firstAttribute="top" secondItem="cache-CNT" secondAttribute="topMargin" id="cache-TOP"/><constraint firstAttribute="bottomMargin" secondItem="cache-LBL" secondAttribute="bottom" id="cache-BOT"/><constraint firstItem="cache-LBL" firstAttribute="leading" secondItem="cache-CNT" secondAttribute="leadingMargin" id="cache-LEA"/><constraint firstAttribute="trailingMargin" secondItem="cache-LBL" secondAttribute="trailing" id="cache-TRA"/></constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="dsc-00-new" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">

@@ -83,7 +83,7 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 		let isCacheableRequest = urlRequest.httpMethod == HTTPMethod.get
 
 		// Return cached record if available.
-		if isCacheableRequest {
+		if isCacheableRequest && urlRequest.cachePolicy != .reloadIgnoringLocalCacheData {
 			if let cachedRecord = cache[url.absoluteString] {
 				Self.logger.debug("Downloader: returning cached record for \(url)")
 				callback(DownloadResponse(data: cachedRecord.data, response: cachedRecord.response, returnedFromCache: true), nil)

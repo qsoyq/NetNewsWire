@@ -18,7 +18,8 @@ extension Notification.Name {
 @MainActor public final class AuthorAvatarDownloader {
 	public static let shared = AuthorAvatarDownloader()
 
-	private let imageDownloader = ImageDownloader.shared
+	private let imageDownloader = ImageDownloader(cacheSubfolderName: "AuthorAvatars")
+	private var generation = UUID()
 	private var cache = [String: IconImage]() // avatarURL: RSImage
 	private var waitingForAvatarURLs = Set<String>()
 
@@ -36,15 +37,23 @@ extension Notification.Name {
 		cache.removeAll()
 	}
 
+	public func clearCache() async throws {
+		generation = UUID()
+		cache.removeAll()
+		waitingForAvatarURLs.removeAll()
+		try await imageDownloader.clearCache()
+	}
+
 	public func image(for author: Author) -> IconImage? {
 
 		guard let avatarURL = author.avatarURL else {
 			return nil
 		}
 
-		if let cachedImage = cache[avatarURL] {
+		if let cachedImage = cache[avatarURL], imageDownloader.isFresh(avatarURL) {
 			return cachedImage
 		}
+		waitingForAvatarURLs.insert(avatarURL)
 
 		let kind = ActivityKind.downloadAvatar(avatarURL: avatarURL)
 		if let imageData = imageDownloader.image(for: avatarURL, activityOwner: .avatarDownloader, activityKind: kind, activityDetail: author.name) {
@@ -53,13 +62,14 @@ extension Notification.Name {
 			waitingForAvatarURLs.insert(avatarURL)
 		}
 
-		return nil
+		return cache[avatarURL]
 	}
 
 	public func cachedImage(for author: Author) -> IconImage? {
 		guard let avatarURL = author.avatarURL else {
 			return nil
 		}
+		_ = image(for: author)
 		return cache[avatarURL]
 	}
 
@@ -67,7 +77,7 @@ extension Notification.Name {
 		guard let avatarURL = note.userInfo?["url"] as? String else {
 			return
 		}
-		guard waitingForAvatarURLs.contains(avatarURL) else {
+		guard waitingForAvatarURLs.contains(avatarURL) || cache[avatarURL] != nil else {
 			return
 		}
 		guard let imageData = imageDownloader.image(for: avatarURL) else {
@@ -80,9 +90,10 @@ extension Notification.Name {
 @MainActor private extension AuthorAvatarDownloader {
 
 	func scaleAndCacheImageData(_ imageData: Data, _ avatarURL: String) {
+		let currentGeneration = generation
 		RSImage.image(with: imageData) { (image) in
 			MainActor.assumeIsolated {
-				if let image {
+				if currentGeneration == self.generation, let image {
 					self.handleImageDidBecomeAvailable(avatarURL, image)
 				}
 			}
@@ -90,13 +101,11 @@ extension Notification.Name {
 	}
 
 	func handleImageDidBecomeAvailable(_ avatarURL: String, _ image: RSImage) {
-		if cache[avatarURL] == nil {
-			cache[avatarURL] = IconImage(image)
-		}
+		cache[avatarURL] = IconImage(image)
 		if waitingForAvatarURLs.contains(avatarURL) {
 			waitingForAvatarURLs.remove(avatarURL)
-			postAvatarDidBecomeAvailableNotification(avatarURL)
 		}
+		postAvatarDidBecomeAvailableNotification(avatarURL)
 	}
 
 	func postAvatarDidBecomeAvailableNotification(_ avatarURL: String) {
