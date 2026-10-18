@@ -238,6 +238,11 @@ final class SettingsViewController: UITableViewController {
 
 		}
 
+		if indexPath.section == Section.notifications.rawValue {
+			cell.textLabel?.text = NSLocalizedString("Notifications", comment: "Notification settings title")
+			cell.accessoryType = .disclosureIndicator
+			cell.accessibilityIdentifier = "settings.notifications"
+		}
 		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.automaticallyExpandArticleDetails.rawValue {
 			(cell.viewWithTag(942) as? UILabel)?.text = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
 			cell.accessibilityIdentifier = "articles.autoExpandDetails.row"
@@ -249,8 +254,7 @@ final class SettingsViewController: UITableViewController {
 
 		switch Section(rawValue: indexPath.section) {
 		case .notifications:
-			UIApplication.shared.open(URL(string: "\(UIApplication.openSettingsURLString)")!)
-			tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
+			self.navigationController?.pushViewController(UIHostingController(rootView: NotificationSettingsView()), animated: true)
 		case .accounts:
 			let sortedAccounts = AccountManager.shared.sortedAccounts
 			if indexPath.row == sortedAccounts.count {

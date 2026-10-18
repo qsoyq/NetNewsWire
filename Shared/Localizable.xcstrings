@@ -1,6 +1,125 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Ignore Case" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignore Case"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忽略大小写"
+          }
+        }
+      }
+    },
+    "Keyword Notifications" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword Notifications"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词通知"
+          }
+        }
+      }
+    },
+    "Keywords" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keywords"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词"
+          }
+        }
+      }
+    },
+    "One keyword per line" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One keyword per line"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每行输入一个关键词"
+          }
+        }
+      }
+    },
+    "Notify when a newly received unread article contains any keyword in its title or body. Feed notifications and keyword matches send only one notification per article, grouped by feed." : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notify when a newly received unread article contains any keyword in its title or body. Feed notifications and keyword matches send only one notification per article, grouped by feed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新收到的未读文章，标题或正文包含任意关键词时发送通知。同一篇文章同时命中订阅源通知和关键词时只通知一次，并按订阅源分组。"
+          }
+        }
+      }
+    },
+    "Enter one keyword or phrase per line. Turn off Ignore Case to match uppercase and lowercase exactly. Changes apply to articles received during future refreshes." : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter one keyword or phrase per line. Turn off Ignore Case to match uppercase and lowercase exactly. Changes apply to articles received during future refreshes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每行输入一个关键词或短语。关闭“忽略大小写”后，将严格区分大小写。修改仅对后续刷新收到的新文章生效。"
+          }
+        }
+      }
+    },
+    "Notifications are disabled in System Settings. Allow notifications to receive feed and keyword alerts." : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications are disabled in System Settings. Allow notifications to receive feed and keyword alerts."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统设置中已关闭通知。请允许通知，以接收订阅源和关键词提醒。"
+          }
+        }
+      }
+    },
     "Unable to Load Image" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1151,7 +1270,11 @@
       "comment" : "No results"
     },
     "Notifications" : {
-      "comment" : "Notifications"
+      "comment" : "Notifications",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Notifications" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通知" } }
+      }
     },
     "Notifications are not enabled" : {
       "comment" : "Notifications are not enabled."
@@ -1200,7 +1323,11 @@
       "comment" : "Open System Preferences"
     },
     "Open System Settings" : {
-      "comment" : "Open System Settings button"
+      "comment" : "Open System Settings button",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open System Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开系统设置" } }
+      }
     },
     "Open System Settings to configure iCloud and enable iCloud Drive." : {
       "comment" : "CloudKit account setup recovery suggestion"

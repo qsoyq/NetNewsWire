@@ -46,10 +46,24 @@ import os
 			return
 		}
 
-		for article in articles {
-			if !article.status.read, let feed = article.feed, feed.newArticleNotificationsEnabled {
-				sendNotification(feed: feed, article: article)
+		for request in notificationRequests(for: articles, preferences: .current) {
+			UNUserNotificationCenter.current().add(request)
+		}
+	}
+
+	func notificationRequests(for articles: Set<Article>, preferences: KeywordNotificationPreferences) -> [UNNotificationRequest] {
+		var notifiedArticles = Set<NotificationArticleReference>()
+		let keywords = preferences.isEnabled ? preferences.keywords : []
+		return articles.compactMap { article in
+			guard !article.status.read, let feed = article.feed,
+				feed.newArticleNotificationsEnabled || article.containsAnyKeyword(keywords, ignoresCase: preferences.ignoresCase) else {
+				return nil
 			}
+			let reference = NotificationArticleReference(accountID: article.accountID, articleID: article.articleID)
+			guard notifiedArticles.insert(reference).inserted else {
+				return nil
+			}
+			return notificationRequest(feed: feed, article: article)
 		}
 	}
 
@@ -109,7 +123,7 @@ private extension UserNotificationManager {
 		}
 	}
 
-	func sendNotification(feed: Feed, article: Article) {
+	func notificationRequest(feed: Feed, article: Article) -> UNNotificationRequest {
 		let content = UNMutableNotificationContent()
 
 		content.title = feed.nameForDisplay
@@ -126,8 +140,7 @@ private extension UserNotificationManager {
 		}
 
 		let identifier = NotificationArticleReference(accountID: article.accountID, articleID: article.articleID).notificationIdentifier
-		let request = UNNotificationRequest.init(identifier: identifier, content: content, trigger: nil)
-		UNUserNotificationCenter.current().add(request)
+		return UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
 	}
 
 	/// Determine if there is an available icon for the article. This will then move it to the caches directory and make it avialble for the notification. 
