@@ -54,7 +54,11 @@ import os
 	func notificationRequests(for articles: Set<Article>, preferences: KeywordNotificationPreferences) -> [UNNotificationRequest] {
 		var notifiedArticles = Set<NotificationArticleReference>()
 		let keywords = preferences.isEnabled ? preferences.keywords : []
+		let blockedKeywords = preferences.isBlockingEnabled ? preferences.blockedKeywords : []
 		return articles.compactMap { article in
+			guard !article.containsAnyKeyword(blockedKeywords, ignoresCase: preferences.blockingIgnoresCase) else {
+				return nil
+			}
 			guard !article.status.read, let feed = article.feed,
 				feed.newArticleNotificationsEnabled || article.containsAnyKeyword(keywords, ignoresCase: preferences.ignoresCase) else {
 				return nil

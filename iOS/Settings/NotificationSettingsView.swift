@@ -6,12 +6,31 @@ struct NotificationSettingsView: View {
 	@AppStorage(KeywordNotificationPreferences.enabledKey) private var keywordNotificationsEnabled = false
 	@AppStorage(KeywordNotificationPreferences.keywordsKey) private var keywordsText = ""
 	@AppStorage(KeywordNotificationPreferences.ignoresCaseKey) private var ignoresCase = true
+	@AppStorage(KeywordNotificationPreferences.blockingEnabledKey) private var keywordBlockingEnabled = false
+	@AppStorage(KeywordNotificationPreferences.blockedKeywordsKey) private var blockedKeywordsText = ""
+	@AppStorage(KeywordNotificationPreferences.blockingIgnoresCaseKey) private var blockingIgnoresCase = true
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var permissionDenied = false
 	@State private var authorizationError: String?
 
 	var body: some View {
 		Form {
+			Section {
+				Toggle(NSLocalizedString("Block Notifications by Keyword", comment: "Notification keyword blocking switch"), isOn: $keywordBlockingEnabled)
+					.accessibilityIdentifier("notifications.blockedKeywords.enabled")
+				TextField(NSLocalizedString("One keyword per line", comment: "Keyword entry placeholder"), text: $blockedKeywordsText, axis: .vertical)
+					.lineLimit(5...12)
+					.textInputAutocapitalization(.never)
+					.autocorrectionDisabled()
+					.accessibilityLabel(NSLocalizedString("Blocked Keywords", comment: "Notification blocked keywords"))
+					.accessibilityIdentifier("notifications.blockedKeywords.text")
+				Toggle(NSLocalizedString("Ignore Case", comment: "Keyword case sensitivity switch"), isOn: $blockingIgnoresCase)
+					.accessibilityIdentifier("notifications.blockedKeywords.ignoreCase")
+			} header: {
+				Text(NSLocalizedString("Blocked Keywords", comment: "Notification blocked keywords"))
+			} footer: {
+				Text(NSLocalizedString("When enabled, any blocked keyword in an article’s title or body prevents its notification, even if feed notifications are enabled or notification keywords match. Enter one keyword or phrase per line. Changes apply to articles received during future refreshes.", comment: "Notification keyword blocking behavior"))
+			}
 			Section {
 				Toggle(NSLocalizedString("Keyword Notifications", comment: "Keyword notification switch"), isOn: $keywordNotificationsEnabled)
 					.accessibilityIdentifier("notifications.keywords.enabled")

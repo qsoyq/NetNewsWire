@@ -52,6 +52,8 @@ import UIKit
 			let bundle = try XCTUnwrap(Bundle(path: path))
 			XCTAssertEqual(bundle.localizedString(forKey: "Keyword Notifications", value: nil, table: "Localizable"), expected)
 			XCTAssertEqual(bundle.localizedString(forKey: "Ignore Case", value: nil, table: "Localizable"), language == "en" ? "Ignore Case" : "忽略大小写")
+			XCTAssertEqual(bundle.localizedString(forKey: "Block Notifications by Keyword", value: nil, table: "Localizable"), language == "en" ? "Block Notifications by Keyword" : "通知关键词屏蔽")
+			XCTAssertEqual(bundle.localizedString(forKey: "Blocked Keywords", value: nil, table: "Localizable"), language == "en" ? "Blocked Keywords" : "屏蔽关键词")
 		}
 	}
 
