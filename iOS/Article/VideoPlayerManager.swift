@@ -24,6 +24,9 @@ final class VideoPlayerManager: NSObject {
 
 	private var player: AVPlayer?
 	private var playerViewController: AVPlayerViewController?
+	private lazy var swipeDismissGesture = VideoSwipeDismissGesture { [weak self] in
+		self?.dismissByUserSwipe()
+	}
 	private var currentArticleID: String?
 	private var playbackArticles = [Article]()
 	nonisolated private let pictureInPictureState = OSAllocatedUnfairLock(initialState: false)
@@ -163,7 +166,18 @@ final class VideoPlayerManager: NSObject {
 			playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
 		}
 		self.playerViewController = playerViewController
+		swipeDismissGesture.install(on: playerViewController)
 		return playerViewController
+	}
+
+	/// Called once the user has swiped the player off screen. Matches what closing the player
+	/// with its own Done button does, minus the dismissal animation that the swipe already played.
+	private func dismissByUserSwipe() {
+		guard !isPiPActive else {
+			return
+		}
+		ArticleMediaLog.log(.info, operation: "Native video dismissal", message: "request=\(playbackRequestID) articleID=\(currentArticleID ?? "(nil)") source=swipe")
+		finishPlaybackSession(animated: false)
 	}
 
 	private func observePlayerItemEnd() {
@@ -358,7 +372,7 @@ final class VideoPlayerManager: NSObject {
 		return coordinator.nextArticle
 	}
 
-	private func finishPlaybackSession(completion: (() -> Void)? = nil) {
+	private func finishPlaybackSession(animated: Bool = true, completion: (() -> Void)? = nil) {
 		if let item = player?.currentItem {
 			logPlaybackDiagnostics(for: item, event: "finish-session")
 		}
@@ -380,7 +394,7 @@ final class VideoPlayerManager: NSObject {
 			completion?()
 			return
 		}
-		finishedController.dismiss(animated: true, completion: completion)
+		finishedController.dismiss(animated: animated, completion: completion)
 	}
 
 	private func restoreUserInterface(completionHandler: @escaping @Sendable (Bool) -> Void) {

@@ -9,8 +9,6 @@
 import UIKit
 
 @objc public protocol ImageScrollViewDelegate: UIScrollViewDelegate {
-	func imageScrollViewDidGestureSwipeUp(imageScrollView: ImageScrollView)
-	func imageScrollViewDidGestureSwipeDown(imageScrollView: ImageScrollView)
 }
 
 open class ImageScrollView: UIScrollView {
@@ -143,6 +141,7 @@ open class ImageScrollView: UIScrollView {
 		offset.y = max(minOffset.y, realMaxOffset)
 
 		contentOffset = offset
+		updateScrollEnabled()
 	}
 
 	private func maximumContentOffset() -> CGPoint {
@@ -182,14 +181,6 @@ open class ImageScrollView: UIScrollView {
 		tapGesture.numberOfTapsRequired = 2
 		zoomView!.addGestureRecognizer(tapGesture)
 
-		let downSwipeGesture = UISwipeGestureRecognizer(target: self, action: #selector(swipeUpGestureRecognizer(_:)))
-		downSwipeGesture.direction = .down
-		zoomView!.addGestureRecognizer(downSwipeGesture)
-
-		let upSwipeGesture = UISwipeGestureRecognizer(target: self, action: #selector(swipeDownGestureRecognizer(_:)))
-		upSwipeGesture.direction = .up
-		zoomView!.addGestureRecognizer(upSwipeGesture)
-
 		configureImageForSize(image.size)
 		adjustFrameToCenter()
 	}
@@ -199,6 +190,7 @@ open class ImageScrollView: UIScrollView {
 		contentSize = imageSize
 		setMaxMinZoomScalesForCurrentBounds()
 		zoomScale = minimumZoomScale
+		updateScrollEnabled()
 
 		switch initialOffset {
 		case .beginning:
@@ -218,6 +210,12 @@ open class ImageScrollView: UIScrollView {
 				contentOffset = CGPoint(x: 0, y: yOffset)
 			}
 		}
+	}
+
+	/// At the minimum zoom scale the image has nothing to pan, so the scroll view must not
+	/// compete with the enclosing dismiss scroll view for vertical drags.
+	func updateScrollEnabled() {
+		isScrollEnabled = zoomScale > minimumZoomScale + 0.001
 	}
 
 	private func setMaxMinZoomScalesForCurrentBounds() {
@@ -259,18 +257,6 @@ open class ImageScrollView: UIScrollView {
 			let center = gestureRecognizer.location(in: gestureRecognizer.view)
 			let zoomRect = zoomRectForScale(ImageScrollView.kZoomInFactorFromMinWhenDoubleTap * minimumZoomScale, center: center)
 			zoom(to: zoomRect, animated: true)
-		}
-	}
-
-	@objc func swipeUpGestureRecognizer(_ gestureRecognizer: UIGestureRecognizer) {
-		if gestureRecognizer.state == .ended {
-			imageScrollViewDelegate?.imageScrollViewDidGestureSwipeUp(imageScrollView: self)
-		}
-	}
-
-	@objc func swipeDownGestureRecognizer(_ gestureRecognizer: UIGestureRecognizer) {
-		if gestureRecognizer.state == .ended {
-			imageScrollViewDelegate?.imageScrollViewDidGestureSwipeDown(imageScrollView: self)
 		}
 	}
 
@@ -336,6 +322,7 @@ extension ImageScrollView: UIScrollViewDelegate {
 	}
 
 	public func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+		updateScrollEnabled()
 		imageScrollViewDelegate?.scrollViewDidEndZooming?(scrollView, with: view, atScale: scale)
 	}
 
@@ -354,6 +341,7 @@ extension ImageScrollView: UIScrollViewDelegate {
 
 	public func scrollViewDidZoom(_ scrollView: UIScrollView) {
 		adjustFrameToCenter()
+		updateScrollEnabled()
 		imageScrollViewDelegate?.scrollViewDidZoom?(scrollView)
 	}
 

@@ -30,6 +30,12 @@ final class ImageViewController: UIViewController {
 	private let galleryStatus = UILabel()
 	private var galleryGeneration = 0
 
+	// Swiping up or down moves this scroll view away from its resting (middle) page, the same
+	// approach Telegram uses: the system provides tracking, velocity and deceleration, so a
+	// single drag always dismisses instead of competing with discrete swipe recognizers.
+	private let dismissScrollView = UIScrollView()
+	private var isDismissing = false
+
 	var image: UIImage!
 	var imageTitle: String?
 	var resourceURL: String?
@@ -38,8 +44,19 @@ final class ImageViewController: UIViewController {
 	// Strong reference — the navigation controller’s transitioningDelegate is weak,
 	// and the transition must outlive the WebViewController that configured it.
 	var transition: ImageTransition?
+	/// The image's frame in this view's coordinate space, including the dismiss drag offset.
 	var zoomedFrame: CGRect {
-		return imageScrollView.zoomedFrame
+		// Read from inside the transition's animation block, so lay out without animating.
+		UIView.performWithoutAnimation {
+			view.layoutIfNeeded()
+		}
+		let frame = imageScrollView.zoomedFrame
+		return CGRect(
+			x: frame.minX - imageScrollView.contentOffset.x + imageScrollView.frame.minX - dismissScrollView.contentOffset.x,
+			y: frame.minY - imageScrollView.contentOffset.y + imageScrollView.frame.minY - dismissScrollView.contentOffset.y,
+			width: frame.width,
+			height: frame.height
+		)
 	}
 
 	override var keyCommands: [UIKeyCommand]? {
@@ -63,6 +80,7 @@ final class ImageViewController: UIViewController {
 		navigationItem.rightBarButtonItem = shareButtonItem
 		self.shareButtonItem = shareButtonItem
 
+		installDismissScrollView()
         imageScrollView.setup()
         // The image viewer is full-screen, so the scroll view ignores
         // the navigation bar and safe area insets. Otherwise the image is pushed down
@@ -81,7 +99,6 @@ final class ImageViewController: UIViewController {
 				swipe.direction = direction
 				swipe.delegate = self
 				view.addGestureRecognizer(swipe)
-				imageScrollView.panGestureRecognizer.require(toFail: swipe)
 			}
 			navigationItem.title = "\(galleryIndex + 1) / \(gallery.count)"
 		}
@@ -109,6 +126,11 @@ final class ImageViewController: UIViewController {
 		titleBackground.layer.cornerRadius = 6
     }
 
+	override func viewDidLayoutSubviews() {
+		super.viewDidLayoutSubviews()
+		updateDismissLayout()
+	}
+
 	override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
 		super.viewWillTransition(to: size, with: coordinator)
 		coordinator.animate(alongsideTransition: { [weak self] _ in
@@ -122,6 +144,69 @@ final class ImageViewController: UIViewController {
 			galleryGeneration += 1
 			galleryTask?.cancel()
 		}
+	}
+
+	private func installDismissScrollView() {
+		dismissScrollView.translatesAutoresizingMaskIntoConstraints = false
+		dismissScrollView.delegate = self
+		dismissScrollView.contentInsetAdjustmentBehavior = .never
+		dismissScrollView.delaysContentTouches = false
+		dismissScrollView.showsVerticalScrollIndicator = false
+		dismissScrollView.showsHorizontalScrollIndicator = false
+		dismissScrollView.alwaysBounceHorizontal = false
+		dismissScrollView.alwaysBounceVertical = false
+		dismissScrollView.scrollsToTop = false
+		dismissScrollView.clipsToBounds = false
+		view.insertSubview(dismissScrollView, at: 0)
+		NSLayoutConstraint.activate([
+			dismissScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+			dismissScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+			dismissScrollView.topAnchor.constraint(equalTo: view.topAnchor),
+			dismissScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+		])
+
+		// Removing the image scroll view also removes its storyboard constraints to the root view.
+		imageScrollView.removeFromSuperview()
+		imageScrollView.translatesAutoresizingMaskIntoConstraints = true
+		dismissScrollView.addSubview(imageScrollView)
+		view.layoutIfNeeded()
+		updateDismissLayout()
+	}
+
+	/// The dismiss scroll view is three pages tall with the image on the middle page, so a drag
+	/// in either direction has room to scroll.
+	private func updateDismissLayout() {
+		let size = dismissScrollView.bounds.size
+		guard size.width > 0, size.height > 0 else {
+			return
+		}
+		let contentSize = CGSize(width: size.width, height: size.height * 3)
+		let sizeChanged = dismissScrollView.contentSize != contentSize
+		if sizeChanged {
+			dismissScrollView.contentSize = contentSize
+		}
+		let frame = CGRect(x: 0, y: size.height, width: size.width, height: size.height)
+		if imageScrollView.frame != frame {
+			imageScrollView.frame = frame
+		}
+		if sizeChanged, !dismissScrollView.isDragging, !isDismissing {
+			dismissScrollView.contentOffset = CGPoint(x: 0, y: size.height)
+		}
+	}
+
+	private func updateDismissScrollEnabled() {
+		// While zoomed in, vertical drags pan the image instead of dismissing it.
+		dismissScrollView.isScrollEnabled = !isDismissing && imageScrollView.zoomScale <= imageScrollView.minimumZoomScale + 0.001
+	}
+
+	private func updateControlsAlpha() {
+		let distance = dismissScrollView.contentOffset.y - dismissScrollView.bounds.height
+		let alpha = MediaSwipeDismiss.controlsAlpha(distance: distance)
+		navigationController?.navigationBar.alpha = alpha
+		titleBackground.alpha = alpha
+		titleLabel.alpha = alpha
+		gallerySpinner.alpha = alpha
+		galleryStatus.alpha = alpha
 	}
 
 	private func installImageActions() {
@@ -179,6 +264,7 @@ final class ImageViewController: UIViewController {
 				self.imageScrollView.display(image: image)
 				self.installImageActions()
 			}
+			self.updateDismissScrollEnabled()
 		}
 	}
 
@@ -244,7 +330,12 @@ final class ImageViewController: UIViewController {
 
 extension ImageViewController: UIGestureRecognizerDelegate {
 	func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-		imageScrollView.zoomScale <= imageScrollView.minimumZoomScale + 0.001
+		!isDismissing && imageScrollView.zoomScale <= imageScrollView.minimumZoomScale + 0.001
+	}
+
+	func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+		// Gallery swipes must never wait on, or be blocked by, the vertical dismiss drag.
+		otherGestureRecognizer === dismissScrollView.panGestureRecognizer
 	}
 }
 
@@ -252,11 +343,43 @@ extension ImageViewController: UIGestureRecognizerDelegate {
 
 extension ImageViewController: ImageScrollViewDelegate {
 
-	func imageScrollViewDidGestureSwipeUp(imageScrollView: ImageScrollView) {
-		dismiss(animated: true)
+	// These callbacks come from both the dismiss scroll view and (forwarded) the image scroll view.
+
+	func scrollViewDidScroll(_ scrollView: UIScrollView) {
+		guard scrollView === dismissScrollView else {
+			return
+		}
+		updateControlsAlpha()
 	}
 
-	func imageScrollViewDidGestureSwipeDown(imageScrollView: ImageScrollView) {
-		dismiss(animated: true)
+	func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+		guard scrollView === dismissScrollView, !isDismissing else {
+			return
+		}
+		let height = scrollView.bounds.height
+		let translation = scrollView.contentOffset.y - height
+		// UIScrollView reports velocity in points per millisecond.
+		if MediaSwipeDismiss.shouldDismiss(translation: translation, velocity: velocity.y * 1000, height: height) {
+			targetContentOffset.pointee = scrollView.contentOffset
+			isDismissing = true
+			scrollView.isScrollEnabled = false
+			dismiss(animated: true)
+		} else {
+			targetContentOffset.pointee = CGPoint(x: 0, y: height)
+		}
+	}
+
+	func scrollViewDidZoom(_ scrollView: UIScrollView) {
+		guard scrollView === imageScrollView else {
+			return
+		}
+		updateDismissScrollEnabled()
+	}
+
+	func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+		guard scrollView === imageScrollView else {
+			return
+		}
+		updateDismissScrollEnabled()
 	}
 }
