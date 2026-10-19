@@ -189,7 +189,8 @@
     }
 
     function activate(entry) {
-        if (!enabled || !active || !entry.element.isConnected) return;
+        // A tap is proof the page is visible; `active` only gates background refreshes.
+        if (!enabled || !entry.element.isConnected) return;
         if (entry.video) {
             if (nativeVideo) {
                 entry.element.pause();

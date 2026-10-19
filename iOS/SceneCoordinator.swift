@@ -1832,7 +1832,11 @@ struct SidebarItemNode: Hashable, Sendable {
 		mainFeedCollectionViewController.present(hostingController, animated: true)
 	}
 
-	func showFullScreenImage(image: UIImage, imageTitle: String?, resourceURL: String?, transition: ImageTransition, images: [ArticleGalleryImage] = [], saveAllImagesHandler: (() -> Void)? = nil) {
+	func showFullScreenImage(image: UIImage?, imageTitle: String?, resourceURL: String?, transition: ImageTransition, images: [ArticleGalleryImage] = [], saveAllImagesHandler: (() -> Void)? = nil) {
+		guard rootSplitViewController.presentedViewController == nil else {
+			ArticleMediaLog.log(.warning, operation: "Image viewer", message: "outcome=ignored-already-presenting")
+			return
+		}
 		let imageVC = UIStoryboard.main.instantiateController(ofType: ImageViewController.self)
 		imageVC.image = image
 		imageVC.imageTitle = imageTitle

@@ -36,7 +36,8 @@ final class ImageViewController: UIViewController {
 	private let dismissScrollView = UIScrollView()
 	private var isDismissing = false
 
-	var image: UIImage!
+	/// `nil` while the viewer is still loading the image it was opened for.
+	var image: UIImage?
 	var imageTitle: String?
 	var resourceURL: String?
 	var saveAllImagesHandler: (() -> Void)?
@@ -89,7 +90,9 @@ final class ImageViewController: UIViewController {
         imageScrollView.imageScrollViewDelegate = self
         imageScrollView.imageContentMode = .aspectFit
 		imageScrollView.initialOffset = .center
-		imageScrollView.display(image: image)
+		if let image {
+			imageScrollView.display(image: image)
+		}
 		installImageActions()
 		galleryIndex = gallery.firstIndex { $0.url == resourceURL } ?? 0
 		requestedIndex = galleryIndex
@@ -124,6 +127,8 @@ final class ImageViewController: UIViewController {
 
 		titleBackground.isHidden = imageTitle?.isEmpty != false
 		titleBackground.layer.cornerRadius = 6
+
+		loadInitialImage()
     }
 
 	override func viewDidLayoutSubviews() {
@@ -235,19 +240,12 @@ final class ImageViewController: UIViewController {
 		galleryStatus.text = nil
 		let item = gallery[next]
 		galleryTask = Task { [weak self] in
-			let data: Data?
-			if item.url.hasPrefix("data:") {
-				data = try? ArticleMediaSaver.dataURLData(item.url)
-			} else if let url = URL(string: item.url), ["https", "http"].contains(url.scheme) {
-				data = try? await Downloader.shared.download(url, userAgentStyle: .browser).data
-			} else {
-				data = nil
-			}
+			let loaded = await Self.loadImage(from: item.url)
 			guard !Task.isCancelled, let self, self.galleryGeneration == generation else {
 				return
 			}
 			self.gallerySpinner.stopAnimating()
-			guard let data, let image = UIImage(data: data) else {
+			guard let image = loaded else {
 				self.requestedIndex = self.galleryIndex
 				self.galleryStatus.text = NSLocalizedString("Unable to Load Image", comment: "Gallery image loading failure")
 				return
@@ -268,6 +266,63 @@ final class ImageViewController: UIViewController {
 		}
 	}
 
+	/// True while the image this viewer was opened for is still being fetched.
+	var isLoadingInitialImage: Bool {
+		image == nil && gallerySpinner.isAnimating
+	}
+
+	private static func loadImage(from source: String) async -> UIImage? {
+		let data: Data?
+		if source.hasPrefix("data:") {
+			data = try? ArticleMediaSaver.dataURLData(source)
+		} else if let url = URL(string: source), ["https", "http"].contains(url.scheme) {
+			data = try? await Downloader.shared.download(url, userAgentStyle: .browser).data
+		} else {
+			data = nil
+		}
+		guard let data, !data.isEmpty else {
+			return nil
+		}
+		return UIImage(data: data)
+	}
+
+	/// The viewer is presented the moment the user taps a thumbnail, before the full-size
+	/// image exists. It shows a spinner here and swaps the image in when it arrives.
+	private func loadInitialImage() {
+		guard image == nil, let source = resourceURL, !source.isEmpty else {
+			return
+		}
+		galleryGeneration += 1
+		let generation = galleryGeneration
+		galleryTask?.cancel()
+		gallerySpinner.startAnimating()
+		galleryStatus.text = nil
+		galleryTask = Task { [weak self] in
+			let loaded = await Self.loadImage(from: source)
+			guard !Task.isCancelled, let self, self.galleryGeneration == generation else {
+				return
+			}
+			self.gallerySpinner.stopAnimating()
+			guard let loaded else {
+				self.galleryStatus.text = NSLocalizedString("Unable to Load Image", comment: "Gallery image loading failure")
+				ArticleMediaLog.log(.warning, operation: "Image viewer", message: "outcome=load-failed source=\(ArticleMediaLog.urlDescription(source, level: .warning))")
+				return
+			}
+			self.image = loaded
+			// Dismissal can now fly the image back to its thumbnail.
+			self.transition?.originImage = loaded
+			self.imageScrollView.display(image: loaded)
+			self.installImageActions()
+			self.updateDismissScrollEnabled()
+			if !UIAccessibility.isReduceMotionEnabled {
+				self.imageScrollView.alpha = 0
+				UIView.animate(withDuration: 0.2) {
+					self.imageScrollView.alpha = 1
+				}
+			}
+		}
+	}
+
 	@IBAction func share(_ sender: Any) {
 		guard let image else {
 			return
@@ -282,6 +337,9 @@ final class ImageViewController: UIViewController {
 	}
 
 	@objc private func saveToPhotos() {
+		guard let image else {
+			return
+		}
 		UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
 	}
 

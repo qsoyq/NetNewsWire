@@ -51,7 +51,7 @@ import RSParser
 		}
 	}
 
-	func testImageAndNativeVideoClicksResolveOriginalURLsAndInactiveClicksAreIgnored() async throws {
+	func testImageAndNativeVideoClicksResolveOriginalURLsAndTapsAreNeverSwallowedByInactiveState() async throws {
 		let (webView, messages) = try await makeWebView()
 		try await configure(webView)
 		_ = try await evaluate("document.querySelector('[data-nnw-media-thumbnails] button').click();", in: webView)
@@ -64,9 +64,10 @@ import RSParser
 		_ = try await evaluate("document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].click();", in: webView)
 		try await waitUntil { messages.videos.count == 1 }
 		XCTAssertEqual(messages.videos.first, "https://example.test/movie.mp4")
+		// A tap proves the page is visible. Whether the viewer may open is decided natively, so the
+		// script must still report taps while background refreshes are paused.
 		_ = try await evaluate("window.nnwMediaThumbnails.setActive(false); document.querySelector('[data-nnw-media-thumbnails] button').click();", in: webView)
-		try await Task.sleep(for: .milliseconds(100))
-		XCTAssertEqual(messages.images.count, 1)
+		try await waitUntil { messages.images.count == 2 }
 	}
 
 	func testPosterAndDynamicContentUpdatesAndDisabledCleanup() async throws {
@@ -229,6 +230,23 @@ import RSParser
 		AppDefaults.shared.hideArticleBodyMedia = true
 		try await waitForScript("return document.querySelector('.articleBody img').getClientRects().length === 0;", in: webView)
 		try await waitForScript("return !!document.querySelector('[data-nnw-media-thumbnails] button');", in: webView)
+	}
+
+	func testViewerOpensBeforeImageLoadsAndShowsItWhenReady() async throws {
+		let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 100)).image { context in
+			UIColor.systemPink.setFill()
+			context.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
+		}
+		let source = "data:image/png;base64," + (try XCTUnwrap(image.pngData())).base64EncodedString()
+		let viewer = UIStoryboard.main.instantiateController(ofType: ImageViewController.self)
+		viewer.image = nil
+		viewer.resourceURL = source
+		viewer.loadViewIfNeeded()
+		XCTAssertNil(viewer.imageScrollView.zoomView, "Nothing to show until the image arrives")
+		XCTAssertTrue(viewer.isLoadingInitialImage, "A loading state must be visible immediately")
+		try await waitUntil { viewer.imageScrollView.zoomView != nil }
+		XCTAssertNotNil(viewer.image)
+		XCTAssertFalse(viewer.isLoadingInitialImage)
 	}
 
 	func testInitialHTMLHidesMediaBeforeDocumentEndAndBootstrapsWithoutNativeCallback() async throws {

@@ -776,7 +776,7 @@ extension WebViewController: WKScriptMessageHandler {
 		case MessageName.imageWasShown:
 			clickedImageCompletion?()
 		case MessageName.imageWasClicked:
-			guard canPresentArticleImage, message.webView === webView else {
+			guard message.webView === webView else {
 				return
 			}
 			imageWasClicked(body: message.body as? String, fromThumbnail: message.world == ArticleMediaThumbnails.contentWorld)
@@ -1597,7 +1597,11 @@ private extension WebViewController {
 	}
 
 	func imageWasClicked(body: String?, fromThumbnail: Bool = false) {
-		guard canPresentArticleImage, let article, let webView, let body else {
+		// A tap on a thumbnail proves the article is on screen, so it must never be dropped just
+		// because page-transition bookkeeping has not caught up yet. Inline images still wait for it.
+		let canPresent = fromThumbnail ? viewIfLoaded?.window != nil : canPresentArticleImage
+		guard canPresent, let article, let webView, let body else {
+			ArticleMediaLog.log(.warning, operation: "Image click", message: "outcome=ignored thumbnail=\(fromThumbnail) enabled=\(imagePresentationEnabled) in_window=\(viewIfLoaded?.window != nil) current=\((delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true) has_article=\(self.article != nil) has_web_view=\(self.webView != nil)")
 			return
 		}
 
@@ -1609,6 +1613,12 @@ private extension WebViewController {
 		guard let imageURL = URL(string: clickMessage.imageURL) else { return }
 
 		invalidateImageDownload()
+		if fromThumbnail {
+			// Open the viewer right away; it shows a loading state and downloads the image itself.
+			imageOpenedFromThumbnail = true
+			showFullScreenImage(image: nil, clickMessage: clickMessage, webView: webView)
+			return
+		}
 		let generation = imageRequestGeneration
 		imageDownloadTask = Task { [weak self] in
 			let imageData: Data?
@@ -1630,7 +1640,7 @@ private extension WebViewController {
 		}
 	}
 
-	private func showFullScreenImage(image: UIImage, clickMessage: ImageClickMessage, webView: WKWebView) {
+	private func showFullScreenImage(image: UIImage?, clickMessage: ImageClickMessage, webView: WKWebView) {
 
 		let y = CGFloat(clickMessage.y) + webView.safeAreaInsets.top
 		let rect = CGRect(x: CGFloat(clickMessage.x), y: y, width: CGFloat(clickMessage.width), height: CGFloat(clickMessage.height))
@@ -1644,7 +1654,7 @@ private extension WebViewController {
 
 		transition.originImage = image
 
-		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, resourceURL: clickMessage.resourceURL, transition: transition, images: clickMessage.images ?? [], saveAllImagesHandler: { [weak self] in
+		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, resourceURL: clickMessage.resourceURL ?? clickMessage.imageURL, transition: transition, images: clickMessage.images ?? [], saveAllImagesHandler: { [weak self] in
 			self?.confirmSaveAllMedia(for: .image)
 		})
 	}

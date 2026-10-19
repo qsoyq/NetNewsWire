@@ -283,6 +283,9 @@ open class ImageScrollView: UIScrollView {
 	}
 
 	open func resize() {
+		guard zoomView != nil else {
+			return
+		}
 		self.configureImageForSize(self.imageSize)
 	}
 }

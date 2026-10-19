@@ -36,6 +36,23 @@ final class ImageTransition: NSObject, UIViewControllerAnimatedTransitioning {
 
 	private func animateTransitionPresenting(using transitionContext: UIViewControllerContextTransitioning) {
 
+		// The viewer opens before its image has loaded, so there is nothing to zoom from yet.
+		guard originImage != nil else {
+			transitionContext.view(forKey: .from)?.removeFromSuperview()
+			transitionContext.containerView.backgroundColor = Assets.Colors.fullScreenBackground
+			let toView = transitionContext.view(forKey: .to)
+			if let toView {
+				toView.alpha = 0
+				transitionContext.containerView.addSubview(toView)
+			}
+			UIView.animate(withDuration: 0.2, animations: {
+				toView?.alpha = 1
+			}, completion: { _ in
+				transitionContext.completeTransition(true)
+			})
+			return
+		}
+
 		let imageView = UIImageView(image: originImage)
 		imageView.frame = originFrame
 
@@ -73,7 +90,7 @@ final class ImageTransition: NSObject, UIViewControllerAnimatedTransitioning {
 			return
 		}
 
-		if returnsWithoutZoom, let fromView = transitionContext.view(forKey: .from) {
+		if returnsWithoutZoom || originImage == nil, let fromView = transitionContext.view(forKey: .from) {
 			transitionContext.containerView.insertSubview(toView, belowSubview: fromView)
 			UIView.animate(withDuration: 0.2, animations: {
 				fromView.alpha = 0
