@@ -843,12 +843,12 @@ extension WebViewController: WKScriptMessageHandler {
 	}
 
 	private func handleVideoEnded() {
-		appDelegate.resumeDatabaseProcessingIfNecessary()
-		coordinator.selectNextArticle()
+		coordinator.selectNextArticleAfterVideo()
 	}
 
 	private var canPresentNativeVideo: Bool {
 		AppDefaults.shared.useNativeVideoPlayer && videoPresentationEnabled && viewIfLoaded?.window != nil
+			&& !coordinator.isArticleQuickSettingsPresented
 			&& (delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true
 			&& presentedViewController == nil
 			&& !VideoPlayerManager.shared.isPiPActive && !WebViewPiPManager.shared.isPiPActive

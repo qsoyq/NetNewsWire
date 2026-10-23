@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ArticleTranslationSettingsView: View {
+	var onSave: (() -> Void)? = nil
 	@Environment(\.dismiss) private var dismiss
 	@State private var preferences = ArticleTranslationSettings.preferences
 	@State private var apiKey = ""
@@ -95,11 +96,17 @@ struct ArticleTranslationSettingsView: View {
 				Button(ArticleTranslationStrings.text("Save")) {
 					do {
 						try ArticleTranslationSettings.save(preferences, apiKey: apiKey)
-						dismiss()
+						if let onSave {
+							onSave()
+						} else {
+							dismiss()
+						}
 					} catch {
 						errorMessage = error.localizedDescription
 					}
-				}.disabled(!didLoadKey)
+				}
+				.disabled(!didLoadKey)
+				.accessibilityIdentifier("translation.save")
 			}
 		}
 		.onAppear {

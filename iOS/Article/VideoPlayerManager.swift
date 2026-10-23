@@ -292,7 +292,8 @@ final class VideoPlayerManager: NSObject {
 			isPiPActive: pipActive,
 			pipAutoPlayNextVideo: pipAutoPlayNextVideo,
 			autoGotoNextAfterVideo: AppDefaults.shared.autoGotoNextAfterVideo,
-			hasNextVideo: nextVideoURL != nil
+			hasNextVideo: nextVideoURL != nil,
+			isArticleNavigationBlocked: coordinator.isArticleQuickSettingsPresented
 		)
 		ArticleMediaLog.log(.info, operation: "Native video end", message: "request=\(playbackRequestID) articleID=\(currentArticleID ?? "(nil)") action=\(action) pip=\(pipActive)")
 
@@ -328,8 +329,7 @@ final class VideoPlayerManager: NSObject {
 					return
 				}
 				ArticleMediaLog.log(.info, operation: "Native video end", message: "request=\(endedRequestID) event=dismissal-completed-select-next")
-				appDelegate.resumeDatabaseProcessingIfNecessary()
-				coordinator.selectNextArticle()
+				coordinator.selectNextArticleAfterVideo()
 			}
 			return
 		case .finish:
@@ -345,7 +345,10 @@ final class VideoPlayerManager: NSObject {
 		case finish
 	}
 
-	static func playbackEndAction(isPiPActive: Bool, pipAutoPlayNextVideo: Bool, autoGotoNextAfterVideo: Bool, hasNextVideo: Bool) -> PlaybackEndAction {
+	static func playbackEndAction(isPiPActive: Bool, pipAutoPlayNextVideo: Bool, autoGotoNextAfterVideo: Bool, hasNextVideo: Bool, isArticleNavigationBlocked: Bool = false) -> PlaybackEndAction {
+		guard !isArticleNavigationBlocked else {
+			return .finish
+		}
 		if isPiPActive && pipAutoPlayNextVideo {
 			// The displayed article can lag behind background playback. Never navigate
 			// from that stale selection when the playback queue has ended.
@@ -415,7 +418,7 @@ final class VideoPlayerManager: NSObject {
 			completionHandler(restored)
 		}
 
-		guard let coordinator else {
+		guard let coordinator, !coordinator.isArticleQuickSettingsPresented else {
 			finish(false)
 			return
 		}
@@ -435,7 +438,7 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	func synchronizeArticleAfterForeground() {
-		guard isPiPActive, let currentArticleID, let coordinator,
+		guard isPiPActive, let currentArticleID, let coordinator, !coordinator.isArticleQuickSettingsPresented,
 		      let article = coordinator.articleFor(currentArticleID) else {
 			return
 		}

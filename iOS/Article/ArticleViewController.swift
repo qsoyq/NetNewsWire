@@ -39,6 +39,20 @@ final class ArticleViewController: UIViewController {
 		return item
 	}()
 	private var shouldApplyInitialArticleFullscreen = true
+	private lazy var quickSettingsBarButtonItem: UIBarButtonItem = {
+		let actions = ArticleQuickSettingsDestination.allCases.map { destination in
+			UIAction(title: destination.title, image: UIImage(systemName: destination.symbolName), identifier: UIAction.Identifier(destination.identifier)) { [weak self] _ in
+				guard let self, self.article != nil, !self.isPageTransitionInProgress else {
+					return
+				}
+				self.coordinator.showArticleQuickSettings(destination)
+			}
+		}
+		let item = UIBarButtonItem(image: UIImage(systemName: "gearshape"), menu: UIMenu(children: actions))
+		item.accessibilityLabel = NSLocalizedString("Quick Settings", comment: "Article settings menu")
+		item.accessibilityIdentifier = "article.quickSettings"
+		return item
+	}()
 
 	private var pageViewController: UIPageViewController!
 	private var isPageTransitionInProgress = false
@@ -100,7 +114,7 @@ final class ArticleViewController: UIViewController {
 					// controller and flush it from didFinishAnimating once the transition has ended.
 					pendingSetViewController = controller
 				} else {
-					DispatchQueue.main.async {
+					DispatchQueue.main.async { [self] in
 						// You have to set the view controller to clear out the UIPageViewController child controller cache.
 						// You also have to do it in an async call or you will get a strange assertion error.
 						// Re-check the transition state: a user swipe between enqueue and execution can flip
@@ -174,14 +188,19 @@ final class ArticleViewController: UIViewController {
 		navigationItem.compactAppearance = appearance
 
 		let fullScreenTapZone = UIView()
+		let preferredTapZoneWidth = fullScreenTapZone.widthAnchor.constraint(equalToConstant: 150)
+		preferredTapZoneWidth.priority = .defaultLow
 		NSLayoutConstraint.activate([
-			fullScreenTapZone.widthAnchor.constraint(equalToConstant: 150),
+			preferredTapZoneWidth,
+			fullScreenTapZone.widthAnchor.constraint(lessThanOrEqualToConstant: 150),
 			fullScreenTapZone.heightAnchor.constraint(equalToConstant: 44)
 		])
+		fullScreenTapZone.accessibilityIdentifier = "article.fullscreenTapZone"
 		fullScreenTapZone.isUserInteractionEnabled = true
 		fullScreenTapZone.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(didTapNavigationBar)))
 		fullScreenTapZone.addInteraction(UIContextMenuInteraction(delegate: self))
 		navigationItem.titleView = fullScreenTapZone
+		navigationItem.rightBarButtonItems = (navigationItem.rightBarButtonItems ?? []) + [quickSettingsBarButtonItem]
 
 		articleExtractorButton.addTarget(self, action: #selector(toggleArticleExtractor(_:)), for: .touchUpInside)
 		let articleExtractorBarButtonItem = UIBarButtonItem(customView: articleExtractorButton)
@@ -342,6 +361,7 @@ final class ArticleViewController: UIViewController {
 	}
 
 	func updateUI() {
+		quickSettingsBarButtonItem.isEnabled = article != nil && !isPageTransitionInProgress
 
 		guard let article = article else {
 			articleExtractorButton.isEnabled = false
@@ -639,10 +659,12 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 
 	func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {
 		isPageTransitionInProgress = true
+		quickSettingsBarButtonItem.isEnabled = false
 	}
 
 	func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
 		isPageTransitionInProgress = false
+		quickSettingsBarButtonItem.isEnabled = article != nil
 		// A preloaded page may have finished rendering before it became current.
 		currentWebViewController?.resumeNativeVideoAfterPageTransition()
 		updateTranslationButton()
@@ -652,7 +674,7 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 			pendingSetViewController = nil
 			// Async because UIKit is still finishing the swipe — a synchronous
 			// setViewControllers here triggers an assertion in _UIQueuingScrollView.
-			DispatchQueue.main.async {
+			DispatchQueue.main.async { [self] in
 				if self.isPageTransitionInProgress {
 					self.pendingSetViewController = pending
 				} else {

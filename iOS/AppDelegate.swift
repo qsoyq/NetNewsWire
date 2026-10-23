@@ -589,7 +589,7 @@ private extension AppDelegate {
 
 	func handleMarkAsReadForNotificationGroup(response: UNNotificationResponse, completion: @escaping @Sendable () -> Void) {
 		let selected = UserNotificationManager.snapshot(response.notification)
-		UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+		UNUserNotificationCenter.current().getDeliveredNotifications { [self] notifications in
 			let group = NotificationArticleGroup.select(from: notifications.map(UserNotificationManager.snapshot), selected: selected)
 			Task { @MainActor [weak self] in
 				guard let self else {

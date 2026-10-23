@@ -73,6 +73,11 @@ struct SidebarItemNode: Hashable, Sendable {
 	private var mainFeedCollectionViewController: MainFeedCollectionViewController!
 	private var mainTimelineViewController: MainTimelineModernViewController?
 	private var articleViewController: ArticleViewController?
+	private weak var articleQuickSettingsController: ArticleQuickSettingsViewController?
+
+	var isArticleQuickSettingsPresented: Bool {
+		articleQuickSettingsController != nil
+	}
 
 	private let fetchAndMergeArticlesQueue = CoalescingQueue(name: "Fetch and Merge Articles", interval: 0.5)
 	private let rebuildBackingStoresQueue = CoalescingQueue(name: "Rebuild The Backing Stores", interval: 0.5)
@@ -1474,6 +1479,14 @@ struct SidebarItemNode: Hashable, Sendable {
 		}
 	}
 
+	func selectNextArticleAfterVideo() {
+		guard !isArticleQuickSettingsPresented else {
+			return
+		}
+		appDelegate.resumeDatabaseProcessingIfNecessary()
+		selectNextArticle()
+	}
+
 	func selectPrevUnread() {
 
 		// This should never happen, but I don’t want to risk throwing us
@@ -1758,6 +1771,23 @@ struct SidebarItemNode: Hashable, Sendable {
 		settingsNavController.modalPresentationStyle = .formSheet
 		settingsViewController.presentingParentController = rootSplitViewController
 		rootSplitViewController.present(settingsNavController, animated: true)
+	}
+
+	func showArticleQuickSettings(_ destination: ArticleQuickSettingsDestination) {
+		guard currentArticle != nil, isArticleViewControllerShowing,
+			!isArticleQuickSettingsPresented, rootSplitViewController.presentedViewController == nil else {
+			return
+		}
+		let controller = ArticleQuickSettingsViewController(destination: destination)
+		articleQuickSettingsController = controller
+		controller.onDismiss = { [weak self] in
+			guard let self else {
+				return
+			}
+			self.articleQuickSettingsController = nil
+			self.articleViewController?.updateUI()
+		}
+		rootSplitViewController.present(controller, animated: true)
 	}
 
 	func showCurrentActivity() {
