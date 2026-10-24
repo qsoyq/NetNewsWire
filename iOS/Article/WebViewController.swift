@@ -148,6 +148,7 @@ final class WebViewController: UIViewController {
 	}
 	private var restoreWindowScrollY: Int?
 	private var isArticleContentJavascriptEnabled = AppDefaults.shared.isArticleContentJavascriptEnabled
+	private var automaticallyExpandArticleDetails = AppDefaults.shared.automaticallyExpandArticleDetails
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
@@ -252,6 +253,14 @@ final class WebViewController: UIViewController {
 	}
 
 	private func userDefaultsDidChange() {
+		if automaticallyExpandArticleDetails != AppDefaults.shared.automaticallyExpandArticleDetails {
+			automaticallyExpandArticleDetails = AppDefaults.shared.automaticallyExpandArticleDetails
+			if let webView, isArticleDocumentReady {
+				Task {
+					try? await ArticleDisclosureController.configure(webView, enabled: AppDefaults.shared.automaticallyExpandArticleDetails)
+				}
+			}
+		}
 		let settings = [AppDefaults.shared.showArticleMediaThumbnails, AppDefaults.shared.hideArticleBodyMedia, AppDefaults.shared.useNativeVideoPlayer]
 		if thumbnailSettings != settings {
 			thumbnailSettings = settings

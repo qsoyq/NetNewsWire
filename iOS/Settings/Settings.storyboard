@@ -309,39 +309,26 @@
                             </tableViewSection>
                             <tableViewSection headerTitle="Articles" id="TRr-Ew-IvU">
                                 <cells>
-									<tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="dTG-Bk-Ret" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-										<rect key="frame" x="20" y="740" width="374" height="52"/>
-										<autoresizingMask key="autoresizingMask"/>
-										<tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="dTG-Bk-Ret" id="dTG-Bk-Cnt">
-											<rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-											<autoresizingMask key="autoresizingMask"/>
-											<subviews>
-												<label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" text="Double-Tap to Go Back" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dTG-Bk-Lbl">
-													<rect key="frame" x="20" y="15" width="180" height="21.5"/>
-													<fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-													<nil key="textColor"/>
-													<nil key="highlightedColor"/>
-												</label>
-												<switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="dTG-Bk-Swt">
-													<rect key="frame" x="295" y="12" width="63" height="28"/>
-													<color key="onTintColor" name="primaryAccentColor"/>
-													<connections>
-														<action selector="switchDoubleTapToGoBack:" destination="a0p-rk-skQ" eventType="valueChanged" id="dTG-Bk-Act"/>
-													</connections>
-												</switch>
-											</subviews>
-											<constraints>
-												<constraint firstItem="dTG-Bk-Lbl" firstAttribute="top" secondItem="dTG-Bk-Cnt" secondAttribute="topMargin" id="dTG-Bk-T01"/>
-												<constraint firstItem="dTG-Bk-Swt" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="dTG-Bk-Lbl" secondAttribute="trailing" constant="8" id="dTG-Bk-T02"/>
-												<constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="dTG-Bk-Swt" secondAttribute="bottom" constant="6" id="dTG-Bk-T03"/>
-												<constraint firstItem="dTG-Bk-Swt" firstAttribute="centerY" secondItem="dTG-Bk-Cnt" secondAttribute="centerY" id="dTG-Bk-T04"/>
-												<constraint firstAttribute="bottomMargin" secondItem="dTG-Bk-Lbl" secondAttribute="bottom" id="dTG-Bk-T05"/>
-												<constraint firstAttribute="trailingMargin" secondItem="dTG-Bk-Swt" secondAttribute="trailing" constant="0" id="dTG-Bk-T06"/>
-												<constraint firstItem="dTG-Bk-Swt" firstAttribute="top" relation="greaterThanOrEqual" secondItem="dTG-Bk-Cnt" secondAttribute="top" constant="6" id="dTG-Bk-T07"/>
-												<constraint firstItem="dTG-Bk-Lbl" firstAttribute="leading" secondItem="dTG-Bk-Cnt" secondAttribute="leadingMargin" id="dTG-Bk-T08"/>
-											</constraints>
-										</tableViewCellContentView>
-									</tableViewCell>
+                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" accessoryType="disclosureIndicator" indentationWidth="10" id="art-001-nnw" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
+                                        <rect key="frame" x="20" y="1004" width="374" height="44"/>
+                                        <autoresizingMask key="autoresizingMask"/>
+                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="art-001-nnw" id="art-002-nnw">
+                                            <rect key="frame" x="0.0" y="0.0" width="347" height="44"/>
+                                            <autoresizingMask key="autoresizingMask"/>
+                                            <subviews>
+                                                <label opaque="NO" userInteractionEnabled="NO" tag="945" contentMode="left" text="Article Settings" numberOfLines="0" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="art-003-nnw">
+                                                    <rect key="frame" x="20" y="11" width="307" height="22"/>
+                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
+                                                </label>
+                                            </subviews>
+                                            <constraints>
+                                                <constraint firstItem="art-003-nnw" firstAttribute="top" secondItem="art-002-nnw" secondAttribute="topMargin" id="art-004-nnw"/>
+                                                <constraint firstAttribute="bottomMargin" secondItem="art-003-nnw" secondAttribute="bottom" id="art-005-nnw"/>
+                                                <constraint firstItem="art-003-nnw" firstAttribute="leading" secondItem="art-002-nnw" secondAttribute="leadingMargin" id="art-006-nnw"/>
+                                                <constraint firstAttribute="trailingMargin" secondItem="art-003-nnw" secondAttribute="trailing" id="art-007-nnw"/>
+                                            </constraints>
+                                        </tableViewCellContentView>
+                                    </tableViewCell>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="default" accessoryType="disclosureIndicator" indentationWidth="10" id="WFP-zj-Pve" customClass="VibrantBasicTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
                                         <rect key="frame" x="20" y="791.5" width="374" height="51"/>
                                         <autoresizingMask key="autoresizingMask"/>
@@ -486,39 +473,6 @@
                                             <rect key="frame" x="0.0" y="0.0" width="347" height="44"/><autoresizingMask key="autoresizingMask"/>
                                             <subviews><label opaque="NO" contentMode="left" text="Cache" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="cache-LBL"><rect key="frame" x="20" y="11" width="307" height="22"/><fontDescription key="fontDescription" style="UICTFontTextStyleBody"/></label></subviews>
                                             <constraints><constraint firstItem="cache-LBL" firstAttribute="top" secondItem="cache-CNT" secondAttribute="topMargin" id="cache-TOP"/><constraint firstAttribute="bottomMargin" secondItem="cache-LBL" secondAttribute="bottom" id="cache-BOT"/><constraint firstItem="cache-LBL" firstAttribute="leading" secondItem="cache-CNT" secondAttribute="leadingMargin" id="cache-LEA"/><constraint firstAttribute="trailingMargin" secondItem="cache-LBL" secondAttribute="trailing" id="cache-TRA"/></constraints>
-                                        </tableViewCellContentView>
-                                    </tableViewCell>
-                                    <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="dsc-00-new" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
-                                        <rect key="frame" x="20" y="1057" width="374" height="52"/>
-                                        <autoresizingMask key="autoresizingMask"/>
-                                        <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" preservesSuperviewLayoutMargins="YES" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="dsc-00-new" id="dsc-01-new">
-                                            <rect key="frame" x="0.0" y="0.0" width="374" height="52"/>
-                                            <autoresizingMask key="autoresizingMask"/>
-                                            <subviews>
-                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="749" tag="942" text="Automatically Expand Collapsed Content" textAlignment="natural" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dsc-02-new">
-                                                    <rect key="frame" x="20" y="15" width="175" height="21.5"/>
-                                                    <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
-                                                    <nil key="textColor"/>
-                                                    <nil key="highlightedColor"/>
-                                                </label>
-                                                <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="dsc-03-new">
-                                                    <rect key="frame" x="295" y="12" width="63" height="28"/>
-                                                    <color key="onTintColor" name="primaryAccentColor"/>
-                                                    <connections>
-                                                        <action selector="switchAutomaticallyExpandArticleDetails:" destination="a0p-rk-skQ" eventType="valueChanged" id="dsc-04-new"/>
-                                                    </connections>
-                                                </switch>
-                                            </subviews>
-                                            <constraints>
-                                                <constraint firstItem="dsc-02-new" firstAttribute="top" secondItem="dsc-01-new" secondAttribute="topMargin" id="dsc-05-new"/>
-                                                <constraint firstItem="dsc-03-new" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="dsc-02-new" secondAttribute="trailing" constant="8" id="dsc-06-new"/>
-                                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="dsc-03-new" secondAttribute="bottom" constant="6" id="dsc-07-new"/>
-                                                <constraint firstItem="dsc-03-new" firstAttribute="centerY" secondItem="dsc-01-new" secondAttribute="centerY" id="dsc-08-new"/>
-                                                <constraint firstAttribute="bottomMargin" secondItem="dsc-02-new" secondAttribute="bottom" id="dsc-09-new"/>
-                                                <constraint firstAttribute="trailingMargin" secondItem="dsc-03-new" secondAttribute="trailing" constant="0" id="dsc-10-new"/>
-                                                <constraint firstItem="dsc-03-new" firstAttribute="top" relation="greaterThanOrEqual" secondItem="dsc-01-new" secondAttribute="top" constant="6" id="dsc-11-new"/>
-                                                <constraint firstItem="dsc-02-new" firstAttribute="leading" secondItem="dsc-01-new" secondAttribute="leadingMargin" id="dsc-12-new"/>
-                                            </constraints>
                                         </tableViewCellContentView>
                                     </tableViewCell>
                                     <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" selectionStyle="none" indentationWidth="10" id="WR6-xo-ty2" customClass="VibrantTableViewCell" customModule="NetNewsWire" customModuleProvider="target">
@@ -846,14 +800,12 @@
                         <outlet property="articleThemeDetailLabel" destination="DUf-DZ-3Nm" id="QHN-Le-zyw"/>
                         <outlet property="colorPaletteDetailLabel" destination="16m-Ns-Y8V" id="zdj-Ag-ZUw"/>
                         <outlet property="confirmMarkAllAsReadSwitch" destination="UOo-9z-IuL" id="yLZ-Kf-wDt"/>
-                        <outlet property="doubleTapToGoBackSwitch" destination="dTG-Bk-Swt" id="dTG-Bk-Out"/>
                         <outlet property="enableJavaScriptSwitch" destination="Djo-HE-LWS" id="muL-I5-eDE"/>
                         <outlet property="groupByFeedSwitch" destination="JNi-Wz-RbU" id="TwH-Kd-o6N"/>
 						<outlet property="logLevelDetailLabel" destination="Lgl-Lv-Det" id="Lgl-Lv-Out"/>
                         <outlet property="openLinksInNetNewsWire" destination="dhR-L2-PX3" id="z1b-pX-bwG"/>
                         <outlet property="refreshClearsReadArticlesSwitch" destination="duV-CN-JmH" id="xTd-jF-Ei1"/>
                         <outlet property="refreshFeedsSwitch" destination="bNx-R4-wS8" id="wY0-zA-bC1"/>
-                        <outlet property="automaticallyExpandArticleDetailsSwitch" destination="dsc-03-new" id="dsc-switch-outlet"/>
                         <outlet property="showFullscreenArticlesSwitch" destination="2Md-2E-7Z4" id="lEN-VP-wEO"/>
                         <outlet property="timelineSortOrderSwitch" destination="Keq-Np-l9O" id="Zm7-HG-r5h"/>
                     </connections>

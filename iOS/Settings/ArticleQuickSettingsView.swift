@@ -2,12 +2,14 @@ import SwiftUI
 import UIKit
 
 enum ArticleQuickSettingsDestination: String, CaseIterable {
+	case article
 	case media
 	case translation
 	case cache
 
 	var title: String {
 		switch self {
+		case .article: return NSLocalizedString("Article Settings", comment: "Article settings title")
 		case .media: return NSLocalizedString("Media", comment: "Media settings title")
 		case .translation: return ArticleTranslationStrings.text("Article Translation")
 		case .cache: return NSLocalizedString("Cache", comment: "Cache settings title")
@@ -16,6 +18,7 @@ enum ArticleQuickSettingsDestination: String, CaseIterable {
 
 	var symbolName: String {
 		switch self {
+		case .article: return "doc.text"
 		case .media: return "photo.on.rectangle"
 		case .translation: return "character.book.closed"
 		case .cache: return "externaldrive"
@@ -45,6 +48,7 @@ struct ArticleQuickSettingsView: View {
 
 	@ViewBuilder private var settings: some View {
 		switch destination {
+		case .article: ArticleSettingsView()
 		case .media: MediaSettingsView()
 		case .translation: ArticleTranslationSettingsView(onSave: close)
 		case .cache: CacheSettingsView()

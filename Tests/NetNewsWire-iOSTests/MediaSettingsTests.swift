@@ -40,7 +40,7 @@ import SwiftUI
 		XCTAssertEqual(row.accessoryType, .disclosureIndicator)
 		XCTAssertEqual((row.viewWithTag(944) as? UILabel)?.text, NSLocalizedString("Media", comment: ""))
 		_ = try articleSettingsRow("articles.translation", in: settings)
-		_ = try articleSettingsRow("articles.autoExpandDetails.row", in: settings)
+		_ = try articleSettingsRow("articles.settings", in: settings)
 		settings.tableView(settings.tableView, didSelectRowAt: index)
 		XCTAssertTrue(navigation.topViewController is UIHostingController<MediaSettingsView>)
 		try await Task.sleep(for: .milliseconds(300))

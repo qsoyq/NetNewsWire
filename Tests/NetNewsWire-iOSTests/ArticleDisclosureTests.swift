@@ -1,6 +1,7 @@
 #if os(iOS)
 import XCTest
 import UIKit
+import SwiftUI
 import WebKit
 import Articles
 @testable import NetNewsWire
@@ -16,17 +17,13 @@ import Articles
 		UserDefaults.standard.removeObject(forKey: key)
 		AppDefaults.registerDefaults()
 		XCTAssertFalse(AppDefaults.shared.automaticallyExpandArticleDetails)
-		let settings = try settingsController()
-		XCTAssertFalse(settings.automaticallyExpandArticleDetailsSwitch.isOn)
-		let index = try articleSettingsRow("articles.autoExpandDetails.row", in: settings)
-		let row = settings.tableView(settings.tableView, cellForRowAt: index)
-		XCTAssertEqual((row.viewWithTag(942) as? UILabel)?.text, NSLocalizedString("Automatically Expand Collapsed Content", comment: ""))
-		settings.automaticallyExpandArticleDetailsSwitch.isOn = true
-		settings.automaticallyExpandArticleDetailsSwitch.sendActions(for: .valueChanged)
+		let model = ArticleSettingsModel()
+		let binding = model.binding(for: .automaticallyExpandArticleDetails)
+		XCTAssertFalse(binding.wrappedValue)
+		binding.wrappedValue = true
 		XCTAssertTrue(AppDefaults.shared.automaticallyExpandArticleDetails)
-		XCTAssertTrue(try settingsController().automaticallyExpandArticleDetailsSwitch.isOn)
-		settings.automaticallyExpandArticleDetailsSwitch.isOn = false
-		settings.automaticallyExpandArticleDetailsSwitch.sendActions(for: .valueChanged)
+		XCTAssertTrue(ArticleSettingsModel().binding(for: .automaticallyExpandArticleDetails).wrappedValue)
+		binding.wrappedValue = false
 		XCTAssertFalse(AppDefaults.shared.automaticallyExpandArticleDetails)
 	}
 
@@ -202,7 +199,7 @@ import Articles
 		let original = AppDefaults.shared.automaticallyExpandArticleDetails
 		defer { AppDefaults.shared.automaticallyExpandArticleDetails = original }
 		AppDefaults.shared.automaticallyExpandArticleDetails = false
-		let settings = try settingsController()
+		let settings = UIHostingController(rootView: ArticleSettingsView())
 		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
 		let previousWindow = scene.windows.first(where: \.isKeyWindow)
 		let window = UIWindow(windowScene: scene)
@@ -211,7 +208,6 @@ import Articles
 		defer { window.isHidden = true; previousWindow?.makeKeyAndVisible() }
 		for style in [UIUserInterfaceStyle.light, .dark] {
 			window.overrideUserInterfaceStyle = style
-			settings.tableView.scrollToRow(at: try articleSettingsRow("articles.autoExpandDetails.row", in: settings), at: .middle, animated: false)
 			window.layoutIfNeeded()
 			try await Task.sleep(for: .milliseconds(200))
 			let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
@@ -220,14 +216,6 @@ import Articles
 			attachment.lifetime = .keepAlways
 			add(attachment)
 		}
-	}
-
-	private func settingsController() throws -> SettingsViewController {
-		let controller = try XCTUnwrap(UIStoryboard(name: "Settings", bundle: .main).instantiateViewController(withIdentifier: "SettingsViewController") as? SettingsViewController)
-		controller.loadViewIfNeeded()
-		controller.beginAppearanceTransition(true, animated: false)
-		controller.endAppearanceTransition()
-		return controller
 	}
 
 	private func makeWebView(pageJavaScript: Bool = false, html: String? = nil, baseURL: URL? = nil) async throws -> WKWebView {

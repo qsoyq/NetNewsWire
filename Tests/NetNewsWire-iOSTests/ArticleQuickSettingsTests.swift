@@ -18,9 +18,13 @@ import RSParser
 		let originalFullscreen = AppDefaults.shared.articleFullscreenAvailable
 		let originalFullscreenEnabled = AppDefaults.shared.articleFullscreenEnabled
 		let originalMedia = AppDefaults.shared.prefetchNextArticleContent
+		let originalDoubleTap = AppDefaults.shared.doubleTapToGoBack
+		let originalAutoExpand = AppDefaults.shared.automaticallyExpandArticleDetails
 		try ArticleTranslationSettings.save(ArticleTranslationPreferences(), apiKey: originalKey)
 		AppDefaults.shared.articleFullscreenAvailable = false
 		AppDefaults.shared.prefetchNextArticleContent = false
+		AppDefaults.shared.doubleTapToGoBack = false
+		AppDefaults.shared.automaticallyExpandArticleDetails = false
 		let account = AccountManager.shared.createAccount(type: .onMyMac)
 		let token = UUID().uuidString
 		let feed = account.createFeed(with: "Quick settings test", url: "https://example.invalid/\(token)",
@@ -36,9 +40,12 @@ import RSParser
 			AppDefaults.shared.articleFullscreenAvailable = originalFullscreen
 			AppDefaults.shared.articleFullscreenEnabled = originalFullscreenEnabled
 			AppDefaults.shared.prefetchNextArticleContent = originalMedia
+			AppDefaults.shared.doubleTapToGoBack = originalDoubleTap
+			AppDefaults.shared.automaticallyExpandArticleDetails = originalAutoExpand
 		}
 		defer { attach(window, name: "Quick Settings Final Reader State") }
 		let body = (0..<80).map { "<p>Reading paragraph \($0). Quick settings must preserve this article and its reading position.</p>" }.joined()
+			+ "<details id='quick-settings-details'><summary>Collapsed content</summary><p>Article settings apply without reloading.</p></details>"
 		let items = Set((0..<2).map { index in
 			ParsedItem(syncServiceID: nil, uniqueID: "\(token)-\(index)", feedURL: feed.url,
 				url: nil, externalURL: nil, title: "Quick settings article \(index)", language: nil,
@@ -88,6 +95,17 @@ import RSParser
 			coordinator.selectNextArticleAfterVideo()
 			XCTAssertEqual(coordinator.currentArticle, first)
 			attach(window, name: "Article Quick Settings - \(destination.rawValue)")
+			if destination == .article {
+				let model = ArticleSettingsModel()
+				model.binding(for: .doubleTapToGoBack).wrappedValue = true
+				model.binding(for: .automaticallyExpandArticleDetails).wrappedValue = true
+				for _ in 0..<100 {
+					if try await webView.evaluateJavaScript("document.getElementById('quick-settings-details').open") as? Bool == true { break }
+					try await Task.sleep(for: .milliseconds(25))
+				}
+				let expanded = try await webView.evaluateJavaScript("document.getElementById('quick-settings-details').open") as? Bool
+				XCTAssertEqual(expanded, true, "Quick settings must update the existing article while the sheet is open")
+			}
 			sheet.rootView.close()
 			try await waitUntil { !coordinator.isArticleQuickSettingsPresented && root.presentedViewController == nil }
 			XCTAssertEqual(coordinator.currentArticle, first)
@@ -96,6 +114,8 @@ import RSParser
 			XCTAssertEqual(article.navigationController?.viewControllers, stack)
 			let returnedY = try await webView.evaluateJavaScript("window.scrollY") as? Double ?? 0
 			XCTAssertEqual(returnedY, scrollY, accuracy: 2)
+			let doubleTap = try XCTUnwrap(article.view.gestureRecognizers?.compactMap { $0 as? UITapGestureRecognizer }.first { $0.numberOfTapsRequired == 2 })
+			XCTAssertTrue(doubleTap.isEnabled, "The gesture must update after dismissing the article settings sheet")
 		}
 
 		coordinator.showArticleQuickSettings(.media)

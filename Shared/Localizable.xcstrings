@@ -1,6 +1,20 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Article Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Article Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文章设置" } }
+      }
+    },
+    "Double-Tap to Go Back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Double-Tap to Go Back" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "双击返回" } }
+      }
+    },
     "Close Quick Settings" : {
       "extractionState" : "manual",
       "localizations" : {

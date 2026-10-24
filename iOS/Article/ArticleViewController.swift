@@ -361,6 +361,8 @@ final class ArticleViewController: UIViewController {
 	}
 
 	func updateUI() {
+		// A settings sheet does not always trigger viewWillAppear when dismissed.
+		doubleTapToGoBackGestureRecognizer.isEnabled = AppDefaults.shared.doubleTapToGoBack
 		quickSettingsBarButtonItem.isEnabled = article != nil && !isPageTransitionInProgress
 
 		guard let article = article else {

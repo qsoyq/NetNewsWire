@@ -55,14 +55,13 @@ final class SettingsViewController: UITableViewController {
 	}
 
 	private enum ArticlesRow: Int, CaseIterable {
-		case doubleTapToGoBack = 0
+		case articleSettings = 0
 		case theme
 		case openLinksInNetNewsWire
 		case enableJavaScript
 		case media
 		case translation
 		case cache
-		case automaticallyExpandArticleDetails
 		case enableFullScreenArticles
 	}
 
@@ -83,11 +82,9 @@ final class SettingsViewController: UITableViewController {
 	@IBOutlet var articleThemeDetailLabel: UILabel!
 	@IBOutlet var confirmMarkAllAsReadSwitch: UISwitch!
 	@IBOutlet var showFullscreenArticlesSwitch: UISwitch!
-	@IBOutlet var doubleTapToGoBackSwitch: UISwitch!
 	@IBOutlet var colorPaletteDetailLabel: UILabel!
 	@IBOutlet var openLinksInNetNewsWire: UISwitch!
 	@IBOutlet var enableJavaScriptSwitch: UISwitch!
-	@IBOutlet var automaticallyExpandArticleDetailsSwitch: UISwitch!
 	@IBOutlet var logLevelDetailLabel: UILabel!
 
 	var scrollToArticlesSection = false
@@ -146,17 +143,12 @@ final class SettingsViewController: UITableViewController {
 			showFullscreenArticlesSwitch.isOn = false
 		}
 
-		doubleTapToGoBackSwitch.isOn = AppDefaults.shared.doubleTapToGoBack
-
 		if AppDefaults.shared.isArticleContentJavascriptEnabled {
 			enableJavaScriptSwitch.isOn = true
 		} else {
 			enableJavaScriptSwitch.isOn = false
 		}
 
-		automaticallyExpandArticleDetailsSwitch.isOn = AppDefaults.shared.automaticallyExpandArticleDetails
-		automaticallyExpandArticleDetailsSwitch.accessibilityLabel = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
-		automaticallyExpandArticleDetailsSwitch.accessibilityIdentifier = "articles.autoExpandDetails"
 		logLevelDetailLabel.text = AppDefaults.shared.errorLogLevel.name
 
 		colorPaletteDetailLabel.text = String(describing: AppDefaults.userInterfaceColorPalette)
@@ -243,9 +235,20 @@ final class SettingsViewController: UITableViewController {
 			cell.accessoryType = .disclosureIndicator
 			cell.accessibilityIdentifier = "settings.notifications"
 		}
-		if indexPath.section == Section.articles.rawValue, indexPath.row == ArticlesRow.automaticallyExpandArticleDetails.rawValue {
-			(cell.viewWithTag(942) as? UILabel)?.text = NSLocalizedString("Automatically Expand Collapsed Content", comment: "Automatically expand article details elements")
-			cell.accessibilityIdentifier = "articles.autoExpandDetails.row"
+		if indexPath.section == Section.articles.rawValue {
+			switch ArticlesRow(rawValue: indexPath.row) {
+			case .articleSettings:
+				(cell.viewWithTag(945) as? UILabel)?.text = NSLocalizedString("Article Settings", comment: "Article settings title")
+				cell.accessibilityIdentifier = "articles.settings"
+			case .media:
+				(cell.viewWithTag(944) as? UILabel)?.text = NSLocalizedString("Media", comment: "Media settings title")
+				cell.accessibilityIdentifier = "articles.media"
+			case .translation:
+				(cell.viewWithTag(941) as? UILabel)?.text = ArticleTranslationStrings.text("Article Translation")
+				cell.accessibilityIdentifier = "articles.translation"
+			default:
+				break
+			}
 		}
 		return cell
 	}
@@ -297,6 +300,8 @@ final class SettingsViewController: UITableViewController {
 			}
 		case .articles:
 			switch ArticlesRow(rawValue: indexPath.row) {
+			case .articleSettings:
+				self.navigationController?.pushViewController(UIHostingController(rootView: ArticleSettingsView()), animated: true)
 			case .theme:
 				let articleThemes = UIStoryboard.settings.instantiateController(ofType: ArticleThemesTableViewController.self)
 				self.navigationController?.pushViewController(articleThemes, animated: true)
@@ -445,20 +450,12 @@ final class SettingsViewController: UITableViewController {
 		}
 	}
 
-	@IBAction func switchDoubleTapToGoBack(_ sender: Any) {
-		AppDefaults.shared.doubleTapToGoBack = doubleTapToGoBackSwitch.isOn
-	}
-
 	@IBAction func switchBrowserPreference(_ sender: Any) {
 		if openLinksInNetNewsWire.isOn {
 			AppDefaults.shared.useSystemBrowser = false
 		} else {
 			AppDefaults.shared.useSystemBrowser = true
 		}
-	}
-
-	@IBAction func switchAutomaticallyExpandArticleDetails(_ sender: Any) {
-		AppDefaults.shared.automaticallyExpandArticleDetails = automaticallyExpandArticleDetailsSwitch.isOn
 	}
 
 	@IBAction func switchJavaScriptPreference(_ sender: Any) {
