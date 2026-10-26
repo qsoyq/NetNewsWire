@@ -4,7 +4,7 @@ import RSCore
 import RSParser
 
 extension Article {
-	func containsAnyKeyword(_ keywords: [String], ignoresCase: Bool = true) -> Bool {
+	func containsAnyKeyword(_ keywords: [String], ignoresCase: Bool = true, includesAuthors: Bool = false) -> Bool {
 		guard !keywords.isEmpty else {
 			return false
 		}
@@ -25,6 +25,21 @@ extension Article {
 		if containsKeyword(contentHTML?.strippingHTML().decodingHTMLEntities()) {
 			return true
 		}
-		return containsKeyword(summary?.strippingHTML().decodingHTMLEntities())
+		if containsKeyword(summary?.strippingHTML().decodingHTMLEntities()) {
+			return true
+		}
+		guard includesAuthors, let authors else {
+			return false
+		}
+		return authors.contains { author in
+			if containsKeyword(author.name) {
+				return true
+			}
+			// RSS can store a name and email together, e.g. "john@example.com (John Doe)".
+			guard let emailAddress = author.emailAddress, emailAddress.contains(" ") else {
+				return false
+			}
+			return containsKeyword(emailAddress)
+		}
 	}
 }

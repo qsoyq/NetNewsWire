@@ -148,7 +148,105 @@ import Articles
 		XCTAssertTrue(manager.notificationRequests(for: [item], preferences: preferences).isEmpty)
 	}
 
-	private func article(title: String? = nil, html: String? = nil, text: String? = nil, summary: String? = nil, accountID: String = "missing-account") -> Article {
-		Article(accountID: accountID, articleID: "article", feedID: "feed", uniqueID: "article", title: title, contentHTML: html, contentText: text, markdown: nil, url: nil, externalURL: nil, summary: summary, imageURL: nil, datePublished: nil, dateModified: nil, authors: nil, status: ArticleStatus(articleID: "article", read: false, dateArrived: Date()))
+	func testAuthorMatchingPreferencesDefaultToOffAndPersistIndependently() {
+		let defaults = UserDefaults.standard
+		let keys = [KeywordNotificationPreferences.matchesAuthorsKey, KeywordNotificationPreferences.blockingMatchesAuthorsKey]
+		let saved = keys.map { defaults.object(forKey: $0) }
+		defer {
+			for (key, value) in zip(keys, saved) {
+				defaults.set(value, forKey: key)
+			}
+		}
+		for key in keys {
+			defaults.removeObject(forKey: key)
+		}
+		XCTAssertFalse(KeywordNotificationPreferences().matchesAuthors)
+		XCTAssertFalse(KeywordNotificationPreferences().blockingMatchesAuthors)
+		XCTAssertFalse(KeywordNotificationPreferences.current.matchesAuthors)
+		XCTAssertFalse(KeywordNotificationPreferences.current.blockingMatchesAuthors)
+		for matchesAuthors in [false, true] {
+			for blockingMatchesAuthors in [false, true] {
+				defaults.set(matchesAuthors, forKey: KeywordNotificationPreferences.matchesAuthorsKey)
+				defaults.set(blockingMatchesAuthors, forKey: KeywordNotificationPreferences.blockingMatchesAuthorsKey)
+				XCTAssertEqual(KeywordNotificationPreferences.current.matchesAuthors, matchesAuthors)
+				XCTAssertEqual(KeywordNotificationPreferences.current.blockingMatchesAuthors, blockingMatchesAuthors)
+			}
+		}
+	}
+
+	func testAuthorTriggerAndBlockingSwitchesAreIndependentAcrossNotificationRoutes() throws {
+		let account = AccountManager.shared.createAccount(type: .onMyMac)
+		defer { AccountManager.shared.deleteAccount(account) }
+		let feed = account.createFeed(with: "Test feed", url: "https://example.invalid/authors", feedID: "feed", homePageURL: nil)
+		account.addFeedToTreeAtTopLevel(feed)
+		let author = try XCTUnwrap(Author(authorID: nil, name: "Jane Doe", url: nil, avatarURL: nil, emailAddress: nil))
+		let item = article(title: "Ordinary article", accountID: account.accountID, authors: [author])
+		let manager = UserNotificationManager.shared
+		for feedEnabled in [false, true] {
+			feed.newArticleNotificationsEnabled = feedEnabled
+			for triggerEnabled in [false, true] {
+				for blockingEnabled in [false, true] {
+					for matchesAuthors in [false, true] {
+						for blockingMatchesAuthors in [false, true] {
+							let preferences = KeywordNotificationPreferences(isEnabled: triggerEnabled, keywordsText: "Jane", isBlockingEnabled: blockingEnabled, blockedKeywordsText: "Doe", matchesAuthors: matchesAuthors, blockingMatchesAuthors: blockingMatchesAuthors)
+							let shouldNotify = (feedEnabled || (triggerEnabled && matchesAuthors)) && !(blockingEnabled && blockingMatchesAuthors)
+							XCTAssertEqual(manager.notificationRequests(for: [item], preferences: preferences).count, shouldNotify ? 1 : 0)
+							item.status.read = true
+							XCTAssertTrue(manager.notificationRequests(for: [item], preferences: preferences).isEmpty)
+							item.status.read = false
+						}
+					}
+				}
+			}
+		}
+
+		feed.newArticleNotificationsEnabled = false
+		let titleMatch = article(title: "Swift", accountID: account.accountID, authors: [author])
+		var preferences = KeywordNotificationPreferences(isEnabled: true, keywordsText: "Swift", isBlockingEnabled: true, blockedKeywordsText: "Jane", blockingMatchesAuthors: true)
+		XCTAssertTrue(manager.notificationRequests(for: [titleMatch], preferences: preferences).isEmpty)
+		preferences.blockingMatchesAuthors = false
+		XCTAssertEqual(manager.notificationRequests(for: [titleMatch], preferences: preferences).count, 1)
+	}
+
+	func testAuthorMatchingUsesIndependentCaseSensitivityAndSupportsRSSNames() throws {
+		let account = AccountManager.shared.createAccount(type: .onMyMac)
+		defer { AccountManager.shared.deleteAccount(account) }
+		let feed = account.createFeed(with: "Test feed", url: "https://example.invalid/author-case", feedID: "feed", homePageURL: nil)
+		account.addFeedToTreeAtTopLevel(feed)
+		feed.newArticleNotificationsEnabled = false
+		let authors = [
+			try XCTUnwrap(Author(authorID: nil, name: "JANE DOE", url: nil, avatarURL: nil, emailAddress: nil)),
+			try XCTUnwrap(Author(authorID: nil, name: nil, url: nil, avatarURL: nil, emailAddress: "jane@example.com (JANE DOE)"))
+		]
+		for author in authors {
+			let item = article(accountID: account.accountID, authors: [author])
+			for ignoresCase in [false, true] {
+				for blockingIgnoresCase in [false, true] {
+					let preferences = KeywordNotificationPreferences(isEnabled: true, keywordsText: "Jane Doe", ignoresCase: ignoresCase, isBlockingEnabled: true, blockedKeywordsText: "Jane Doe", blockingIgnoresCase: blockingIgnoresCase, matchesAuthors: true, blockingMatchesAuthors: true)
+					XCTAssertEqual(UserNotificationManager.shared.notificationRequests(for: [item], preferences: preferences).count, ignoresCase && !blockingIgnoresCase ? 1 : 0)
+				}
+			}
+		}
+	}
+
+	func testAuthorMatchingDoesNotFallBackToFeedAuthors() throws {
+		let account = AccountManager.shared.createAccount(type: .onMyMac)
+		defer { AccountManager.shared.deleteAccount(account) }
+		let feed = account.createFeed(with: "Jane Doe", url: "https://example.invalid/feed-author", feedID: "feed", homePageURL: nil)
+		account.addFeedToTreeAtTopLevel(feed)
+		let author = try XCTUnwrap(Author(authorID: nil, name: "Jane Doe", url: nil, avatarURL: nil, emailAddress: nil))
+		feed.authors = [author]
+		let preferences = KeywordNotificationPreferences(isEnabled: true, keywordsText: "Jane", isBlockingEnabled: true, blockedKeywordsText: "Doe", matchesAuthors: true, blockingMatchesAuthors: true)
+		for authors: Set<Author>? in [nil, []] {
+			let item = article(accountID: account.accountID, authors: authors)
+			feed.newArticleNotificationsEnabled = false
+			XCTAssertTrue(UserNotificationManager.shared.notificationRequests(for: [item], preferences: preferences).isEmpty)
+			feed.newArticleNotificationsEnabled = true
+			XCTAssertEqual(UserNotificationManager.shared.notificationRequests(for: [item], preferences: preferences).count, 1)
+		}
+	}
+
+	private func article(title: String? = nil, html: String? = nil, text: String? = nil, summary: String? = nil, accountID: String = "missing-account", authors: Set<Author>? = nil) -> Article {
+		Article(accountID: accountID, articleID: "article", feedID: "feed", uniqueID: "article", title: title, contentHTML: html, contentText: text, markdown: nil, url: nil, externalURL: nil, summary: summary, imageURL: nil, datePublished: nil, dateModified: nil, authors: authors, status: ArticleStatus(articleID: "article", read: false, dateArrived: Date()))
 	}
 }

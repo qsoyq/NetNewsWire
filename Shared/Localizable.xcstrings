@@ -80,21 +80,28 @@
         }
       }
     },
-    "When enabled, any blocked keyword in an article’s title or body prevents its notification, even if feed notifications are enabled or notification keywords match. Enter one keyword or phrase per line. Changes apply to articles received during future refreshes." : {
+    "When enabled, any blocked keyword in an article’s title or body prevents its notification, even if feed notifications are enabled or notification keywords match. Turn on Match Author Names to also check article authors, not feed authors. Enter one keyword or phrase per line. Changes apply to articles received during future refreshes." : {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When enabled, any blocked keyword in an article’s title or body prevents its notification, even if feed notifications are enabled or notification keywords match. Enter one keyword or phrase per line. Changes apply to articles received during future refreshes."
+            "value": "When enabled, any blocked keyword in an article’s title or body prevents its notification, even if feed notifications are enabled or notification keywords match. Turn on Match Author Names to also check article authors, not feed authors. Enter one keyword or phrase per line. Changes apply to articles received during future refreshes."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启后，文章标题或正文命中任意屏蔽关键词时不发送通知，即使订阅源已开启通知或命中了通知关键词。每行输入一个关键词或短语。更改适用于后续刷新收到的文章。"
+            "value": "开启后，文章标题或正文命中任意屏蔽关键词时不发送通知，即使订阅源已开启通知或命中了通知关键词。开启“匹配作者名称”后，还会检查文章作者，不使用订阅源作者。每行输入一个关键词或短语。更改适用于后续刷新收到的文章。"
           }
         }
+      }
+    },
+    "Match Author Names" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Match Author Names" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "匹配作者名称" } }
       }
     },
     "Ignore Case" : {
@@ -165,19 +172,19 @@
         }
       }
     },
-    "Notify when a newly received unread article contains any keyword in its title or body. Feed notifications and keyword matches send only one notification per article, grouped by feed." : {
+    "Notify when a newly received unread article contains any keyword in its title or body. Turn on Match Author Names to also check article authors, not feed authors. Feed notifications and keyword matches send only one notification per article, grouped by feed." : {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notify when a newly received unread article contains any keyword in its title or body. Feed notifications and keyword matches send only one notification per article, grouped by feed."
+            "value": "Notify when a newly received unread article contains any keyword in its title or body. Turn on Match Author Names to also check article authors, not feed authors. Feed notifications and keyword matches send only one notification per article, grouped by feed."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新收到的未读文章，标题或正文包含任意关键词时发送通知。同一篇文章同时命中订阅源通知和关键词时只通知一次，并按订阅源分组。"
+            "value": "新收到的未读文章，标题或正文包含任意关键词时发送通知。开启“匹配作者名称”后，还会检查文章作者，不使用订阅源作者。同一篇文章同时命中订阅源通知和关键词时只通知一次，并按订阅源分组。"
           }
         }
       }

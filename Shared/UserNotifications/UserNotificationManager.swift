@@ -56,11 +56,11 @@ import os
 		let keywords = preferences.isEnabled ? preferences.keywords : []
 		let blockedKeywords = preferences.isBlockingEnabled ? preferences.blockedKeywords : []
 		return articles.compactMap { article in
-			guard !article.containsAnyKeyword(blockedKeywords, ignoresCase: preferences.blockingIgnoresCase) else {
+			guard !article.containsAnyKeyword(blockedKeywords, ignoresCase: preferences.blockingIgnoresCase, includesAuthors: preferences.blockingMatchesAuthors) else {
 				return nil
 			}
 			guard !article.status.read, let feed = article.feed,
-				feed.newArticleNotificationsEnabled || article.containsAnyKeyword(keywords, ignoresCase: preferences.ignoresCase) else {
+				feed.newArticleNotificationsEnabled || article.containsAnyKeyword(keywords, ignoresCase: preferences.ignoresCase, includesAuthors: preferences.matchesAuthors) else {
 				return nil
 			}
 			let reference = NotificationArticleReference(accountID: article.accountID, articleID: article.articleID)

@@ -36,13 +36,68 @@ import UIKit
 		window.layoutIfNeeded()
 		XCTAssertEqual(narrow.view.bounds.width, 375, accuracy: 1)
 		attach(window, name: "Notifications Narrow Large Text")
-		if let scroll = scrollView(in: narrow.view) {
-			for _ in 0..<6 {
-				scroll.layoutIfNeeded()
-				scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)), animated: false)
-				try await Task.sleep(for: .milliseconds(50))
+		let scroll = try XCTUnwrap(scrollView(in: narrow.view))
+		for page in 0..<20 {
+			window.layoutIfNeeded()
+			attach(window, name: "Notifications Narrow Large Text Page \(page)")
+			let bottom = max(0, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+			if scroll.contentOffset.y >= bottom - 1 {
+				break
 			}
-			attach(window, name: "Notifications Narrow Large Text Keywords")
+			let next = min(bottom, scroll.contentOffset.y + scroll.bounds.height * 0.6)
+			scroll.setContentOffset(CGPoint(x: 0, y: next), animated: false)
+			try await Task.sleep(for: .milliseconds(100))
+		}
+		attach(window, name: "Notifications Narrow Large Text Keywords")
+	}
+
+	func testAuthorSwitchesPersistIndependentlyWhileNotificationRoutesAreDisabled() async throws {
+		let defaults = UserDefaults.standard
+		let authorKeys = [KeywordNotificationPreferences.blockingMatchesAuthorsKey, KeywordNotificationPreferences.matchesAuthorsKey]
+		let keys = authorKeys + [KeywordNotificationPreferences.enabledKey, KeywordNotificationPreferences.blockingEnabledKey, KeywordNotificationPreferences.ignoresCaseKey, KeywordNotificationPreferences.blockingIgnoresCaseKey]
+		let saved = keys.map { defaults.object(forKey: $0) }
+		defer {
+			for (key, value) in zip(keys, saved) {
+				defaults.set(value, forKey: key)
+			}
+		}
+		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+		let previous = scene.windows.first(where: \.isKeyWindow)
+		let window = UIWindow(windowScene: scene)
+		defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+		for authorKey in authorKeys {
+			for key in keys {
+				defaults.set(key == authorKey, forKey: key)
+			}
+			let hosting = UIHostingController(rootView: NotificationSettingsView())
+			window.rootViewController = UINavigationController(rootViewController: hosting)
+			window.makeKeyAndVisible()
+			try await Task.sleep(for: .milliseconds(300))
+			let scroll = try XCTUnwrap(scrollView(in: hosting.view))
+			var authorSwitch: UISwitch?
+			// SwiftUI keeps identifiers in its accessibility tree, not on the backing UISwitch.
+			// Only the selected author preference is enabled, so exercise that native control.
+			for _ in 0..<20 {
+				window.layoutIfNeeded()
+				if let toggle = switches(in: hosting.view).first(where: \.isOn) {
+					authorSwitch = toggle
+					break
+				}
+				let bottom = max(0, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+				scroll.setContentOffset(CGPoint(x: 0, y: min(bottom, scroll.contentOffset.y + scroll.bounds.height * 0.6)), animated: false)
+				try await Task.sleep(for: .milliseconds(100))
+			}
+			let toggle = try XCTUnwrap(authorSwitch, "Missing author switch for \(authorKey)")
+			XCTAssertTrue(toggle.isEnabled)
+			for value in [false, true] {
+				toggle.setOn(value, animated: false)
+				toggle.sendActions(for: .valueChanged)
+				try await Task.sleep(for: .milliseconds(100))
+				XCTAssertEqual(defaults.bool(forKey: authorKey), value)
+				for otherKey in keys where otherKey != authorKey {
+					XCTAssertFalse(defaults.bool(forKey: otherKey))
+				}
+			}
 		}
 	}
 
@@ -54,7 +109,12 @@ import UIKit
 			XCTAssertEqual(bundle.localizedString(forKey: "Ignore Case", value: nil, table: "Localizable"), language == "en" ? "Ignore Case" : "忽略大小写")
 			XCTAssertEqual(bundle.localizedString(forKey: "Block Notifications by Keyword", value: nil, table: "Localizable"), language == "en" ? "Block Notifications by Keyword" : "通知关键词屏蔽")
 			XCTAssertEqual(bundle.localizedString(forKey: "Blocked Keywords", value: nil, table: "Localizable"), language == "en" ? "Blocked Keywords" : "屏蔽关键词")
+			XCTAssertEqual(bundle.localizedString(forKey: "Match Author Names", value: nil, table: "Localizable"), language == "en" ? "Match Author Names" : "匹配作者名称")
 		}
+	}
+
+	private func switches(in view: UIView) -> [UISwitch] {
+		((view as? UISwitch).map { [$0] } ?? []) + view.subviews.flatMap { switches(in: $0) }
 	}
 
 	private func scrollView(in view: UIView) -> UIScrollView? {

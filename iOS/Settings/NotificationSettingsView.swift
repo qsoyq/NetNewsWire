@@ -9,6 +9,8 @@ struct NotificationSettingsView: View {
 	@AppStorage(KeywordNotificationPreferences.blockingEnabledKey) private var keywordBlockingEnabled = false
 	@AppStorage(KeywordNotificationPreferences.blockedKeywordsKey) private var blockedKeywordsText = ""
 	@AppStorage(KeywordNotificationPreferences.blockingIgnoresCaseKey) private var blockingIgnoresCase = true
+	@AppStorage(KeywordNotificationPreferences.matchesAuthorsKey) private var matchesAuthors = false
+	@AppStorage(KeywordNotificationPreferences.blockingMatchesAuthorsKey) private var blockingMatchesAuthors = false
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var permissionDenied = false
 	@State private var authorizationError: String?
@@ -26,16 +28,18 @@ struct NotificationSettingsView: View {
 					.accessibilityIdentifier("notifications.blockedKeywords.text")
 				Toggle(NSLocalizedString("Ignore Case", comment: "Keyword case sensitivity switch"), isOn: $blockingIgnoresCase)
 					.accessibilityIdentifier("notifications.blockedKeywords.ignoreCase")
+				Toggle(NSLocalizedString("Match Author Names", comment: "Include article authors in keyword matching"), isOn: $blockingMatchesAuthors)
+					.accessibilityIdentifier("notifications.blockedKeywords.matchAuthors")
 			} header: {
 				Text(NSLocalizedString("Blocked Keywords", comment: "Notification blocked keywords"))
 			} footer: {
-				Text(NSLocalizedString("When enabled, any blocked keyword in an article’s title or body prevents its notification, even if feed notifications are enabled or notification keywords match. Enter one keyword or phrase per line. Changes apply to articles received during future refreshes.", comment: "Notification keyword blocking behavior"))
+				Text(NSLocalizedString("When enabled, any blocked keyword in an article’s title or body prevents its notification, even if feed notifications are enabled or notification keywords match. Turn on Match Author Names to also check article authors, not feed authors. Enter one keyword or phrase per line. Changes apply to articles received during future refreshes.", comment: "Notification keyword blocking behavior"))
 			}
 			Section {
 				Toggle(NSLocalizedString("Keyword Notifications", comment: "Keyword notification switch"), isOn: $keywordNotificationsEnabled)
 					.accessibilityIdentifier("notifications.keywords.enabled")
 			} footer: {
-				Text(NSLocalizedString("Notify when a newly received unread article contains any keyword in its title or body. Feed notifications and keyword matches send only one notification per article, grouped by feed.", comment: "Keyword notifications behavior"))
+				Text(NSLocalizedString("Notify when a newly received unread article contains any keyword in its title or body. Turn on Match Author Names to also check article authors, not feed authors. Feed notifications and keyword matches send only one notification per article, grouped by feed.", comment: "Keyword notifications behavior"))
 			}
 			Section {
 				TextField(NSLocalizedString("One keyword per line", comment: "Keyword entry placeholder"), text: $keywordsText, axis: .vertical)
@@ -46,6 +50,8 @@ struct NotificationSettingsView: View {
 					.accessibilityIdentifier("notifications.keywords.text")
 				Toggle(NSLocalizedString("Ignore Case", comment: "Keyword case sensitivity switch"), isOn: $ignoresCase)
 					.accessibilityIdentifier("notifications.keywords.ignoreCase")
+				Toggle(NSLocalizedString("Match Author Names", comment: "Include article authors in keyword matching"), isOn: $matchesAuthors)
+					.accessibilityIdentifier("notifications.keywords.matchAuthors")
 			} header: {
 				Text(NSLocalizedString("Keywords", comment: "Notification keywords"))
 			} footer: {
