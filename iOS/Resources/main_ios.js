@@ -394,20 +394,25 @@ function isArticleHeaderElement(element) {
 	return !!element.closest("header, .headerContainer, .header-container, .headerTable, .headerBar, .headerBarInner, .feedHeader, a.feedlink, .feed-link, #nnwImageIcon");
 }
 
+function mediaContextElement(event) {
+	return event.target.closest ? event.target.closest("[data-nnw-media-thumbnails] button[data-nnw-video-url], img, video") : null;
+}
+
 function mediaContextTargetType(event) {
 	if (isArticleHeaderElement(event.target)) return "header";
-	var target = event.target.closest ? event.target.closest("img, video") : null;
+	var target = mediaContextElement(event);
 	if (!target || !isVisibleMedia(target)) return null;
 	// Animated GIFs are rendered as videos by the article renderer, but they are images to the
 	// reader, so they must never be offered as videos.
 	if (isAnimatedGIFVideo(target)) return null;
 	if (target.id === "nnwImageIcon") return "header";
-	return target.tagName.toLowerCase() === "video" ? "video" : "image";
+	return target.hasAttribute("data-nnw-video-url") || target.tagName.toLowerCase() === "video" ? "video" : "image";
 }
 
 function postMediaContextTarget(type, press, event) {
-	var target = event.target.closest ? event.target.closest("img, video") : null;
-	var resourceURL = target && (type === "image" || type === "video") ? originalMediaSource(target, type) : "";
+	var target = mediaContextElement(event);
+	var resourceURL = target && (type === "image" || type === "video") ?
+		(target.getAttribute("data-nnw-video-url") || originalMediaSource(target, type)) : "";
 	window.webkit.messageHandlers.mediaContextTarget.postMessage({type: type, press: press, resourceURL: resourceURL || ""});
 }
 
@@ -437,6 +442,10 @@ function beginMediaLongPress(event) {
 	var startX = touch.clientX;
 	var startY = touch.clientY;
 	var press = mediaPressSequence;
+	var target = mediaContextElement(event);
+	var thumbnail = target && target.hasAttribute("data-nnw-video-url") ? target : null;
+	// A menu may consume the previous touchend/click; never swallow the next tap.
+	if (thumbnail) thumbnail.removeAttribute("data-nnw-media-long-pressed");
 
 	if (type === "header") {
 		// Links and images in the header keep WebKit's element menu. Plain header text does not.
@@ -451,6 +460,7 @@ function beginMediaLongPress(event) {
 		// link menus — completely untouched.
 		mediaLongPressTimer = setTimeout(function() {
 			mediaLongPressTimer = null;
+			if (thumbnail) thumbnail.setAttribute("data-nnw-media-long-pressed", "");
 			window.webkit.messageHandlers.mediaLongPress.postMessage("video:" + press);
 		}, 600);
 	} else {

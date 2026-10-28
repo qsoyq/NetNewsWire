@@ -250,7 +250,17 @@
             const button = entry.button;
             button.type = "button";
             button.setAttribute("aria-label", `${item.video ? labels.video : labels.image} ${index + 1}`);
-            button.onclick = event => { event.preventDefault(); event.stopPropagation(); activate(entry); };
+            if (item.video) button.setAttribute("data-nnw-video-url", item.url);
+            button.onclick = event => {
+                event.preventDefault();
+                event.stopPropagation();
+                // The page-world long-press handler and this isolated script share DOM attributes.
+                if (button.hasAttribute("data-nnw-media-long-pressed")) {
+                    button.removeAttribute("data-nnw-media-long-pressed");
+                    return;
+                }
+                activate(entry);
+            };
             const preview = item.video ? item.element.poster : source(item.element);
             if (entry.preview !== preview) {
                 entry.preview = preview;

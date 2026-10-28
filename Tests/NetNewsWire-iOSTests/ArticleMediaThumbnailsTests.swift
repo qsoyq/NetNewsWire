@@ -230,6 +230,28 @@ import RSParser
 		AppDefaults.shared.hideArticleBodyMedia = true
 		try await waitForScript("return document.querySelector('.articleBody img').getClientRects().length === 0;", in: webView)
 		try await waitForScript("return !!document.querySelector('[data-nnw-media-thumbnails] button');", in: webView)
+		_ = try await evaluate("document.querySelector('.articleBody').insertAdjacentHTML('beforeend', '<video preload=none src=https://example.test/menu.mp4></video>');", in: webView)
+		try await waitForScript("return !!document.querySelector('.nnw-thumbnail-play');", in: webView)
+		_ = try await webView.callAsyncJavaScript("""
+		const target = document.querySelector('.nnw-thumbnail-play');
+		const event = new Event('touchstart', {bubbles:true});
+		Object.defineProperty(event, 'touches', {value:[{clientX:20, clientY:20}]});
+		target.dispatchEvent(event);
+		""", arguments: [:], in: nil, contentWorld: .page)
+		try await waitUntil { reader.presentedViewController is UIAlertController }
+		let menu = try XCTUnwrap(reader.presentedViewController as? UIAlertController)
+		XCTAssertEqual(menu.preferredStyle, .actionSheet)
+		XCTAssertTrue(menu.actions.contains { $0.title == NSLocalizedString("Save All Videos", comment: "") })
+		XCTAssertTrue(menu.actions.contains { $0.title == NSLocalizedString("Copy Resource URL", comment: "") })
+		let menuSnapshot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+			window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+		})
+		menuSnapshot.name = "Video Thumbnail Long Press Menu"
+		menuSnapshot.lifetime = .keepAlways
+		add(menuSnapshot)
+		await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+			menu.dismiss(animated: false) { continuation.resume() }
+		}
 	}
 
 	func testViewerOpensBeforeImageLoadsAndShowsItWhenReady() async throws {
@@ -371,6 +393,70 @@ import RSParser
 		try await waitForScript("return getComputedStyle(document.querySelector('video')).display === 'none';", in: webView)
 	}
 
+	func testVideoThumbnailLongPressUsesOriginalURLAndSuppressesOnlyThatPress() async throws {
+		for pageScripts in [false, true] {
+			let (webView, messages) = try await makeWebView(pageScripts: pageScripts, mediaContextHandlers: true)
+			for hide in [false, true] {
+				_ = try await evaluate("window.nnwMediaThumbnails.configure(true, true, {media:'Media',image:'Image',video:'Video'}, \(hide));", in: webView)
+				for selector in ["button", ".nnw-thumbnail-play"] {
+					let count = messages.longPresses.count
+					_ = try await dispatchMediaTouch("touchstart", selector: selector, in: webView)
+					try await Task.sleep(for: .milliseconds(700))
+					XCTAssertEqual(messages.longPresses.count, count + 1)
+					XCTAssertEqual(messages.targets.last?["type"] as? String, "video")
+					XCTAssertEqual(messages.targets.last?["resourceURL"] as? String, "https://example.test/movie.mp4")
+					let press = try XCTUnwrap(messages.targets.last?["press"] as? Int)
+					XCTAssertEqual(messages.longPresses.last, "video:\(press)")
+					_ = try await dispatchMediaTouch("touchend", selector: selector, in: webView)
+					_ = try await evaluate("document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].click();", in: webView)
+					try await Task.sleep(for: .milliseconds(50))
+					XCTAssertTrue(messages.videos.isEmpty, "Releasing a long press must not play the video")
+				}
+				let saved = try await webView.callAsyncJavaScript("return JSON.parse(collectMediaForSaving('video')).urls;", arguments: [:], in: nil, contentWorld: .page) as? [String]
+				XCTAssertEqual(saved, ["https://example.test/movie.mp4"])
+			}
+			// A menu can consume touchend/click. The next touch must still be a normal tap.
+			_ = try await dispatchMediaTouch("touchstart", in: webView)
+			try await Task.sleep(for: .milliseconds(700))
+			_ = try await dispatchMediaTouch("touchcancel", in: webView)
+			_ = try await dispatchMediaTouch("touchstart", in: webView)
+			_ = try await dispatchMediaTouch("touchend", in: webView)
+			_ = try await evaluate("document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].click();", in: webView)
+			try await waitUntil { messages.videos.count == 1 }
+		}
+	}
+
+	func testVideoThumbnailShortPressMovementAndCancellationDoNotShowMenu() async throws {
+		let (webView, messages) = try await makeWebView(mediaContextHandlers: true)
+		try await configure(webView)
+		for cancellation in ["touchend", "touchmove", "touchcancel"] {
+			_ = try await dispatchMediaTouch("touchstart", in: webView)
+			_ = try await dispatchMediaTouch(cancellation, x: 40, in: webView)
+			try await Task.sleep(for: .milliseconds(700))
+			XCTAssertTrue(messages.longPresses.isEmpty)
+		}
+		_ = try await dispatchMediaTouch("touchstart", in: webView)
+		_ = try await dispatchMediaTouch("touchend", in: webView)
+		_ = try await evaluate("document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].click();", in: webView)
+		try await waitUntil { messages.videos.count == 1 }
+		XCTAssertEqual(messages.videos.first, "https://example.test/movie.mp4")
+		let types = try await webView.callAsyncJavaScript("""
+		return ['.articleBody img', 'video', 'header img', '[data-nnw-media-thumbnails] button'].map(selector =>
+		    mediaContextTargetType({target:document.querySelector(selector)}));
+		""", arguments: [:], in: nil, contentWorld: .page) as? [String?]
+		XCTAssertEqual(types, ["image", "video", "header", nil])
+	}
+
+	private func dispatchMediaTouch(_ type: String, selector: String = "button", x: Int = 20, in webView: WKWebView) async throws -> Any? {
+		try await webView.callAsyncJavaScript("""
+		const button = document.querySelectorAll('[data-nnw-media-thumbnails] button')[1];
+		const target = selector === 'button' ? button : button.querySelector(selector);
+		const event = new Event(type, {bubbles:true});
+		Object.defineProperty(event, 'touches', {value: type === 'touchend' || type === 'touchcancel' ? [] : [{clientX:x, clientY:20}]});
+		target.dispatchEvent(event);
+		""", arguments: ["type": type, "selector": selector, "x": x], in: nil, contentWorld: .page)
+	}
+
 	private func configure(_ webView: WKWebView, enabled: Bool = true) async throws {
 		_ = try await evaluate("window.nnwMediaThumbnails.configure(\(enabled), true, {media:'Media',image:'Image',video:'Video'});", in: webView)
 	}
@@ -399,12 +485,21 @@ import RSParser
 		XCTFail("Timed out waiting for media message")
 	}
 
-	private func makeWebView(pageScripts: Bool = false, html: String? = nil) async throws -> (WKWebView, ThumbnailMessages) {
+	private func makeWebView(pageScripts: Bool = false, html: String? = nil, mediaContextHandlers: Bool = false) async throws -> (WKWebView, ThumbnailMessages) {
 		let configuration = WKWebViewConfiguration()
 		configuration.websiteDataStore = .nonPersistent()
 		configuration.defaultWebpagePreferences.allowsContentJavaScript = pageScripts
 		configuration.userContentController.addUserScript(try XCTUnwrap(ArticleMediaThumbnails.userScript))
 		let messages = ThumbnailMessages()
+		if mediaContextHandlers {
+			let scriptURL = try XCTUnwrap(Bundle.main.url(forResource: "main_ios", withExtension: "js"))
+			let source = try String(contentsOf: scriptURL, encoding: .utf8)
+			configuration.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+			configuration.userContentController.addUserScript(WKUserScript(source: "setupMediaContextTargetHandler();", injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+			for name in ["mediaContextTarget", "mediaLongPress"] {
+				configuration.userContentController.add(messages, name: name)
+			}
+		}
 		for name in ["imageWasClicked", "nativeVideoPlay"] {
 			configuration.userContentController.add(messages, contentWorld: ArticleMediaThumbnails.contentWorld, name: name)
 		}
@@ -438,11 +533,18 @@ import RSParser
 @MainActor private final class ThumbnailMessages: NSObject, WKScriptMessageHandler {
 	var images: [String] = []
 	var videos: [String] = []
+	var targets: [[String: Any]] = []
+	var longPresses: [String] = []
 	func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+		if message.name == "mediaContextTarget", let report = message.body as? [String: Any] {
+			targets.append(report)
+			return
+		}
 		guard let value = message.body as? String else {
 			return
 		}
 		if message.name == "imageWasClicked" { images.append(value) }
+		else if message.name == "mediaLongPress" { longPresses.append(value) }
 		else { videos.append(value) }
 	}
 }
