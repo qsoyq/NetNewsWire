@@ -28,10 +28,15 @@ final class ArticleTranslationTests: XCTestCase {
 			XCTAssertEqual(preferences.displayMode, .bilingual)
 			XCTAssertTrue(preferences.automaticallyTranslate && preferences.manuallyTranslate)
 			XCTAssertFalse(preferences.prefetchNextArticleTranslation)
+			XCTAssertFalse(preferences.translateTitle)
 		}
 	}
 
 	func testNewPreferencesRoundTripAllLanguagesAndReplacementMode() throws {
+		XCTAssertFalse(ArticleTranslationPreferences().translateTitle)
+		var titleOnly = ArticleTranslationPreferences()
+		titleOnly.translateTitle = true
+		XCTAssertFalse(titleOnly.isEnabled)
 		XCTAssertEqual(ArticleTranslationPreferences().language, .simplifiedChinese)
 		XCTAssertEqual(ArticleTranslationLanguage.allCases.count, 4)
 		for language in ArticleTranslationLanguage.allCases {
@@ -39,6 +44,7 @@ final class ArticleTranslationTests: XCTestCase {
 			preferences.path = "/custom/responses"
 			preferences.displayMode = .replaceOriginal
 			preferences.prefetchNextArticleTranslation = true
+			preferences.translateTitle = true
 			preferences.language = language
 			let encoded = try JSONEncoder().encode(preferences)
 			XCTAssertEqual(try JSONDecoder().decode(ArticleTranslationPreferences.self, from: encoded), preferences)

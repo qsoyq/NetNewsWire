@@ -1,6 +1,7 @@
 (() => {
     "use strict";
-    const ignored = "script,style,noscript,pre,code,textarea,input,button,select,svg,math,video,audio,.articleTitle,.article-title,[hidden],[aria-hidden='true'],[translate='no'],.notranslate,[data-nnw-translation]";
+    const titleSelector = ".articleTitle,.article-title";
+    const ignored = "script,style,noscript,pre,code,textarea,input,button,select,svg,math,video,audio,[hidden],[aria-hidden='true'],[translate='no'],.notranslate,[data-nnw-translation]";
     const boundaries = new Set("summary,p,div,li,blockquote,td,th,h1,h2,h3,h4,h5,h6,dt,dd,figcaption,details,section,article,header,footer,ul,ol,dl,table,thead,tbody,tfoot,tr,figure,address,hr,fieldset".toUpperCase().split(","));
     let documentID = "", options = {}, units = new Map(), identities = new WeakMap(), nextID = 0;
     let state = "idle";
@@ -14,7 +15,7 @@
     }
 
     function excluded(element) {
-        if (!element || element.closest(ignored)) return true;
+        if (!element || element.closest(ignored) || (!options.translateTitle && element.closest(titleSelector))) return true;
         const style = getComputedStyle(element);
         return style.display === "none" || style.visibility === "hidden";
     }
@@ -58,7 +59,9 @@
             return result;
         }
         const roots = Array.from(document.querySelectorAll(".articleBody,.article-body"));
-        const uniqueRoots = roots.filter(root => !roots.some(other => other !== root && other.contains(root)));
+        // Append titles so enabling title translation preserves existing body segment IDs.
+        if (options.translateTitle) roots.push(...document.querySelectorAll(titleSelector));
+        const uniqueRoots = Array.from(new Set(roots)).filter(root => !roots.some(other => other !== root && other.contains(root)));
         uniqueRoots.forEach((root, rootIndex) => {
             function scan(container, containerPath) {
                 if (excluded(container)) return;
@@ -139,7 +142,7 @@
         if (!element?.isConnected) {
             element = document.createElement("span");
             element.dataset.nnwTranslation = "text";
-            element.className = "nnw-translation-text";
+            element.className = group.container.closest(titleSelector) ? "nnw-translation-text nnw-translation-title" : "nnw-translation-text";
             group.container.insertBefore(element, group.anchor.nextSibling);
             rendered.set(group.id, element);
         }
@@ -198,6 +201,7 @@
             style.id = "nnw-translation-style";
             style.textContent = `
                 .nnw-translation-text { display: block; margin: .5em 0 1em; font-weight: normal; white-space: pre-wrap; overflow-wrap: anywhere; opacity: .85; }
+                .nnw-translation-title { margin: .35em 0 .5em; font: inherit; color: inherit; text-align: inherit; opacity: 1; }
             `;
             document.head.appendChild(style);
         }

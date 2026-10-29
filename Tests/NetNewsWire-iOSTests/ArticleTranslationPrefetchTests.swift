@@ -60,6 +60,7 @@ import Articles
 			for mode in ArticleTranslationDisplayMode.allCases {
 				var preferences = translationPreferences(fixture)
 				preferences.displayMode = mode
+				preferences.translateTitle = true
 				try ArticleTranslationSettings.save(preferences, apiKey: "test-key")
 				for plain in [false, true] {
 					let source = article("\(theme.name)-\(mode)-\(plain)", plain: plain)
@@ -71,13 +72,19 @@ import Articles
 					let reader = try await makeReader(html: rendered.html, baseURL: rendered.baseURL)
 					try await ArticleTranslationController.configureDocument(reader, documentID: "reader", preferences: preferences)
 					let segments = try await ArticleTranslationController.collectSegments(reader)
+					XCTAssertTrue(segments.contains { $0.text == "Test article" }, theme.name)
 					XCTAssertFalse(segments.isEmpty, theme.name)
 					try await service.translate(segments, articleID: source.articleID, configuration: ArticleTranslationSettings.configuration()) { @MainActor translations, _, _ in
 						_ = try await reader.callAsyncJavaScript("window.nnwTranslation.apply('reader', translations);", arguments: ["translations": translations.map { ["id": $0.id, "text": $0.text] }], in: nil, contentWorld: ArticleTranslationController.contentWorld)
 					}
+					let title = try await reader.callAsyncJavaScript("return document.querySelector('.articleTitle,.article-title').textContent;", arguments: [:], in: nil, contentWorld: ArticleTranslationController.contentWorld) as? String
+					XCTAssertTrue(title?.contains("译:Test article") == true, theme.name)
 					XCTAssertEqual(fixture.requestCount, before, "Cache miss: \(theme.name), \(mode), plain=\(plain)")
 					let text = try await reader.callAsyncJavaScript("return document.body.textContent;", arguments: [:], in: nil, contentWorld: ArticleTranslationController.contentWorld) as? String
 					XCTAssertTrue(text?.contains("译:") == true)
+					if theme.name == ArticleTheme.defaultTheme.name, !plain {
+						try await attachReader(reader, mode: mode)
+					}
 				}
 			}
 		}
@@ -136,6 +143,28 @@ import Articles
 		fixture.releaseNext()
 		await prefetcher.task?.value
 		XCTAssertEqual(fixture.requestCount, 2)
+	}
+
+	private func attachReader(_ reader: WKWebView, mode: ArticleTranslationDisplayMode) async throws {
+		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+		let previousWindow = scene.windows.first(where: \.isKeyWindow)
+		let window = UIWindow(windowScene: scene)
+		let controller = UIViewController()
+		controller.view = reader
+		window.rootViewController = controller
+		window.makeKeyAndVisible()
+		defer {
+			window.isHidden = true
+			previousWindow?.makeKeyAndVisible()
+		}
+		window.layoutIfNeeded()
+		let configuration = WKSnapshotConfiguration()
+		configuration.afterScreenUpdates = true
+		let image = try await reader.takeSnapshot(configuration: configuration)
+		let attachment = XCTAttachment(image: image)
+		attachment.name = "Article Title Translation - \(mode)"
+		attachment.lifetime = .keepAlways
+		add(attachment)
 	}
 
 	private func translationPreferences(_ fixture: TranslationFixture) -> ArticleTranslationPreferences {

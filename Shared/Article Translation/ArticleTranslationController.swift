@@ -86,7 +86,7 @@ import Foundation
 		]
 		_ = try await webView.callAsyncJavaScript("window.nnwTranslation.configure(configuration);", arguments: ["configuration": [
 			"documentID": documentID, "enabled": preferences.isEnabled, "manualEnabled": preferences.manuallyTranslate,
-			"displayMode": preferences.displayMode.rawValue, "languageTag": preferences.language.languageTag, "labels": labels
+			"displayMode": preferences.displayMode.rawValue, "translateTitle": preferences.translateTitle, "languageTag": preferences.language.languageTag, "labels": labels
 		]], in: nil, contentWorld: Self.contentWorld)
 	}
 

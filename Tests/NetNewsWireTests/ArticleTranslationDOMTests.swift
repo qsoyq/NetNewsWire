@@ -351,6 +351,90 @@ import WebKit
 		XCTAssertEqual(restored, "Example website")
 	}
 
+	func testTitleTranslationPreservesMarkupAndRestoresInBothModes() async throws {
+		for selector in ["articleTitle", "article-title"] {
+			for replacement in [false, true] {
+				let html = "<div class='\(selector)' style='font-size:30px'><h1><a href='https://example.com'>A <em>long</em> title</a></h1></div><div class='articleBody'><p>Body text</p></div>"
+				let webView = try await makeWebView(contentJavaScript: false, html: html)
+				let original = try await evaluate("return document.body.innerHTML;", in: webView) as? String
+				try await configure(webView, document: "title", replacement: replacement, translateTitle: true)
+				let segments = try await collect(webView)
+				XCTAssertEqual(segments.map(\.text), ["Body text", "A", "long", "title"])
+				let translations = segments.reversed().map { ["id": $0.id, "text": "译:" + $0.text] }
+				_ = try await evaluate("window.nnwTranslation.apply('title', translations);", arguments: ["translations": translations], in: webView)
+				let title = try await evaluate("return document.querySelector('h1').textContent;", in: webView) as? String
+				XCTAssertEqual(title, replacement ? "译:A 译:long 译:title" : "A long title译:A 译:long 译:title")
+				let link = try await evaluate("return document.querySelector('a').getAttribute('href');", in: webView) as? String
+				XCTAssertEqual(link, "https://example.com")
+				let emphasisCount = try await evaluate("return document.querySelectorAll('a em').length;", in: webView) as? Int
+				XCTAssertEqual(emphasisCount, 1)
+				if !replacement {
+					let inheritsHeading = try await evaluate("const title = document.querySelector('.nnw-translation-title'); return getComputedStyle(title).fontSize === getComputedStyle(title.parentElement).fontSize;", in: webView) as? Bool
+					XCTAssertEqual(inheritsHeading, true)
+				}
+				let repeated = try await collect(webView)
+				XCTAssertEqual(repeated, segments)
+				_ = try await evaluate("window.nnwTranslation.restore('title');", in: webView)
+				let restored = try await evaluate("return document.body.innerHTML;", in: webView) as? String
+				XCTAssertEqual(restored, original)
+			}
+		}
+	}
+
+	func testTurningTitleTranslationOffRestoresTitleAndRejectsLateResults() async throws {
+		for replacement in [false, true] {
+			let webView = try await makeWebView(contentJavaScript: false)
+			try await configure(webView, document: "body", replacement: replacement)
+			let body = try await collect(webView)
+			try await configure(webView, document: "title", replacement: replacement, translateTitle: true)
+			let all = try await collect(webView)
+			XCTAssertEqual(Array(all.prefix(body.count)), body)
+			XCTAssertEqual(all.last?.text, "Article title")
+			let translations = all.map { ["id": $0.id, "text": "译:" + $0.text] }
+			_ = try await evaluate("window.nnwTranslation.apply('title', translations);", arguments: ["translations": translations], in: webView)
+			try await configure(webView, document: "off", replacement: replacement)
+			let after = try await collect(webView)
+			XCTAssertEqual(after, body)
+			_ = try await evaluate("window.nnwTranslation.apply('title', translations);", arguments: ["translations": translations], in: webView)
+			let title = try await evaluate("return document.querySelector('.articleTitle').textContent;", in: webView) as? String
+			XCTAssertEqual(title, "Article title")
+		}
+	}
+
+	func testTitleCollectionDeduplicatesNestedContainersAndPreservesExclusions() async throws {
+		let fixtures: [(String, [String])] = [
+			("<div class='articleBody'><div class='articleTitle article-title'><h1>Nested title</h1></div><p>Body</p></div>", ["Nested title", "Body"]),
+			("<div class='articleTitle'><h1>Title</h1><div class='articleBody'><p>Nested body</p></div></div>", ["Title", "Nested body"]),
+			("<div class='article-title'><a href='https://example.com'>https://example.com</a><span hidden>Hidden</span><code>Code</code><span translate='no'>Excluded</span></div><div class='articleBody'><p>Body</p></div>", ["Body"]),
+			("<div class='articleTitle'>   </div><div class='articleBody'>Body</div>", ["Body"]),
+			("<div class='article-title'><h1>Title without body</h1></div>", ["Title without body"])
+		]
+		for (html, expected) in fixtures {
+			let webView = try await makeWebView(contentJavaScript: false, html: html)
+			try await configure(webView, document: "nested", translateTitle: true)
+			let segments = try await collect(webView)
+			XCTAssertEqual(segments.map(\.text), expected)
+			XCTAssertEqual(Set(segments.map(\.id)).count, segments.count)
+		}
+	}
+
+	func testBackgroundDocumentCollectsTitlesUsingTheSameConfigurationAsForeground() async throws {
+		for mode in ArticleTranslationDisplayMode.allCases {
+			var preferences = ArticleTranslationPreferences()
+			preferences.automaticallyTranslate = true
+			preferences.translateTitle = true
+			preferences.displayMode = mode
+			let webView = try await makeWebView(contentJavaScript: false)
+			try await configure(webView, document: "title", replacement: mode == .replaceOriginal, translateTitle: true)
+			let foreground = try await collect(webView)
+			let background = try await ArticleTranslationDocument().segments(html: Self.html, baseURL: nil, preferences: preferences, size: CGSize(width: 375, height: 800))
+			XCTAssertEqual(background.map(\.text), foreground.map(\.text))
+			XCTAssertEqual(background.map(\.id), foreground.map(\.id))
+			XCTAssertEqual(background.map(\.context), foreground.map(\.context))
+			XCTAssertEqual(background.last?.text, "Article title")
+		}
+	}
+
 	private func collect(_ webView: WKWebView) async throws -> [Segment] {
 		let result = try await evaluate("return window.nnwTranslation.collect();", in: webView)
 		return try JSONDecoder().decode([Segment].self, from: Data(try XCTUnwrap(result as? String).utf8))
@@ -362,9 +446,9 @@ import WebKit
 		let context: String?
 	}
 
-	private func configure(_ webView: WKWebView, document: String, manual: Bool = true, enabled: Bool = true, replacement: Bool = false) async throws {
+	private func configure(_ webView: WKWebView, document: String, manual: Bool = true, enabled: Bool = true, replacement: Bool = false, translateTitle: Bool = false) async throws {
 		_ = try await evaluate("window.nnwTranslation.configure(configuration);", arguments: ["configuration": [
-			"documentID": document, "enabled": enabled, "manualEnabled": manual,
+			"documentID": document, "enabled": enabled, "manualEnabled": manual, "translateTitle": translateTitle,
 			"displayMode": replacement ? "replaceOriginal" : "bilingual",
 			"labels": ["title": "翻译", "translate": "翻译", "retry": "重试翻译", "stop": "停止", "restore": "恢复原文", "working": "翻译中", "done": "已翻译", "paused": "已暂停", "failed": "翻译失败", "original": "原文"]
 		]], in: webView)

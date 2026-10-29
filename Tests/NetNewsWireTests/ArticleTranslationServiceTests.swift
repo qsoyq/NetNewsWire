@@ -31,6 +31,30 @@ final class ArticleTranslationServiceTests: XCTestCase {
 		XCTAssertEqual(newCache, [ArticleTranslationSegment(id: "0", text: "译:查看正文")])
 	}
 
+	func testAddingTitleTranslationReusesBodyCacheAndRequestsOnlyTheTitle() async throws {
+		let fixture = TranslationFixture()
+		defer { fixture.cleanUp() }
+		let service = fixture.service()
+		let configuration = try fixture.configuration()
+		let body = ArticleTranslationSegment(id: "0", text: "Cached body", context: "Cached body")
+		let title = ArticleTranslationSegment(id: "1", text: "Article title", context: "Article title")
+		try await service.translate([body], articleID: "article", configuration: configuration) { _, _, _ in }
+		let missingTitle = try await service.cachedTranslations(for: [body, title], articleID: "article", configuration: configuration)
+		XCTAssertNil(missingTitle)
+		let requested = expectation(description: "Only the missing title is requested")
+		fixture.onRequest = { _, texts in
+			XCTAssertEqual(texts, ["Article title"])
+			requested.fulfill()
+		}
+		try await service.translate([body, title], articleID: "article", configuration: configuration) { _, _, _ in }
+		XCTAssertEqual(fixture.requestCount, 2)
+		let bodyOnly = try await service.cachedTranslations(for: [body], articleID: "article", configuration: configuration)
+		XCTAssertEqual(bodyOnly?.map(\.text), ["译:Cached body"])
+		let cached = try await fixture.service().cachedTranslations(for: [body, title], articleID: "article", configuration: configuration)
+		XCTAssertEqual(cached?.map(\.text), ["译:Cached body", "译:Article title"])
+		await fulfillment(of: [requested], timeout: 3)
+	}
+
 	func testCompletedPrefetchIsReusedAfterRecreatingService() async throws {
 		let fixture = TranslationFixture()
 		defer { fixture.cleanUp() }

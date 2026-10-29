@@ -157,7 +157,8 @@ import RSParser
 	func testTranslationSheetSavesOrDiscardsDraft() async throws {
 		let original = ArticleTranslationSettings.preferences
 		let originalKey = try ArticleTranslationSettings.apiKey()
-		let baseline = ArticleTranslationPreferences()
+		var baseline = ArticleTranslationPreferences()
+		baseline.translateTitle = true
 		try ArticleTranslationSettings.save(baseline, apiKey: "")
 		defer { try? ArticleTranslationSettings.save(original, apiKey: originalKey) }
 		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
@@ -174,6 +175,11 @@ import RSParser
 			root.present(sheet, animated: false)
 			try await Task.sleep(for: .milliseconds(400))
 			let field = try XCTUnwrap(views(of: UITextField.self, in: sheet.view).first { $0.text == baseline.baseURL })
+			// SwiftUI exposes the identifier on its accessibility element, not the backing UISwitch.
+			let titleSwitch = try XCTUnwrap(views(of: UISwitch.self, in: sheet.view).first(where: \.isOn))
+			XCTAssertTrue(titleSwitch.isOn)
+			titleSwitch.setOn(false, animated: false)
+			titleSwitch.sendActions(for: .valueChanged)
 			field.text = "https://example.invalid/draft"
 			field.sendActions(for: .editingChanged)
 			try await Task.sleep(for: .milliseconds(100))
@@ -184,6 +190,7 @@ import RSParser
 			}
 			try await waitUntil { root.presentedViewController == nil }
 			XCTAssertEqual(dismissCount, 1)
+			XCTAssertEqual(ArticleTranslationSettings.preferences.translateTitle, !shouldSave)
 			XCTAssertEqual(ArticleTranslationSettings.preferences.baseURL, shouldSave ? "https://example.invalid/draft" : baseline.baseURL)
 		}
 	}

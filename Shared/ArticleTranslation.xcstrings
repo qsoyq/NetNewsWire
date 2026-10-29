@@ -685,19 +685,36 @@
         }
       }
     },
-    "Translate automatically when you open an article, or use the translation button. Choose to show translations below the original or replace the original. Article titles stay unchanged.": {
+    "Translate Title": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Translate automatically when you open an article, or use the translation button. Choose to show translations below the original or replace the original. Article titles stay unchanged."
+            "value": "Translate Title"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开文章后自动翻译，或点击按钮按需翻译。译文可显示在原文下方，也可替换原文。文章标题保持原样。"
+            "value": "翻译标题"
+          }
+        }
+      }
+    },
+    "Translate automatically when you open an article, or use the translation button. Choose to show translations below the original or replace the original. Only the article body is translated by default. Enable Translate Title to include the article title.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translate automatically when you open an article, or use the translation button. Choose to show translations below the original or replace the original. Only the article body is translated by default. Enable Translate Title to include the article title."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开文章后自动翻译，或点击按钮按需翻译。译文可显示在原文下方，也可替换原文。默认仅翻译正文，开启“翻译标题”后同时翻译文章标题。"
           }
         }
       }

@@ -39,6 +39,7 @@ struct ArticleTranslationPreferences: Codable, Equatable {
 	var model = ""
 	var language = ArticleTranslationLanguage.simplifiedChinese
 	var displayMode = ArticleTranslationDisplayMode.bilingual
+	var translateTitle = false
 	var automaticallyTranslate = false
 	var prefetchNextArticleTranslation = false
 	var manuallyTranslate = false
@@ -48,7 +49,7 @@ struct ArticleTranslationPreferences: Codable, Equatable {
 	init() {}
 
 	private enum CodingKeys: String, CodingKey {
-		case baseURL, path, model, language, displayMode, automaticallyTranslate, prefetchNextArticleTranslation, manuallyTranslate, concurrentRequests
+		case baseURL, path, model, language, displayMode, translateTitle, automaticallyTranslate, prefetchNextArticleTranslation, manuallyTranslate, concurrentRequests
 	}
 
 	init(from decoder: Decoder) throws {
@@ -57,6 +58,7 @@ struct ArticleTranslationPreferences: Codable, Equatable {
 		path = try values.decodeIfPresent(String.self, forKey: .path) ?? ""
 		model = try values.decodeIfPresent(String.self, forKey: .model) ?? model
 		displayMode = try values.decodeIfPresent(ArticleTranslationDisplayMode.self, forKey: .displayMode) ?? .bilingual
+		translateTitle = try values.decodeIfPresent(Bool.self, forKey: .translateTitle) ?? false
 		automaticallyTranslate = try values.decodeIfPresent(Bool.self, forKey: .automaticallyTranslate) ?? false
 		prefetchNextArticleTranslation = try values.decodeIfPresent(Bool.self, forKey: .prefetchNextArticleTranslation) ?? false
 		manuallyTranslate = try values.decodeIfPresent(Bool.self, forKey: .manuallyTranslate) ?? false
