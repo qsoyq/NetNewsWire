@@ -149,6 +149,7 @@ final class WebViewController: UIViewController {
 	private var restoreWindowScrollY: Int?
 	private var isArticleContentJavascriptEnabled = AppDefaults.shared.isArticleContentJavascriptEnabled
 	private var automaticallyExpandArticleDetails = AppDefaults.shared.automaticallyExpandArticleDetails
+	private var lockArticlePageDirection = AppDefaults.shared.lockArticlePageDirection
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
@@ -253,6 +254,14 @@ final class WebViewController: UIViewController {
 	}
 
 	private func userDefaultsDidChange() {
+		if lockArticlePageDirection != AppDefaults.shared.lockArticlePageDirection {
+			lockArticlePageDirection = AppDefaults.shared.lockArticlePageDirection
+			if let webView, isArticleDocumentReady {
+				Task {
+					try? await WebViewConfiguration.configureArticlePageDirection(webView)
+				}
+			}
+		}
 		if automaticallyExpandArticleDetails != AppDefaults.shared.automaticallyExpandArticleDetails {
 			automaticallyExpandArticleDetails = AppDefaults.shared.automaticallyExpandArticleDetails
 			if let webView, isArticleDocumentReady {
@@ -646,6 +655,9 @@ extension WebViewController: WKNavigationDelegate {
 			return
 		}
 		videoDocumentReady = true
+		Task {
+			try? await WebViewConfiguration.configureArticlePageDirection(webView)
+		}
 		ArticleMediaThumbnails.configure(webView, active: imagePresentationEnabled)
 		videoPreviewController.documentDidLoad(webView)
 		videoPreviewController.setActive(viewIfLoaded?.window != nil && ((delegate as? ArticleViewController)?.isCurrentWebViewController(self) ?? true))
@@ -1505,7 +1517,8 @@ private extension WebViewController {
 			"baseURL": rendering.baseURL,
 			"style": rendering.style,
 			"body": rendering.html,
-			"windowScrollY": String(windowScrollY)
+			"windowScrollY": String(windowScrollY),
+			"pageDirection": WebViewConfiguration.articlePageDirection
 		]
 
 		var html = try! MacroProcessor.renderedText(withTemplate: ArticleRenderer.page.html, substitutions: substitutions)

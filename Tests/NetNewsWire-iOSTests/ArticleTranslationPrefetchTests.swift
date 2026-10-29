@@ -145,7 +145,140 @@ import Articles
 		XCTAssertEqual(fixture.requestCount, 2)
 	}
 
-	private func attachReader(_ reader: WKWebView, mode: ArticleTranslationDisplayMode) async throws {
+	func testPageDirectionLockPreservesAutomaticRTLUnlessEnabled() async throws {
+		let original = AppDefaults.shared.lockArticlePageDirection
+		defer { AppDefaults.shared.lockArticlePageDirection = original }
+		let rtlTitle = "به معنای واقعی دستشو گذاشته زیر چونه‌اش"
+		for locked in [false, true] {
+			AppDefaults.shared.lockArticlePageDirection = locked
+			for title in ["A normal title", rtlTitle, "عنوان المقال", "כותרת המאמר"] {
+				for mode in ArticleTranslationDisplayMode.allCases {
+					for translateTitle in [false, true] {
+						var preferences = ArticleTranslationPreferences()
+						preferences.automaticallyTranslate = true
+						preferences.displayMode = mode
+						preferences.translateTitle = translateTitle
+						let content = "<p>RT by <a href='https://example.invalid'>@author</a></p><details open><summary>查看正文</summary><p dir='rtl'>این متن فارسی است</p></details><p><a href='https://example.invalid'>查看原贴</a></p>"
+						let source = article("layout-\(mode)-\(translateTitle)", title: title, content: content)
+						let rendered = try ArticleTranslationPrefetcher.render(source)
+						let reader = try await makeReader(html: rendered.html, baseURL: rendered.baseURL)
+						_ = try await reader.callAsyncJavaScript("document.querySelector('.headerTable td').textContent = '订阅源';", arguments: [:], in: nil, contentWorld: ArticleTranslationController.contentWorld)
+						try await ArticleTranslationController.configureDocument(reader, documentID: "layout", preferences: preferences)
+						let segments = try await ArticleTranslationController.collectSegments(reader)
+						XCTAssertFalse(segments.isEmpty)
+						XCTAssertEqual(segments.contains { $0.text == title }, translateTitle)
+						for translated in [false, true] {
+							if translated {
+								_ = try await reader.callAsyncJavaScript("window.nnwTranslation.apply('layout', translations);", arguments: ["translations": segments.map { ["id": $0.id, "text": "中文译文"] }], in: nil, contentWorld: ArticleTranslationController.contentWorld)
+							}
+							let snapshot = try await reader.callAsyncJavaScript("""
+							const cells = document.querySelectorAll('.headerTable td');
+							return {
+							    pageDirection: getComputedStyle(document.documentElement).direction,
+							    bodyDirection: getComputedStyle(document.body).direction,
+							    headerLeftOfAvatar: cells[0].getBoundingClientRect().left < cells[1].getBoundingClientRect().left,
+							    explicitRTL: getComputedStyle(document.querySelector('[dir=rtl]')).direction
+							};
+							""", arguments: [:], in: nil, contentWorld: ArticleTranslationController.contentWorld) as? [String: Any]
+							let layout = try XCTUnwrap(snapshot)
+							let isLTR = locked || title == "A normal title"
+							let context = "locked=\(locked), title=\(title), mode=\(mode), translateTitle=\(translateTitle), translated=\(translated)"
+							XCTAssertEqual(layout["pageDirection"] as? String, isLTR ? "ltr" : "rtl", context)
+							XCTAssertEqual(layout["bodyDirection"] as? String, isLTR ? "ltr" : "rtl", context)
+							XCTAssertEqual(layout["headerLeftOfAvatar"] as? Bool, isLTR, context)
+							XCTAssertEqual(layout["explicitRTL"] as? String, "rtl", context)
+							if title == rtlTitle, mode == .bilingual, !translateTitle, !translated {
+								try await attachReader(reader, mode: mode, name: "RTL Article - Page Direction Lock \(locked)")
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	func testPageDirectionLockUpdatesNativeReaderWithoutReloading() async throws {
+		let originalLock = AppDefaults.shared.lockArticlePageDirection
+		let originalTranslation = ArticleTranslationSettings.preferences
+		let originalKey = try ArticleTranslationSettings.apiKey()
+		defer {
+			AppDefaults.shared.lockArticlePageDirection = originalLock
+			try? ArticleTranslationSettings.save(originalTranslation, apiKey: originalKey)
+		}
+		AppDefaults.shared.lockArticlePageDirection = false
+		try ArticleTranslationSettings.save(ArticleTranslationPreferences(), apiKey: originalKey)
+		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first)
+		let coordinator = try XCTUnwrap(scene.coordinator)
+		let windowScene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+		let previousWindow = windowScene.windows.first(where: \.isKeyWindow)
+		let window = UIWindow(windowScene: windowScene)
+		let reader = WebViewController()
+		reader.coordinator = coordinator
+		let loaded = expectation(description: "Native RTL article loaded")
+		let delegate = LayoutReaderDelegate { loaded.fulfill() }
+		reader.delegate = delegate
+		let content = "<p id='translation-marker'>Original paragraph</p>" + (0..<80).map { "<p>Paragraph \($0) keeps this article scrollable.</p>" }.joined()
+		reader.setArticle(article("live-layout", title: "عنوان المقال", content: content))
+		window.rootViewController = UINavigationController(rootViewController: reader)
+		window.makeKeyAndVisible()
+		defer { window.isHidden = true; previousWindow?.makeKeyAndVisible() }
+		await fulfillment(of: [loaded], timeout: 5)
+		let webView = try XCTUnwrap(reader.view.subviews.first as? WKWebView)
+		var preferences = ArticleTranslationPreferences()
+		preferences.manuallyTranslate = true
+		preferences.displayMode = .replaceOriginal
+		try await ArticleTranslationController.configureDocument(webView, documentID: "live-layout", preferences: preferences)
+		let segments = try await ArticleTranslationController.collectSegments(webView)
+		XCTAssertFalse(segments.isEmpty)
+		_ = try await webView.callAsyncJavaScript("window.nnwTranslation.apply('live-layout', translations);", arguments: ["translations": segments.map { ["id": $0.id, "text": "中文译文"] }], in: nil, contentWorld: ArticleTranslationController.contentWorld)
+		_ = try await webView.callAsyncJavaScript("window.layoutToken = 'same-document';", arguments: [:], in: nil, contentWorld: .defaultClient)
+		for locked in [true, false] {
+			ArticleSettingsModel().binding(for: .lockArticlePageDirection).wrappedValue = locked
+			let expected = locked ? "ltr" : "rtl"
+			let deadline = Date().addingTimeInterval(5)
+			var direction: String?
+			repeat {
+				direction = try await webView.callAsyncJavaScript("return getComputedStyle(document.documentElement).direction;", arguments: [:], in: nil, contentWorld: .defaultClient) as? String
+				if direction == expected { break }
+				try await Task.sleep(for: .milliseconds(20))
+			} while Date() < deadline
+			XCTAssertEqual(direction, expected)
+			let snapshot = try await webView.callAsyncJavaScript("return {token: window.layoutToken, text: document.getElementById('translation-marker').textContent};", arguments: [:], in: nil, contentWorld: .defaultClient) as? [String: Any]
+			let state = try XCTUnwrap(snapshot)
+			XCTAssertEqual(state["token"] as? String, "same-document")
+			XCTAssertEqual(state["text"] as? String, "中文译文")
+
+		}
+	}
+
+	func testChangingPageDirectionPreservesScrollPosition() async throws {
+		let original = AppDefaults.shared.lockArticlePageDirection
+		defer { AppDefaults.shared.lockArticlePageDirection = original }
+		let paragraphs = (0..<80).map { "<p>Paragraph \($0)</p>" }.joined()
+		let reader = try await makeReader(html: "<html dir='auto'><head><title>عنوان المقال</title></head><body>\(paragraphs)</body></html>", baseURL: nil)
+		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+		let previousWindow = scene.windows.first(where: \.isKeyWindow)
+		let window = UIWindow(windowScene: scene)
+		let controller = UIViewController()
+		controller.view = reader
+		window.rootViewController = controller
+		window.makeKeyAndVisible()
+		defer { window.isHidden = true; previousWindow?.makeKeyAndVisible() }
+		window.layoutIfNeeded()
+		_ = try await reader.takeSnapshot(configuration: nil)
+		for locked in [true, false] {
+			_ = try await reader.callAsyncJavaScript("window.scrollTo(0, 200);", arguments: [:], in: nil, contentWorld: .defaultClient)
+			let before = try await reader.callAsyncJavaScript("return window.scrollY;", arguments: [:], in: nil, contentWorld: .defaultClient) as? Double
+			XCTAssertGreaterThan(try XCTUnwrap(before), 0)
+			AppDefaults.shared.lockArticlePageDirection = locked
+			try await WebViewConfiguration.configureArticlePageDirection(reader)
+			_ = try await reader.takeSnapshot(configuration: nil)
+			let after = try await reader.callAsyncJavaScript("return window.scrollY;", arguments: [:], in: nil, contentWorld: .defaultClient) as? Double
+			XCTAssertEqual(try XCTUnwrap(after), try XCTUnwrap(before), accuracy: 1)
+		}
+	}
+
+	private func attachReader(_ reader: WKWebView, mode: ArticleTranslationDisplayMode, name: String? = nil) async throws {
 		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
 		let previousWindow = scene.windows.first(where: \.isKeyWindow)
 		let window = UIWindow(windowScene: scene)
@@ -162,7 +295,7 @@ import Articles
 		configuration.afterScreenUpdates = true
 		let image = try await reader.takeSnapshot(configuration: configuration)
 		let attachment = XCTAttachment(image: image)
-		attachment.name = "Article Title Translation - \(mode)"
+		attachment.name = name ?? "Article Title Translation - \(mode)"
 		attachment.lifetime = .keepAlways
 		add(attachment)
 	}
@@ -176,9 +309,9 @@ import Articles
 		return preferences
 	}
 
-	private func article(_ id: String, plain: Bool = false) -> Article {
-		Article(accountID: "test", articleID: id, feedID: "feed", uniqueID: id, title: "Test article",
-			contentHTML: plain ? nil : "<p>First paragraph \(id).</p><p>Second <a href='https://example.invalid'>paragraph</a> with <b>formatting</b>.</p>",
+	private func article(_ id: String, plain: Bool = false, title: String = "Test article", content: String? = nil) -> Article {
+		Article(accountID: "test", articleID: id, feedID: "feed", uniqueID: id, title: title,
+			contentHTML: plain ? nil : (content ?? "<p>First paragraph \(id).</p><p>Second <a href='https://example.invalid'>paragraph</a> with <b>formatting</b>.</p>"),
 			contentText: plain ? "First paragraph \(id).\n\nSecond paragraph." : nil,
 			markdown: nil, url: "https://example.invalid/article", externalURL: nil, summary: nil,
 			imageURL: nil, datePublished: nil, dateModified: nil, authors: nil,
@@ -200,6 +333,13 @@ import Articles
 		}
 		reader.navigationDelegate = nil
 		return reader
+	}
+
+	private final class LayoutReaderDelegate: WebViewControllerDelegate {
+		let didLoad: () -> Void
+		init(_ didLoad: @escaping () -> Void) { self.didLoad = didLoad }
+		func webViewController(_: WebViewController, articleExtractorButtonStateDidUpdate: ArticleExtractorButtonState) {}
+		func webViewControllerDidLoadArticle(_ controller: WebViewController) { didLoad() }
 	}
 
 	private final class ReaderLoader: NSObject, WKNavigationDelegate {

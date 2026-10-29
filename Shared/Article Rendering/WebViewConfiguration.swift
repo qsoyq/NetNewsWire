@@ -50,6 +50,20 @@ import Articles
 		return configuration
 	}
 
+#if os(iOS)
+	static var articlePageDirection: String {
+		AppDefaults.shared.lockArticlePageDirection ? "ltr" : "auto"
+	}
+
+	static func configureArticlePageDirection(_ webView: WKWebView) async throws {
+		_ = try await webView.callAsyncJavaScript("""
+		const scrollY = window.scrollY;
+		document.documentElement.dir = direction;
+		window.scrollTo(0, scrollY);
+		""", arguments: ["direction": articlePageDirection], in: nil, contentWorld: .defaultClient)
+	}
+#endif
+
 	/// Whether the article view should run content JavaScript for this article.
 	/// Called from the navigation delegate on every navigation, so a change to the user setting takes effect on the next load.
 	static func allowsContentJavaScript(for article: Article?) -> Bool {

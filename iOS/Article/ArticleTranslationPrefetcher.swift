@@ -88,7 +88,7 @@ import os
 
 	static func render(_ article: Article) throws -> (html: String, baseURL: URL?) {
 		let rendering = ArticleRenderer.articleHTML(article: article, theme: ArticleThemesManager.shared.currentTheme)
-		let substitutions = ["title": rendering.title, "baseURL": rendering.baseURL, "style": rendering.style, "body": rendering.html, "windowScrollY": "0"]
+		let substitutions = ["title": rendering.title, "baseURL": rendering.baseURL, "style": rendering.style, "body": rendering.html, "windowScrollY": "0", "pageDirection": WebViewConfiguration.articlePageDirection]
 		let html = try MacroProcessor.renderedText(withTemplate: ArticleRenderer.page.html, substitutions: substitutions)
 		return (ArticleRenderingSpecialCases.filterHTMLIfNeeded(baseURL: rendering.baseURL, html: html), URL(string: rendering.baseURL))
 	}

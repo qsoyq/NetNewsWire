@@ -101,7 +101,8 @@ import RSCore
 			"baseURL": rendering.baseURL,
 			"style": rendering.style,
 			"body": rendering.html,
-			"windowScrollY": "0"
+			"windowScrollY": "0",
+			"pageDirection": WebViewConfiguration.articlePageDirection
 		]
 
 		var html = try! MacroProcessor.renderedText(withTemplate: ArticleRenderer.page.html, substitutions: substitutions)

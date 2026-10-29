@@ -84,6 +84,7 @@ final class AppDefaults: Sendable {
 		static let pipAutoPlayNextVideo = "pipAutoPlayNextVideo"
 		static let prefetchNextArticleContent = "prefetchNextArticleContent"
 		static let automaticallyExpandArticleDetails = "automaticallyExpandArticleDetails"
+		static let lockArticlePageDirection = "lockArticlePageDirection"
 		static let hideReadFeeds = "hideReadFeeds"
 		static let isShowingExtractedArticle = "isShowingExtractedArticle"
 		static let articleWindowScrollY = "articleWindowScrollY"
@@ -272,6 +273,11 @@ final class AppDefaults: Sendable {
 		set {
 			AppDefaults.setBool(for: Key.pipAutoPlayNextVideo, newValue)
 		}
+	}
+
+	var lockArticlePageDirection: Bool {
+		get { AppDefaults.bool(for: Key.lockArticlePageDirection) }
+		set { AppDefaults.setBool(for: Key.lockArticlePageDirection, newValue) }
 	}
 
 	var automaticallyExpandArticleDetails: Bool {
@@ -603,6 +609,7 @@ final class AppDefaults: Sendable {
 									Key.pipAutoPlayNextVideo: false,
 									Key.prefetchNextArticleContent: false,
 									Key.automaticallyExpandArticleDetails: false,
+									Key.lockArticlePageDirection: false,
 										Key.timelineGroupByFeed: false,
 										Key.refreshClearsReadArticles: false,
 										Key.timelineNumberOfLines: 2,

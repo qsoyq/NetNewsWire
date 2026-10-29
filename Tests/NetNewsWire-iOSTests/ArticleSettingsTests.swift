@@ -5,6 +5,21 @@ import SwiftUI
 @testable import NetNewsWire
 
 @MainActor final class ArticleSettingsTests: XCTestCase {
+	func testPageDirectionLockDefaultsOff() {
+		let key = ArticleSetting.lockArticlePageDirection.rawValue
+		let original = AppDefaults.store.object(forKey: key)
+		defer {
+			if let original { AppDefaults.store.set(original, forKey: key) }
+			else { AppDefaults.store.removeObject(forKey: key) }
+		}
+		AppDefaults.store.removeObject(forKey: key)
+		XCTAssertFalse(AppDefaults.shared.lockArticlePageDirection)
+		XCTAssertEqual(WebViewConfiguration.articlePageDirection, "auto")
+		ArticleSettingsModel().binding(for: .lockArticlePageDirection).wrappedValue = true
+		XCTAssertTrue(AppDefaults.store.bool(forKey: key))
+		XCTAssertEqual(WebViewConfiguration.articlePageDirection, "ltr")
+	}
+
 	func testBindingsPreserveExistingValuesAndOnlyChangeTheirOriginalKeys() {
 		let original = ArticleSetting.allCases.map { AppDefaults.store.object(forKey: $0.rawValue) }
 		defer {
@@ -13,7 +28,7 @@ import SwiftUI
 				else { AppDefaults.store.removeObject(forKey: setting.rawValue) }
 			}
 		}
-		XCTAssertEqual(ArticleSetting.allCases, [.doubleTapToGoBack, .automaticallyExpandArticleDetails])
+		XCTAssertEqual(ArticleSetting.allCases, [.doubleTapToGoBack, .automaticallyExpandArticleDetails, .lockArticlePageDirection])
 		for enabled in [false, true] {
 			for setting in ArticleSetting.allCases {
 				AppDefaults.store.set(enabled, forKey: setting.rawValue)
@@ -81,6 +96,7 @@ import SwiftUI
 		let translations = [
 			"Article Settings": "文章设置",
 			"Double-Tap to Go Back": "双击返回",
+			"Lock Page Direction": "锁定页面方向",
 			"Automatically Expand Collapsed Content": "自动展开折叠正文"
 		]
 		for language in ["en", "zh-Hans"] {
