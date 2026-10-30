@@ -40,6 +40,7 @@ final class WebViewController: UIViewController {
 		static let mediaContextTarget = "mediaContextTarget"
 		static let mediaLongPress = "mediaLongPress"
 		static let articleImageLoad = "articleImageLoad"
+		static let thumbnailLoad = "thumbnailLoad"
 	}
 
 	private enum MediaContextTarget: String {
@@ -81,6 +82,7 @@ final class WebViewController: UIViewController {
 	private var imagePresentationEnabled = false
 	private var imageRequestGeneration = 0
 	private var imageOpenedFromThumbnail = false
+	private var thumbnailFallbackTasks = [String: Task<Void, Never>]()
 	private var mediaSourceURLs = Set<String>()
 	private var clickedImageCompletion: (() -> Void)?
 	private var mediaContextTargetState: MediaContextTargetState?
@@ -384,6 +386,9 @@ final class WebViewController: UIViewController {
 
 	func showClickedImage(completion: @escaping () -> Void) {
 		if imageOpenedFromThumbnail {
+			if let webView {
+				ArticleMediaThumbnails.retryFailed(in: webView)
+			}
 			completion()
 			return
 		}
@@ -801,6 +806,11 @@ extension WebViewController: WKScriptMessageHandler {
 				return
 			}
 			imageWasClicked(body: message.body as? String, fromThumbnail: message.world == ArticleMediaThumbnails.contentWorld)
+		case MessageName.thumbnailLoad:
+			guard message.webView === webView, message.world == ArticleMediaThumbnails.contentWorld else {
+				return
+			}
+			handleThumbnailLoadMessage(message.body)
 		case MessageName.showFeedInspector:
 			if let feed = article?.feed {
 				coordinator.showFeedInspector(for: feed)
@@ -1366,6 +1376,32 @@ private extension WebViewController {
 		ArticleMediaLog.log(level, operation: operation, message: message)
 	}
 
+	func handleThumbnailLoadMessage(_ body: Any) {
+		guard let report = body as? [String: Any], let type = report["type"] as? String, let url = report["url"] as? String else {
+			return
+		}
+		switch type {
+		case "failed":
+			let detail = report["detail"] as? String ?? ""
+			ArticleMediaLog.log(.warning, operation: "Thumbnail", message: "webview load failed \(detail) url=\(url)")
+		case "fallback":
+			guard let webView, thumbnailFallbackTasks[url] == nil else {
+				return
+			}
+			thumbnailFallbackTasks[url] = Task { @MainActor [weak self, weak webView] in
+				let dataURL = await ArticleMediaThumbnails.fallbackDataURL(for: url)
+				guard !Task.isCancelled, let self, let webView, self.webView === webView else {
+					return
+				}
+				self.thumbnailFallbackTasks[url] = nil
+				ArticleMediaLog.log(dataURL == nil ? .warning : .info, operation: "Thumbnail", message: "native fallback \(dataURL == nil ? "failed" : "succeeded") \(ArticleMediaLog.urlDescription(url, level: dataURL == nil ? .warning : .info))")
+				ArticleMediaThumbnails.deliverFallback(dataURL, for: url, in: webView)
+			}
+		default:
+			break
+		}
+	}
+
 	func handleArticleImageLoadMessage(_ body: Any) {
 		guard let event = ArticleImageDiagnostics.imageLoadEvent(from: body) else {
 			return
@@ -1456,7 +1492,7 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.mediaSourceURLs)
 
 				// The thumbnail script also works when article JavaScript is disabled.
-				for name in [MessageName.imageWasClicked, MessageName.nativeVideoPlay] {
+				for name in [MessageName.imageWasClicked, MessageName.nativeVideoPlay, MessageName.thumbnailLoad] {
 					webView.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: ArticleMediaThumbnails.contentWorld)
 					webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), contentWorld: ArticleMediaThumbnails.contentWorld, name: name)
 				}
@@ -1492,6 +1528,9 @@ private extension WebViewController {
 			}
 			return
 		}
+
+		thumbnailFallbackTasks.values.forEach { $0.cancel() }
+		thumbnailFallbackTasks.removeAll()
 
 		let theme = ArticleThemesManager.shared.currentTheme
 		let rendering: ArticleRenderer.Rendering

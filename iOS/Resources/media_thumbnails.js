@@ -168,13 +168,25 @@
                 appearance:none!important; position:relative!important; display:block!important;
                 flex:0 0 112px!important; width:112px!important; height:88px!important;
                 min-height:88px!important; padding:0!important; margin:0!important;
-                border:1px solid rgba(128,128,128,.25)!important; border-radius:8px!important;
-                background-color:rgba(128,128,128,.12)!important;
-                background-size:cover!important; background-position:center!important;
+                border:1px solid rgba(128,128,128,.35)!important; border-radius:8px!important;
+                background-color:rgba(128,128,128,.22)!important;
                 color:inherit!important; overflow:hidden!important; cursor:pointer;
                 -webkit-tap-highlight-color:transparent;
             }
             [data-nnw-media-thumbnails] button:active { opacity:.7; }
+            [data-nnw-media-thumbnails] button img {
+                position:absolute!important; inset:0!important; display:block!important;
+                width:100%!important; height:100%!important; max-width:none!important;
+                margin:0!important; object-fit:cover!important; opacity:0; pointer-events:none; transition:opacity .2s;
+            }
+            [data-nnw-media-thumbnails] button.nnw-thumb-loaded img { opacity:1; }
+            [data-nnw-media-thumbnails] button.nnw-thumb-loading { animation:nnw-thumb-pulse 1.2s ease-in-out infinite; }
+            @keyframes nnw-thumb-pulse { 50% { background-color:rgba(128,128,128,.34); } }
+            [data-nnw-media-thumbnails] button.nnw-thumb-failed { border-style:dashed!important; }
+            [data-nnw-media-thumbnails] button.nnw-thumb-failed::before {
+                content:'\\21BB'; position:absolute; inset:0; display:flex; align-items:center;
+                justify-content:center; font:28px system-ui; opacity:.55;
+            }
             [data-nnw-media-thumbnails] button:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
             [data-nnw-media-thumbnails] .nnw-thumbnail-play {
                 position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -219,6 +231,88 @@
         }));
     }
 
+    const retryDelays = [1000, 3000];
+
+    function post(type, url, detail) {
+        try {
+            window.webkit.messageHandlers.thumbnailLoad.postMessage({ type, url, detail: detail || "" });
+        } catch (_) { /* Diagnostics and native fallback are optional. */ }
+    }
+
+    function setState(entry, state) {
+        entry.state = state;
+        entry.button.classList.toggle("nnw-thumb-loading", state === "loading");
+        entry.button.classList.toggle("nnw-thumb-loaded", state === "loaded");
+        entry.button.classList.toggle("nnw-thumb-failed", state === "failed");
+    }
+
+    function loadThumbnail(entry, url) {
+        clearTimeout(entry.retryTimer);
+        entry.retryTimer = null;
+        entry.loadingURL = url;
+        setState(entry, "loading");
+        if (entry.image.getAttribute("src")) entry.image.removeAttribute("src");
+        entry.image.src = url;
+    }
+
+    function thumbnailFailed(entry) {
+        if (entry.state === "loaded") return;
+        const url = entry.preview;
+        if (entry.fallbackActive) {
+            setState(entry, "failed");
+            entry.fallbackActive = false;
+            return;
+        }
+        if (entry.retries < retryDelays.length) {
+            const delay = retryDelays[entry.retries++];
+            setState(entry, "loading");
+            entry.retryTimer = setTimeout(() => {
+                entry.retryTimer = null;
+                if (entry.preview === url && entry.button.isConnected) loadThumbnail(entry, url);
+            }, delay);
+            return;
+        }
+        // WebKit could not load it; ask the app to download it natively.
+        post("failed", url, `retries=${entry.retries}`);
+        if (/^https?:/i.test(url) && !entry.fallbackRequested) {
+            entry.fallbackRequested = true;
+            setState(entry, "loading");
+            post("fallback", url);
+        } else {
+            setState(entry, "failed");
+        }
+    }
+
+    function bindThumbnail(entry) {
+        entry.image.addEventListener("load", () => {
+            clearTimeout(entry.retryTimer);
+            entry.fallbackActive = false;
+            setState(entry, "loaded");
+        });
+        entry.image.addEventListener("error", () => thumbnailFailed(entry));
+    }
+
+    function retryFailed(force) {
+        entries.forEach(entry => {
+            if (entry.state !== "failed" || !entry.preview) return;
+            entry.retries = 0;
+            entry.fallbackRequested = false;
+            loadThumbnail(entry, entry.preview);
+        });
+    }
+
+    function setFallback(url, dataURL) {
+        entries.forEach(entry => {
+            if (entry.preview !== url || entry.state === "loaded") return;
+            if (dataURL) {
+                entry.fallbackActive = true;
+                loadThumbnail(entry, dataURL);
+            } else {
+                setState(entry, "failed");
+            }
+        });
+    }
+
     function refresh() {
         timer = null;
         observer?.disconnect();
@@ -245,7 +339,15 @@
         }
         const next = new Map();
         items.forEach((item, index) => {
-            const entry = entries.get(item.key) || { button: document.createElement("button") };
+            const entry = entries.get(item.key) || { button: document.createElement("button"), state: "idle", retries: 0 };
+            if (!entry.image) {
+                entry.image = document.createElement("img");
+                entry.image.alt = "";
+                entry.image.decoding = "async";
+                entry.image.setAttribute("aria-hidden", "true");
+                bindThumbnail(entry);
+                entry.button.appendChild(entry.image);
+            }
             Object.assign(entry, item);
             const button = entry.button;
             button.type = "button";
@@ -259,12 +361,20 @@
                     button.removeAttribute("data-nnw-media-long-pressed");
                     return;
                 }
+                // A failed thumbnail gets a fresh attempt, and the full image still opens.
+                if (entry.state === "failed") retryFailed();
                 activate(entry);
             };
             const preview = item.video ? item.element.poster : source(item.element);
             if (entry.preview !== preview) {
                 entry.preview = preview;
-                button.style.backgroundImage = preview ? `url(${JSON.stringify(preview)})` : "none";
+                entry.retries = 0;
+                entry.fallbackRequested = false;
+                entry.fallbackActive = false;
+                if (preview) loadThumbnail(entry, preview);
+                else { entry.image.removeAttribute("src"); setState(entry, "idle"); }
+            } else if (entry.state === "idle" && preview) {
+                loadThumbnail(entry, preview);
             }
             if (item.video && !button.firstChild) {
                 const play = document.createElement("span");
@@ -275,7 +385,9 @@
             if (strip.children[index] !== button) strip.insertBefore(button, strip.children[index] || null);
             next.set(item.key, entry);
         });
-        entries.forEach((entry, key) => { if (!next.has(key)) entry.button.remove(); });
+        entries.forEach((entry, key) => {
+            if (!next.has(key)) { clearTimeout(entry.retryTimer); entry.button.remove(); }
+        });
         entries = next;
     }
 
@@ -331,10 +443,13 @@
     function setActive(value) {
         active = Boolean(value);
         if (!active) { clearTimeout(timer); timer = null; }
-        else if (enabled || hideBodyMedia) refresh();
+        else {
+            retryFailed();
+            if (enabled || hideBodyMedia) refresh();
+        }
     }
 
-    window.nnwMediaThumbnails = { configure, setActive };
+    window.nnwMediaThumbnails = { configure, setActive, retryFailed, setFallback };
     const initialStyle = document.getElementById("nnw-media-initial-visibility");
     if (initialStyle) {
         try {
