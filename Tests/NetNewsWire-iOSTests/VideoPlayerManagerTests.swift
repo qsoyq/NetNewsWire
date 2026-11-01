@@ -58,6 +58,82 @@ import Testing
 		) == (autoGotoNext ? .selectNextArticle : .finish))
 	}
 
+	@Test func recoveryRetriesAreBoundedAcrossAttempts() {
+		var state = VideoPlaybackRecovery()
+		state.startAttempt(now: 0)
+		#expect(state.retryDelay() == 1)
+		state.startAttempt(now: 1)
+		#expect(state.retryDelay() == 3)
+		state.startAttempt(now: 4)
+		#expect(state.retryDelay() == nil)
+		#expect(state.retries == 2)
+	}
+
+	@Test func loadingAndStallingHaveDifferentDeadlines() {
+		var state = VideoPlaybackRecovery()
+		state.startAttempt(now: 0)
+		for second in 1..<15 {
+			#expect(state.sample(now: Double(second), mediaTime: 0, playing: false, waiting: true) == .none)
+		}
+		#expect(state.sample(now: 15, mediaTime: 0, playing: false, waiting: true) == .timeout)
+		state.startAttempt(now: 20)
+		#expect(state.sample(now: 21, mediaTime: 1, playing: true, waiting: false) == .progress)
+		for second in 22..<41 {
+			#expect(state.sample(now: Double(second), mediaTime: 1, playing: false, waiting: true) == .none)
+		}
+		#expect(state.sample(now: 41, mediaTime: 1, playing: false, waiting: true) == .timeout)
+	}
+
+	@Test func pauseSeekAndSuspensionCannotConsumeTheQueue() {
+		var state = VideoPlaybackRecovery()
+		state.startAttempt(now: 0)
+		for second in 1...100 {
+			#expect(state.sample(now: Double(second), mediaTime: 0, playing: false, waiting: false) == .none)
+		}
+		#expect(state.recoveryWait == 0)
+		#expect(state.sample(now: 101, mediaTime: 200, playing: true, waiting: false) == .none)
+		state.suspend()
+		#expect(state.retryDelay() == nil)
+		#expect(state.sample(now: 500, mediaTime: 200, playing: false, waiting: true) == .none)
+		#expect(state.recoveryWait == 0)
+	}
+
+	@Test func systemSuspensionDoesNotCountAsRecoveryWait() {
+		var state = VideoPlaybackRecovery()
+		state.startAttempt(now: 0)
+		#expect(state.sample(now: 600, mediaTime: 0, playing: false, waiting: true) == .none)
+		#expect(state.recoveryWait == 1)
+	}
+
+	@Test func onlySustainedProgressIsHealthy() {
+		var state = VideoPlaybackRecovery()
+		state.startAttempt(now: 0)
+		for second in 1..<5 {
+			#expect(state.sample(now: Double(second), mediaTime: Double(second), playing: true, waiting: false) == .progress)
+		}
+		#expect(state.sample(now: 5, mediaTime: 5, playing: true, waiting: false) == .healthy)
+		state.pause()
+		#expect(state.sample(now: 6, mediaTime: 6, playing: true, waiting: false) == .progress)
+	}
+
+	@Test func totalRecoveryBudgetSurvivesIntermittentProgress() {
+		var state = VideoPlaybackRecovery()
+		state.startAttempt(now: 0)
+		var now: Double = 0
+		var position: Double = 0
+		for _ in 0..<6 {
+			for _ in 0..<10 {
+				now += 1
+				_ = state.sample(now: now, mediaTime: position, playing: false, waiting: true)
+			}
+			now += 1
+			position += 1
+			_ = state.sample(now: now, mediaTime: position, playing: true, waiting: false)
+		}
+		#expect(state.recoveryWait == 60)
+		#expect(state.retryDelay() == nil)
+	}
+
 	@Test func endNotificationMustBelongToTheCurrentPlayerItem() {
 		let endedItem = AVPlayerItem(asset: AVMutableComposition())
 		let replacementItem = AVPlayerItem(asset: AVMutableComposition())

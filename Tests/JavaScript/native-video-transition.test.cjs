@@ -32,6 +32,7 @@ test('native session cleanup precedes dismissal completion and current-page play
 	try {
 		const script = join(directory, 'main.swift');
 		writeFileSync(script, `
+import Foundation
 final class Player {
     var currentItem: Int? = 1
     var paused = false
@@ -55,6 +56,12 @@ final class Manager {
     var isPiPActive = false
     var isRestoringUserInterface = false
     var observing = true
+    var playbackSessionID = UUID()
+    var pendingPlaybackArticle: String? = "pending"
+    var playbackIndex: Int? = 0
+    var playbackURL: URL?
+    var recoveryCancelled = false
+    func cancelRecovery() { recoveryCancelled = true }
     func logPlaybackDiagnostics(for item: Int, event: String) {}
     func removeEndObserver() { observing = false }
     ${finish}
@@ -67,6 +74,7 @@ manager.finishPlaybackSession {
     precondition(manager.player?.currentItem == nil)
     precondition(manager.currentArticleID == nil && manager.playbackArticles.isEmpty)
     precondition(!manager.observing && manager.playerViewController == nil)
+    precondition(manager.recoveryCancelled && manager.pendingPlaybackArticle == nil && manager.playbackIndex == nil)
     navigations += 1
     // Model the next page immediately starting another session.
     manager.player?.replaceCurrentItem(with: 2)

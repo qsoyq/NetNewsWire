@@ -12,6 +12,7 @@ import os
 import Articles
 import Account
 import ErrorLog
+import RSWeb
 
 @MainActor
 final class VideoPlayerManager: NSObject {
@@ -46,9 +47,44 @@ final class VideoPlayerManager: NSObject {
 	private var playbackDiagnosticObservers = [NSObjectProtocol]()
 	private var playbackRequestID = 0
 	private var playbackRequestStartUptime: TimeInterval = 0
+	private var playbackSessionID = UUID()
+	private var playbackURL: URL?
+	private var playbackIndex: Int?
+	private var pendingPlaybackArticle: Article?
+	private var recovery = VideoPlaybackRecovery()
+	private var consecutiveFailures = 0
+	private var attemptResolved = false
+	private var playbackRequested = false
+	private var resumePosition: Double = 0
+	private var pendingSeekPosition: Double?
+	private var seekingForRecovery = false
+	private var audioInterrupted = false
+	private var recoveryTask: Task<Void, Never>?
+	private var retryTask: Task<Void, Never>?
+	private var interruptionObserver: NSObjectProtocol?
+	private var settingsObserver: NSObjectProtocol?
+	private var ignoredPauseRequestID: Int?
 
 	override init() {
 		super.init()
+		settingsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+			Task { @MainActor in
+				guard let self, !AppDefaults.shared.pipAutoPlayNextVideo else {
+					return
+				}
+				if self.retryTask != nil { self.suspendRecovery(reason: "setting-disabled") }
+			}
+		}
+		interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+			let began = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
+			Task { @MainActor in
+				guard let self else {
+					return
+				}
+				self.audioInterrupted = began
+				if began { self.suspendRecovery(reason: "audio-interruption") }
+			}
+		}
 		do {
 			try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
 		} catch {
@@ -57,14 +93,27 @@ final class VideoPlayerManager: NSObject {
 		}
 	}
 
+	isolated deinit {
+		recoveryTask?.cancel()
+		retryTask?.cancel()
+		if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
+		if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
+	}
+
 	// MARK: - Public API
 
 	func play(url: URL, articleID: String, from presenter: UIViewController) {
+		cancelRecovery()
+		playbackSessionID = UUID()
+		playbackURL = url
+		recovery = VideoPlaybackRecovery()
+		consecutiveFailures = 0
+		pendingPlaybackArticle = nil
+		resumePosition = 0
 		let item = AVPlayerItem(url: url)
 		let player = player ?? AVPlayer()
 		self.player = player
 		let replacesExistingItem = player.currentItem != nil
-		player.replaceCurrentItem(with: item)
 
 		currentArticleID = articleID
 		if let coordinator {
@@ -73,25 +122,36 @@ final class VideoPlayerManager: NSObject {
 				coordinator.retainArticleForVideoPlayback(article)
 			}
 		}
-		observePlayerItemEnd()
+		playbackIndex = playbackArticles.firstIndex { $0.articleID == articleID }
+		installPlaybackItem(item)
 
 		let playerViewController = configuredPlayerViewController()
 		let cacheHit = AppDefaults.shared.cacheVideoContent && VideoCacheDatabase.shared.hasCachedData(for: url.absoluteString)
 		ArticleMediaLog.log(.info, operation: "Native video request", message: "request=\(playbackRequestID) articleID=\(articleID) source=\(ArticleMediaLog.urlDescription(url.absoluteString, level: .info)) cache_hit=\(cacheHit) replaces_item=\(replacesExistingItem) presenter_visible=\(presenter.viewIfLoaded?.window != nil) player_presented=\(playerViewController.presentingViewController != nil) player_dismissing=\(playerViewController.isBeingDismissed) pip=\(isPiPActive)")
 		ArticleMediaLog.log(.debug, operation: "Native video URL", message: "request=\(playbackRequestID) articleID=\(articleID) url=\(url.absoluteString)")
 		guard playerViewController.presentingViewController == nil, !isPiPActive else {
-			player.play()
+			requestPlayback(for: item)
 			logPlaybackDiagnostics(for: item, event: "play-existing-presentation")
 			return
 		}
 
-		presenter.present(playerViewController, animated: true) {
-			player.play()
+		let sessionID = playbackSessionID
+		presenter.present(playerViewController, animated: true) { [weak self, weak item] in
+			guard let self, let item, self.playbackSessionID == sessionID,
+				Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
+				return
+			}
+			self.requestPlayback(for: item)
 			self.logPlaybackDiagnostics(for: item, event: "presentation-completed")
 		}
 	}
 
 	func stop() {
+		cancelRecovery()
+		playbackSessionID = UUID()
+		pendingPlaybackArticle = nil
+		playbackIndex = nil
+		playbackURL = nil
 		if let item = player?.currentItem {
 			logPlaybackDiagnostics(for: item, event: "stop")
 		}
@@ -110,7 +170,9 @@ final class VideoPlayerManager: NSObject {
 
 	/// Extracts the first non-GIF <video> or <source> src HTTP URL from HTML.
 	static func extractFirstVideoURL(from html: String?) -> URL? {
-		guard let html else { return nil }
+		guard let html else {
+			return nil
+		}
 
 		// Extract src from <video> and <source> tags
 		let srcPattern = "<(?:video|source)\\b[^>]*?\\bsrc\\s*=\\s*\"([^\"]+)\""
@@ -150,6 +212,201 @@ final class VideoPlayerManager: NSObject {
 		return nil
 	}
 
+	// MARK: - Playback Recovery
+
+	private var canRecoverPlayback: Bool {
+		isPiPActive && AppDefaults.shared.pipAutoPlayNextVideo && !audioInterrupted
+			&& coordinator != nil && coordinator?.isArticleQuickSettingsPresented == false
+	}
+
+	private func cancelRecovery() {
+		recoveryTask?.cancel()
+		recoveryTask = nil
+		retryTask?.cancel()
+		retryTask = nil
+		recovery.suspend()
+		playbackRequested = false
+		pendingSeekPosition = nil
+		seekingForRecovery = false
+	}
+
+	private func installPlaybackItem(_ item: AVPlayerItem, restoring position: Double = 0) {
+		cancelRecovery()
+		attemptResolved = false
+		ignoredPauseRequestID = nil
+		recovery.startAttempt(now: ProcessInfo.processInfo.systemUptime)
+		pendingSeekPosition = position > 0 && position.isFinite ? position : nil
+		observePlayerItemEnd(item)
+		player?.replaceCurrentItem(with: item)
+		let sessionID = playbackSessionID
+		let requestID = playbackRequestID
+		recoveryTask = Task { @MainActor [weak self, weak item] in
+			while !Task.isCancelled {
+				do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+				guard !Task.isCancelled, let self, let item, self.playbackSessionID == sessionID,
+					self.playbackRequestID == requestID,
+					Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
+					return
+				}
+				self.samplePlayback(item)
+			}
+		}
+	}
+
+	private func requestPlayback(for item: AVPlayerItem) {
+		guard Self.isCurrentPlaybackItem(item, currentItem: player?.currentItem) else {
+			return
+		}
+		playbackRequested = true
+		if pendingSeekPosition != nil {
+			if item.status == .readyToPlay { restorePlaybackPosition(for: item) }
+		} else {
+			player?.play()
+		}
+	}
+
+	private func restorePlaybackPosition(for item: AVPlayerItem) {
+		guard playbackRequested, let position = pendingSeekPosition, !attemptResolved else {
+			return
+		}
+		pendingSeekPosition = nil
+		let duration = item.duration.seconds
+		guard duration.isFinite, position < duration, !item.seekableTimeRanges.isEmpty else {
+			player?.play()
+			return
+		}
+		seekingForRecovery = true
+		let sessionID = playbackSessionID
+		let requestID = playbackRequestID
+		item.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, weak item] _ in
+			Task { @MainActor in
+				guard let self, let item, self.playbackSessionID == sessionID, self.playbackRequestID == requestID,
+					!self.attemptResolved,
+					Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
+					return
+				}
+				self.seekingForRecovery = false
+				guard self.canRecoverPlayback else {
+					return
+				}
+				self.recovery.resetSample(now: ProcessInfo.processInfo.systemUptime, mediaTime: item.currentTime().seconds)
+				self.player?.play()
+			}
+		}
+	}
+
+	private func samplePlayback(_ item: AVPlayerItem) {
+		if !canRecoverPlayback, retryTask != nil { suspendRecovery(reason: "continuation-disabled") }
+		guard !attemptResolved, playbackRequested, !audioInterrupted else {
+			return
+		}
+		if item.status == .failed {
+			handlePlaybackFailure(item, reason: "item-failed")
+			return
+		}
+		let playing = player?.timeControlStatus == .playing && !seekingForRecovery
+		let waiting = player?.timeControlStatus == .waitingToPlayAtSpecifiedRate
+			|| pendingSeekPosition != nil || seekingForRecovery
+		let sample = recovery.sample(now: ProcessInfo.processInfo.systemUptime, mediaTime: item.currentTime().seconds,
+			playing: playing, waiting: waiting && canRecoverPlayback)
+		switch sample {
+		case .progress, .healthy:
+			resumePosition = item.currentTime().seconds
+			commitPlaybackProgress()
+			if sample == .healthy { consecutiveFailures = 0 }
+		case .timeout:
+			if canRecoverPlayback { handlePlaybackFailure(item, reason: "no-progress-timeout") }
+		case .none:
+			break
+		}
+	}
+
+	private func commitPlaybackProgress() {
+		guard let article = pendingPlaybackArticle, let coordinator else {
+			return
+		}
+		pendingPlaybackArticle = nil
+		appDelegate.resumeDatabaseProcessingIfNecessary()
+		coordinator.retainArticleForVideoPlayback(article)
+		if UIApplication.shared.applicationState == .active, !coordinator.isArticleQuickSettingsPresented {
+			coordinator.selectArticle(article, animations: [.navigation, .scroll])
+		} else {
+			markArticles(Set([article]), statusKey: .read, flag: true)
+		}
+		ArticleMediaLog.log(.info, operation: "Native video recovery", message: "request=\(playbackRequestID) articleID=\(article.articleID) action=commit-progress")
+	}
+
+	private func suspendRecovery(reason: String) {
+		retryTask?.cancel()
+		retryTask = nil
+		recovery.suspend()
+		ArticleMediaLog.log(.info, operation: "Native video recovery", message: "request=\(playbackRequestID) action=suspend reason=\(reason)")
+	}
+
+	private func handlePlaybackFailure(_ item: AVPlayerItem, reason: String) {
+		guard playbackRequested, !attemptResolved, !recovery.isSuspended, canRecoverPlayback,
+			Self.isCurrentPlaybackItem(item, currentItem: player?.currentItem) else {
+			return
+		}
+		attemptResolved = true
+		if player?.rate != 0 { ignoredPauseRequestID = playbackRequestID }
+		player?.pause()
+		guard NetworkMonitor.shared.isConnected else {
+			suspendRecovery(reason: "offline")
+			return
+		}
+		let delay = recovery.retryDelay()
+		ArticleMediaLog.log(.warning, operation: "Native video recovery", message: "session=\(playbackSessionID) request=\(playbackRequestID) articleID=\(currentArticleID ?? "(nil)") reason=\(reason) retry=\(recovery.retries) action=\(delay == nil ? "exhausted" : "retry") consecutive_failures=\(consecutiveFailures)")
+		guard let delay, let url = playbackURL else {
+			consecutiveFailures += 1
+			guard consecutiveFailures < 3 else {
+				suspendRecovery(reason: "consecutive-failure-limit")
+				return
+			}
+			guard let coordinator, let next = nextArticleForPlayback(coordinator),
+				let nextURL = Self.extractFirstVideoURL(from: next.body) else {
+				finishPlaybackSession()
+				return
+			}
+			startNextVideo(next, url: nextURL)
+			return
+		}
+		let sessionID = playbackSessionID
+		let requestID = playbackRequestID
+		retryTask = Task { @MainActor [weak self, weak item] in
+			do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+			guard !Task.isCancelled, let self, let item, self.playbackSessionID == sessionID,
+				self.playbackRequestID == requestID,
+				Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
+				return
+			}
+			guard self.canRecoverPlayback, NetworkMonitor.shared.isConnected else {
+				self.suspendRecovery(reason: "retry-no-longer-eligible")
+				return
+			}
+			self.retryTask = nil
+			let replacement = AVPlayerItem(asset: AVURLAsset(url: url))
+			self.installPlaybackItem(replacement, restoring: self.resumePosition)
+			self.requestPlayback(for: replacement)
+		}
+	}
+
+	private func startNextVideo(_ article: Article, url: URL) {
+		guard canRecoverPlayback else {
+			return
+		}
+		playbackIndex = playbackArticles.firstIndex { $0.articleID == article.articleID && $0.accountID == article.accountID }
+		currentArticleID = article.articleID
+		pendingPlaybackArticle = article
+		playbackURL = url
+		resumePosition = 0
+		recovery = VideoPlaybackRecovery()
+		coordinator?.retainArticleForVideoPlayback(article)
+		let item = AVPlayerItem(url: url)
+		installPlaybackItem(item)
+		requestPlayback(for: item)
+	}
+
 	// MARK: - Private
 
 	private func configuredPlayerViewController() -> AVPlayerViewController {
@@ -180,21 +437,24 @@ final class VideoPlayerManager: NSObject {
 		finishPlaybackSession(animated: false)
 	}
 
-	private func observePlayerItemEnd() {
+	private func observePlayerItemEnd(_ item: AVPlayerItem) {
 		removeEndObserver()
-		guard let item = player?.currentItem else {
-			return
-		}
 		observePlaybackDiagnostics(for: item)
+		let sessionID = playbackSessionID
+		let requestID = playbackRequestID
 		endObserver = NotificationCenter.default.addObserver(
 			forName: .AVPlayerItemDidPlayToEndTime,
 			object: item,
 			queue: .main
 		) { [weak self, weak item] _ in
 			Task { @MainActor in
-				guard let self, Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
+				guard let self, self.playbackSessionID == sessionID, self.playbackRequestID == requestID,
+					!self.attemptResolved, Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
 					return
 				}
+				self.attemptResolved = true
+				if let item, item.currentTime().seconds > 0 { self.commitPlaybackProgress() }
+				self.consecutiveFailures = 0
 				self.handleVideoEnded()
 			}
 		}
@@ -218,25 +478,71 @@ final class VideoPlayerManager: NSObject {
 	private func observePlaybackDiagnostics(for item: AVPlayerItem) {
 		playbackRequestID += 1
 		playbackRequestStartUptime = ProcessInfo.processInfo.systemUptime
+		let sessionID = playbackSessionID
+		let requestID = playbackRequestID
 		playerItemStatusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, change in
 			let status = change.newValue?.rawValue ?? -1
 			Task { @MainActor in
-				guard let self, let item else {
+				guard let self, let item, self.playbackSessionID == sessionID, self.playbackRequestID == requestID,
+					Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
 					return
 				}
 				self.logPlaybackDiagnostics(for: item, event: "item-status-\(status)")
+				if item.status == .failed { self.handlePlaybackFailure(item, reason: "item-failed") }
+				if item.status == .readyToPlay { self.restorePlaybackPosition(for: item) }
 			}
 		}
 		playerTimeControlObservation = player?.observe(\.timeControlStatus, options: [.new]) { [weak self, weak item] _, change in
 			let status = change.newValue?.rawValue ?? -1
 			Task { @MainActor in
-				guard let self, let item else {
+				guard let self, let item, self.playbackSessionID == sessionID, self.playbackRequestID == requestID,
+					Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
 					return
 				}
 				self.logPlaybackDiagnostics(for: item, event: "time-control-\(status)")
+				if self.player?.timeControlStatus == .paused, item.status == .readyToPlay,
+					!self.seekingForRecovery, !self.attemptResolved {
+					self.recovery.pause()
+				}
 			}
 		}
+		let rateReasonKey = AVPlayer.rateDidChangeReasonKey
+		let explicitRateReason = AVPlayer.RateDidChangeReason.setRateCalled.rawValue
+		let rateObserver = NotificationCenter.default.addObserver(forName: AVPlayer.rateDidChangeNotification, object: player, queue: .main) { [weak self, weak item] notification in
+			let explicit = (notification.userInfo?[rateReasonKey] as? String) == explicitRateReason
+			let rate = (notification.object as? AVPlayer)?.rate ?? 0
+			Task { @MainActor in
+				guard let self, let item, explicit, self.playbackSessionID == sessionID,
+					self.playbackRequestID == requestID,
+					Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
+					return
+				}
+				if rate == 0 {
+					if self.ignoredPauseRequestID == requestID {
+						self.ignoredPauseRequestID = nil
+					} else {
+						self.playbackRequested = false
+						if self.retryTask != nil || self.seekingForRecovery {
+							self.attemptResolved = true
+							self.suspendRecovery(reason: "user-paused")
+						}
+						self.recovery.pause()
+					}
+				} else if self.attemptResolved, self.recovery.isSuspended, self.canRecoverPlayback, NetworkMonitor.shared.isConnected, let url = self.playbackURL {
+					// An explicit Play after recovery stopped starts a new user-authorized attempt.
+					self.recovery = VideoPlaybackRecovery()
+					self.consecutiveFailures = 0
+					let replacement = AVPlayerItem(url: url)
+					self.installPlaybackItem(replacement, restoring: self.resumePosition)
+					self.requestPlayback(for: replacement)
+				} else if !self.attemptResolved {
+					self.playbackRequested = true
+				}
+			}
+		}
+		playbackDiagnosticObservers.append(rateObserver)
 		let events: [(Notification.Name, String)] = [
+			(.AVPlayerItemTimeJumped, "time-jumped"),
 			(.AVPlayerItemFailedToPlayToEndTime, "failed-to-end"),
 			(.AVPlayerItemNewErrorLogEntry, "error-log"),
 			(.AVPlayerItemPlaybackStalled, "stalled")
@@ -245,10 +551,16 @@ final class VideoPlayerManager: NSObject {
 			let observer = NotificationCenter.default.addObserver(forName: name, object: item, queue: .main) { [weak self, weak item] notification in
 				let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? NSError
 				Task { @MainActor in
-					guard let self, let item else {
+					guard let self, let item, self.playbackSessionID == sessionID, self.playbackRequestID == requestID,
+						Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
 						return
 					}
 					self.logPlaybackDiagnostics(for: item, event: event, error: error)
+					if event == "failed-to-end" { self.handlePlaybackFailure(item, reason: event) }
+					if event == "time-jumped" {
+						self.recovery.resetSample(now: ProcessInfo.processInfo.systemUptime, mediaTime: item.currentTime().seconds)
+						self.recovery.pause()
+					}
 				}
 			}
 			playbackDiagnosticObservers.append(observer)
@@ -304,19 +616,7 @@ final class VideoPlayerManager: NSObject {
 				appDelegate.resumeDatabaseProcessingIfNecessary()
 				NotificationActionLog.log(.info, operation: "PiP auto-next", message: "Selecting next article \(nextArticle.articleID); isSuspended=\(AccountManager.shared.isSuspended); appState=\(UIApplication.shared.applicationState.rawValue)")
 
-				let nextItem = AVPlayerItem(url: nextVideoURL)
-				player?.replaceCurrentItem(with: nextItem)
-				player?.play()
-
-				currentArticleID = nextArticle.articleID
-				observePlayerItemEnd()
-
-				coordinator.retainArticleForVideoPlayback(nextArticle)
-				if UIApplication.shared.applicationState == .active {
-					coordinator.selectArticle(nextArticle, animations: [.navigation, .scroll])
-				} else {
-					markArticles(Set([nextArticle]), statusKey: .read, flag: true)
-				}
+				startNextVideo(nextArticle, url: nextVideoURL)
 				return
 			}
 		case .selectNextArticle:
@@ -365,8 +665,7 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private func nextArticleForPlayback(_ coordinator: SceneCoordinator) -> Article? {
-		if let currentArticleID,
-		   let index = playbackArticles.firstIndex(where: { $0.articleID == currentArticleID }) {
+		if let index = playbackIndex {
 			return index + 1 < playbackArticles.count ? playbackArticles[index + 1] : nil
 		}
 		if let currentArticleID, coordinator.currentArticle?.articleID != currentArticleID, let article = coordinator.articleFor(currentArticleID) {
@@ -376,6 +675,11 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private func finishPlaybackSession(animated: Bool = true, completion: (() -> Void)? = nil) {
+		cancelRecovery()
+		playbackSessionID = UUID()
+		pendingPlaybackArticle = nil
+		playbackIndex = nil
+		playbackURL = nil
 		if let item = player?.currentItem {
 			logPlaybackDiagnostics(for: item, event: "finish-session")
 		}
@@ -423,7 +727,7 @@ final class VideoPlayerManager: NSObject {
 			return
 		}
 
-		if let currentArticleID, let article = coordinator.articleFor(currentArticleID) {
+		if pendingPlaybackArticle == nil, let currentArticleID, let article = coordinator.articleFor(currentArticleID) {
 			coordinator.selectArticle(article, animations: [.navigation, .scroll])
 		}
 
@@ -438,11 +742,84 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	func synchronizeArticleAfterForeground() {
-		guard isPiPActive, let currentArticleID, let coordinator, !coordinator.isArticleQuickSettingsPresented,
+		guard pendingPlaybackArticle == nil, isPiPActive, let currentArticleID, let coordinator, !coordinator.isArticleQuickSettingsPresented,
 		      let article = coordinator.articleFor(currentArticleID) else {
 			return
 		}
 		coordinator.selectArticle(article, animations: [.navigation, .scroll])
+	}
+}
+
+// Time is supplied by the caller so recovery limits can be tested without sleeps.
+nonisolated struct VideoPlaybackRecovery {
+	enum Sample: Equatable { case none, progress, healthy, timeout }
+	private(set) var retries = 0
+	private(set) var recoveryWait: TimeInterval = 0
+	private(set) var isSuspended = false
+	private var lastSample: TimeInterval = 0
+	private var lastMediaTime: Double = 0
+	private var waitingDuration: TimeInterval = 0
+	private var continuousPlayback: TimeInterval = 0
+	private var hasProgress = false
+
+	mutating func startAttempt(now: TimeInterval) {
+		isSuspended = false
+		waitingDuration = 0
+		continuousPlayback = 0
+		hasProgress = false
+		resetSample(now: now, mediaTime: 0)
+	}
+
+	mutating func resetSample(now: TimeInterval, mediaTime: Double) {
+		lastSample = now
+		lastMediaTime = mediaTime.isFinite ? mediaTime : 0
+	}
+
+	mutating func pause() {
+		waitingDuration = 0
+		continuousPlayback = 0
+	}
+
+	mutating func suspend() {
+		isSuspended = true
+		pause()
+	}
+
+	mutating func sample(now: TimeInterval, mediaTime: Double, playing: Bool, waiting: Bool) -> Sample {
+		// Do not turn time spent suspended by iOS into a burst of recovery actions.
+		let elapsed = min(max(now - lastSample, 0), 1)
+		let advance = mediaTime - lastMediaTime
+		resetSample(now: now, mediaTime: mediaTime)
+		if playing, advance > 0, advance <= max(2, elapsed * 4) {
+			hasProgress = true
+			waitingDuration = 0
+			continuousPlayback += elapsed
+			return continuousPlayback >= 5 ? .healthy : .progress
+		}
+		continuousPlayback = 0
+		if !playing && !waiting || advance < 0 || advance > max(2, elapsed * 4) {
+			waitingDuration = 0
+			return .none
+		}
+		guard !isSuspended else {
+			return .none
+		}
+		waitingDuration += elapsed
+		recoveryWait += elapsed
+		return waitingDuration >= (hasProgress ? 20 : 15) || recoveryWait >= 60 ? .timeout : .none
+	}
+
+	mutating func retryDelay() -> TimeInterval? {
+		guard !isSuspended, retries < 2 else {
+			return nil
+		}
+		let delay: TimeInterval = retries == 0 ? 1 : 3
+		guard recoveryWait + delay < 60 else {
+			return nil
+		}
+		retries += 1
+		recoveryWait += delay
+		return delay
 	}
 }
 
@@ -461,6 +838,7 @@ extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 		setPictureInPictureActive(false)
 		Task { @MainActor in
 			Self.logger.info("PiP stopped")
+			self.suspendRecovery(reason: "pip-stopped")
 			appDelegate.suspendApplicationIfNeededAfterPlayback()
 		}
 	}

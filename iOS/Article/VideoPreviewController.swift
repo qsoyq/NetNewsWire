@@ -93,12 +93,6 @@ import Foundation
 								self.isActive, AppDefaults.shared.loadVideoFirstFramePreview else { return }
 							self.attempted.insert(source.id)
 							_ = try await Self.apply(data, source: source, documentID: id, in: webView)
-						} catch let error as VideoPreviewService.Unavailable {
-							guard !Task.isCancelled, let self, let webView, self.documentID == id, self.isActive,
-								AppDefaults.shared.loadVideoFirstFramePreview else { return }
-							self.attempted.insert(source.id)
-							_ = try? await Self.markUnavailable(source: source, documentID: id, in: webView)
-							ArticleMediaLog.log(.debug, operation: "Video preview", message: "source=\(ArticleMediaLog.urlDescription(source.url, level: .info)) outcome=unavailable status=\(error.statusCode)")
 						} catch {
 							if !Task.isCancelled {
 								if let self, self.documentID == id { self.attempted.insert(source.id) }
@@ -119,12 +113,6 @@ import Foundation
 
 	@discardableResult static func apply(_ data: Data, source: Source, documentID: String, in webView: WKWebView) async throws -> Bool {
 		let result = try await webView.callAsyncJavaScript("return window.nnwVideoPreview.apply(documentID, id, url, poster);", arguments: ["documentID": documentID, "id": source.id, "url": source.url, "poster": "data:image/jpeg;base64," + data.base64EncodedString()], in: nil, contentWorld: contentWorld)
-		return result as? Bool ?? false
-	}
-
-	@discardableResult static func markUnavailable(source: Source, documentID: String, in webView: WKWebView) async throws -> Bool {
-		let label = NSLocalizedString("Video cannot be played", comment: "Accessibility label for an unavailable video preview")
-		let result = try await webView.callAsyncJavaScript("return window.nnwVideoPreview.markUnavailable(documentID, id, url, label);", arguments: ["documentID": documentID, "id": source.id, "url": source.url, "label": label], in: nil, contentWorld: contentWorld)
 		return result as? Bool ?? false
 	}
 

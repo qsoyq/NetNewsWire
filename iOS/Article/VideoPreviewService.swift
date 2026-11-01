@@ -6,14 +6,6 @@ actor VideoPreviewService {
 	static let shared = VideoPreviewService()
 
 	enum Priority: Int, Sendable { case current, prefetch }
-	struct Unavailable: Error, Sendable { let statusCode: Int }
-	private struct Failure {
-		let error: Unavailable
-		let expires: Date
-	}
-	private var failures: [URL: Failure] = [:]
-	private let failureLifetime: TimeInterval
-	private let probe: @Sendable (URL) async throws -> Int?
 	private struct Job {
 		let id = UUID()
 		var priority: Priority
@@ -29,21 +21,10 @@ actor VideoPreviewService {
 	var pendingRequestCount: Int { jobs.values.reduce(0) { $0 + $1.waiters.count } }
 	var queuedJobCount: Int { queue.count }
 
-	init(cache: VideoPreviewCache = .shared, failureLifetime: TimeInterval = 300,
-		 generate: (@Sendable (URL) async throws -> Data)? = nil,
-		 probe: (@Sendable (URL) async throws -> Int?)? = nil) {
+	init(cache: VideoPreviewCache = .shared,
+		 generate: @escaping @Sendable (URL) async throws -> Data = { url in try await VideoPreviewService.generatePreview(for: url) }) {
 		self.cache = cache
-		self.failureLifetime = failureLifetime
-		let usesDefaultGenerator = generate == nil
-		self.generate = generate ?? { url in try await VideoPreviewService.generatePreview(for: url) }
-		if let probe {
-			self.probe = probe
-		} else if usesDefaultGenerator {
-			self.probe = { url in try await VideoPreviewService.probeStatus(for: url) }
-		} else {
-			// Custom generators used by tests do not access the network unless requested.
-			self.probe = { _ in nil }
-		}
+		self.generate = generate
 	}
 
 	func preview(for url: URL, priority: Priority = .current) async throws -> Data {
@@ -51,10 +32,6 @@ actor VideoPreviewService {
 		if let data = await cache.data(for: url) {
 			try Task.checkCancellation()
 			return data
-		}
-		failures = failures.filter { $0.value.expires > Date() }
-		if !VideoCacheDatabase.shared.hasCachedData(for: url.absoluteString), let failure = failures[url] {
-			throw failure.error
 		}
 		let waiter = UUID()
 		return try await withTaskCancellationHandler {
@@ -75,7 +52,6 @@ actor VideoPreviewService {
 
 	func clearCache() async {
 		cancelAll()
-		failures.removeAll()
 		await cache.clear()
 	}
 
@@ -113,19 +89,6 @@ actor VideoPreviewService {
 				do {
 					let epoch = await cache.epoch()
 					try Task.checkCancellation()
-					if !VideoCacheDatabase.shared.hasCachedData(for: url.absoluteString) {
-						do {
-							if let status = try await probe(url), status == 404 || status == 410 {
-								throw Unavailable(statusCode: status)
-							}
-						} catch let error as Unavailable {
-							throw error
-						} catch {
-							try Task.checkCancellation()
-							// A probe failure is not proof that playback will fail.
-						}
-					}
-					try Task.checkCancellation()
 					let data = try await generate(url)
 					try Task.checkCancellation()
 					await cache.store(data, for: url, epoch: epoch)
@@ -141,32 +104,9 @@ actor VideoPreviewService {
 		active.remove(id)
 		if let job = jobs[url], job.id == id {
 			jobs.removeValue(forKey: url)
-			if case .failure(let error as Unavailable) = result {
-				if failures.count >= 256, let oldest = failures.min(by: { $0.value.expires < $1.value.expires })?.key {
-					failures.removeValue(forKey: oldest)
-				}
-				failures[url] = Failure(error: error, expires: Date().addingTimeInterval(failureLifetime))
-			}
 			for waiter in job.waiters.values { waiter.resume(with: result) }
 		}
 		startNextJobs()
-	}
-
-	@concurrent static func probeStatus(for url: URL) async throws -> Int? {
-		guard url.scheme == "http" || url.scheme == "https" else {
-			return nil
-		}
-		let configuration = URLSessionConfiguration.ephemeral
-		configuration.timeoutIntervalForRequest = 3
-		configuration.timeoutIntervalForResource = 3
-		let session = URLSession(configuration: configuration)
-		defer { session.invalidateAndCancel() }
-		var request = URLRequest(url: url)
-		request.setValue("bytes=0-1023", forHTTPHeaderField: "Range")
-		// Inspect only headers. Cancellation also bounds servers that ignore Range.
-		let (_, response) = try await session.bytes(for: request)
-		try Task.checkCancellation()
-		return (response as? HTTPURLResponse)?.statusCode
 	}
 
 	@concurrent static func generatePreview(for url: URL, timeout: Duration = .seconds(30)) async throws -> Data {

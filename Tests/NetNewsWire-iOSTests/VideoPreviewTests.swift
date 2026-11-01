@@ -169,31 +169,24 @@ import Articles
 		XCTAssertNil(data)
 	}
 
-	func testHTTP404CachesUnavailableWithoutGeneratingAndTransientProbeFailureContinues() async throws {
+	func testPreviewFailureIsNotCachedAsPlaybackUnavailability() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let counter = PreviewCounter()
-		let service = VideoPreviewService(cache: VideoPreviewCache(directory: directory), generate: { _ in
+		let service = VideoPreviewService(cache: VideoPreviewCache(directory: directory)) { _ in
 			await counter.increment()
+			if await counter.value == 1 { throw URLError(.fileDoesNotExist) }
 			return Data([1])
-		}, probe: { _ in 404 })
-		let missing = try XCTUnwrap(URL(string: "https://example.test/missing.mp4"))
-		for _ in 0..<2 {
-			do {
-				_ = try await service.preview(for: missing)
-				XCTFail("404 must be unavailable")
-			} catch let error as VideoPreviewService.Unavailable { XCTAssertEqual(error.statusCode, 404) }
 		}
-		var count = await counter.value
-		XCTAssertEqual(count, 0)
-		let transient = VideoPreviewService(cache: VideoPreviewCache(directory: temporaryDirectory()), generate: { _ in
-			await counter.increment()
-			return Data([2])
-		}, probe: { _ in throw URLError(.timedOut) })
-		let data = try await transient.preview(for: try XCTUnwrap(URL(string: "https://example.test/slow.mp4")))
-		XCTAssertEqual(data, Data([2]))
-		count = await counter.value
-		XCTAssertEqual(count, 1)
+		let url = try XCTUnwrap(URL(string: "https://example.test/video.mp4"))
+		do {
+			_ = try await service.preview(for: url)
+			XCTFail("The first extraction should fail")
+		} catch let error as URLError { XCTAssertEqual(error.code, .fileDoesNotExist) }
+		let data = try await service.preview(for: url)
+		XCTAssertEqual(data, Data([1]))
+		let count = await counter.value
+		XCTAssertEqual(count, 2)
 	}
 
 	func testNativeTimeoutCancelsExtraction() async throws {
@@ -338,6 +331,8 @@ import Articles
 		XCTAssertEqual(count, 1)
 		let poster = try await evaluate("return document.getElementById('missing').hasAttribute('poster');", in: webView) as? Bool
 		XCTAssertEqual(poster, false)
+		let unchanged = try await evaluate("const v = document.getElementById('missing'); return v.hasAttribute('controls') && !v.hasAttribute('aria-label') && v.src === 'https://example.test/video.mp4';", in: webView) as? Bool
+		XCTAssertEqual(unchanged, true)
 		controller.documentWillChange()
 	}
 

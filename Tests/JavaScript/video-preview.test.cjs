@@ -114,32 +114,32 @@ test('preload toggles only non-GIF videos and restores original values', () => {
     assert.equal(missing.getAttribute('preload'), null);
     assert.equal(none.getAttribute('preload'), 'none');
 });
-test('unavailable state is applied once, preserves layout hooks, and can be retried', () => {
+test('missing preview leaves controls, source, and playback untouched', () => {
     const element = video('https://example.test/video.mp4');
     element.setAttribute('controls', 'controls');
-    element.play = () => { element.played = true; return Promise.resolve(); };
     const api = page([element]);
     api.configure('first', true, false);
     const item = JSON.parse(api.collect('first'))[0];
-    assert.equal(api.markUnavailable('first', item.id, item.url, 'Video cannot be played'), true);
-    assert.match(element.getAttribute('poster'), /^data:image\/svg\+xml/);
-    assert.equal(element.getAttribute('aria-label'), 'Video cannot be played');
-    assert.equal(element.hasAttribute('controls'), false);
-    element.listeners.get('click')();
+    // A failed native extraction sends no poster to the page.
+    assert.equal(api.markUnavailable, undefined);
     assert.equal(element.getAttribute('poster'), null);
+    assert.equal(element.getAttribute('aria-label'), null);
     assert.equal(element.hasAttribute('controls'), true);
-    assert.equal(element.played, true);
+    assert.equal(element.src, item.url);
+    assert.equal(element.listeners.size, 0);
+    api.configure('first', false, false);
+    assert.equal(element.hasAttribute('controls'), true);
 });
-test('late unavailable result cannot override playback, covers, navigation, or replacement', () => {
-    for (const action of ['playing', 'poster', 'navigate', 'replace']) {
-        const element = video('https://example.test/video.mp4');
-        const api = page([element]);
-        api.configure('first', true, false);
-        const item = JSON.parse(api.collect('first'))[0];
-        if (action === 'playing') { element.currentTime = 1; element.paused = false; }
-        if (action === 'poster') element.setAttribute('poster', 'cover.jpg');
-        if (action === 'navigate') api.configure('second', true, false);
-        if (action === 'replace') element.src = 'https://example.test/other.mp4';
-        assert.equal(api.markUnavailable('first', item.id, item.url, 'Video cannot be played'), false);
-    }
+test('preview collection and failure do not block native autoplay', () => {
+    const element = video('https://example.test/video.mp4');
+    element.pause = () => { element.paused = true; };
+    const context = vm.createContext({ URL, window: { addEventListener() {} },
+        document: { querySelectorAll: () => [element], querySelector: () => element } });
+    vm.runInContext(script, context);
+    vm.runInContext(readFileSync(resolve(__dirname, '../../iOS/Resources/main_ios.js'), 'utf8'), context);
+    context.window.nnwVideoPreview.configure('first', true, false);
+    context.window.nnwVideoPreview.collect('first');
+    const result = vm.runInContext('nativeVideoAutoplaySource()', context);
+    assert.equal(result.outcome, 'ready');
+    assert.equal(result.url, element.src);
 });
