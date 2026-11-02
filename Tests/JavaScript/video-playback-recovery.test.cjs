@@ -141,6 +141,7 @@ enum ArticleMediaLog {
     var resumePosition: Double = 0
     var retryTask: Task<Void, Never>?
     var canRecoverPlayback = true
+    var canContinuePlayback: Bool { canRecoverPlayback }
     var finished = false
     func installPlaybackItem(_ item: AVPlayerItem, restoring position: Double = 0) {
         retryTask?.cancel()

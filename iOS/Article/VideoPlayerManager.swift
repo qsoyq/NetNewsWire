@@ -59,6 +59,7 @@ final class VideoPlayerManager: NSObject {
 	private var pendingSeekPosition: Double?
 	private var seekingForRecovery = false
 	private var audioInterrupted = false
+	private var pendingVideoEnd = false
 	private var recoveryTask: Task<Void, Never>?
 	private var retryTask: Task<Void, Never>?
 	private var interruptionObserver: NSObjectProtocol?
@@ -72,17 +73,16 @@ final class VideoPlayerManager: NSObject {
 				guard let self, !AppDefaults.shared.pipAutoPlayNextVideo else {
 					return
 				}
+				self.pendingVideoEnd = false
 				if self.retryTask != nil { self.suspendRecovery(reason: "setting-disabled") }
 			}
 		}
 		interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
 			let began = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
+			let options = AVAudioSession.InterruptionOptions(rawValue: notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+			let shouldResume = options.contains(.shouldResume)
 			Task { @MainActor in
-				guard let self else {
-					return
-				}
-				self.audioInterrupted = began
-				if began { self.suspendRecovery(reason: "audio-interruption") }
+				self?.handleAudioInterruption(began: began, shouldResume: shouldResume)
 			}
 		}
 		do {
@@ -214,12 +214,55 @@ final class VideoPlayerManager: NSObject {
 
 	// MARK: - Playback Recovery
 
-	private var canRecoverPlayback: Bool {
-		isPiPActive && AppDefaults.shared.pipAutoPlayNextVideo && !audioInterrupted
+	private var canContinuePlayback: Bool {
+		isPiPActive && AppDefaults.shared.pipAutoPlayNextVideo
 			&& coordinator != nil && coordinator?.isArticleQuickSettingsPresented == false
 	}
 
+	private var canRecoverPlayback: Bool {
+		canContinuePlayback && !audioInterrupted
+	}
+
+	private func handleAudioInterruption(began: Bool, shouldResume: Bool) {
+		audioInterrupted = began
+		if began {
+			suspendRecovery(reason: "audio-interruption")
+		} else if shouldResume {
+			resumePendingVideoEnd()
+		}
+	}
+
+	private func resumePendingVideoEnd() {
+		guard pendingVideoEnd, !audioInterrupted, playbackRequested else {
+			return
+		}
+		pendingVideoEnd = false
+		guard canContinuePlayback else {
+			finishPlaybackSession()
+			return
+		}
+		handleVideoEnded()
+	}
+
+	private func handleExplicitPlaybackResume() {
+		audioInterrupted = false
+		playbackRequested = true
+		if pendingVideoEnd {
+			resumePendingVideoEnd()
+		} else if attemptResolved, recovery.isSuspended, canRecoverPlayback, NetworkMonitor.shared.isConnected, let url = playbackURL {
+			// An explicit Play after recovery stopped starts a new user-authorized attempt.
+			recovery = VideoPlaybackRecovery()
+			consecutiveFailures = 0
+			let replacement = AVPlayerItem(url: url)
+			installPlaybackItem(replacement, restoring: resumePosition)
+			requestPlayback(for: replacement)
+		} else if !attemptResolved, recovery.isSuspended {
+			recovery.resume(now: ProcessInfo.processInfo.systemUptime, mediaTime: player?.currentTime().seconds ?? 0)
+		}
+	}
+
 	private func cancelRecovery() {
+		pendingVideoEnd = false
 		recoveryTask?.cancel()
 		recoveryTask = nil
 		retryTask?.cancel()
@@ -297,7 +340,7 @@ final class VideoPlayerManager: NSObject {
 
 	private func samplePlayback(_ item: AVPlayerItem) {
 		if !canRecoverPlayback, retryTask != nil { suspendRecovery(reason: "continuation-disabled") }
-		guard !attemptResolved, playbackRequested, !audioInterrupted else {
+		guard !attemptResolved, playbackRequested else {
 			return
 		}
 		if item.status == .failed {
@@ -311,6 +354,11 @@ final class VideoPlayerManager: NSObject {
 			playing: playing, waiting: waiting && canRecoverPlayback)
 		switch sample {
 		case .progress, .healthy:
+			// Real progress supersedes a delayed or unpaired interruption notification.
+			if audioInterrupted || recovery.isSuspended {
+				audioInterrupted = false
+				recovery.resume(now: ProcessInfo.processInfo.systemUptime, mediaTime: item.currentTime().seconds)
+			}
 			resumePosition = item.currentTime().seconds
 			commitPlaybackProgress()
 			if sample == .healthy { consecutiveFailures = 0 }
@@ -392,7 +440,7 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private func startNextVideo(_ article: Article, url: URL) {
-		guard canRecoverPlayback else {
+		guard canContinuePlayback else {
 			return
 		}
 		playbackIndex = playbackArticles.firstIndex { $0.articleID == article.articleID && $0.accountID == article.accountID }
@@ -528,15 +576,8 @@ final class VideoPlayerManager: NSObject {
 						}
 						self.recovery.pause()
 					}
-				} else if self.attemptResolved, self.recovery.isSuspended, self.canRecoverPlayback, NetworkMonitor.shared.isConnected, let url = self.playbackURL {
-					// An explicit Play after recovery stopped starts a new user-authorized attempt.
-					self.recovery = VideoPlaybackRecovery()
-					self.consecutiveFailures = 0
-					let replacement = AVPlayerItem(url: url)
-					self.installPlaybackItem(replacement, restoring: self.resumePosition)
-					self.requestPlayback(for: replacement)
-				} else if !self.attemptResolved {
-					self.playbackRequested = true
+				} else {
+					self.handleExplicitPlaybackResume()
 				}
 			}
 		}
@@ -612,6 +653,12 @@ final class VideoPlayerManager: NSObject {
 		switch action {
 		case .playNextVideo:
 			if let nextArticle, let nextVideoURL {
+				guard !audioInterrupted else {
+					// The end notification is already consumed; retain the transition until resumption.
+					pendingVideoEnd = true
+					ArticleMediaLog.log(.info, operation: "Native video end", message: "request=\(playbackRequestID) action=defer-next reason=audio-interruption")
+					return
+				}
 				Self.logger.info("Swapping to next article video in PiP")
 				appDelegate.resumeDatabaseProcessingIfNecessary()
 				NotificationActionLog.log(.info, operation: "PiP auto-next", message: "Selecting next article \(nextArticle.articleID); isSuspended=\(AccountManager.shared.isSuspended); appState=\(UIApplication.shared.applicationState.rawValue)")
@@ -785,6 +832,12 @@ nonisolated struct VideoPlaybackRecovery {
 		pause()
 	}
 
+	mutating func resume(now: TimeInterval, mediaTime: Double) {
+		isSuspended = false
+		pause()
+		resetSample(now: now, mediaTime: mediaTime)
+	}
+
 	mutating func sample(now: TimeInterval, mediaTime: Double, playing: Bool, waiting: Bool) -> Sample {
 		// Do not turn time spent suspended by iOS into a burst of recovery actions.
 		let elapsed = min(max(now - lastSample, 0), 1)
@@ -838,6 +891,7 @@ extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 		setPictureInPictureActive(false)
 		Task { @MainActor in
 			Self.logger.info("PiP stopped")
+			self.pendingVideoEnd = false
 			self.suspendRecovery(reason: "pip-stopped")
 			appDelegate.suspendApplicationIfNeededAfterPlayback()
 		}
