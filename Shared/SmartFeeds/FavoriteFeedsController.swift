@@ -36,6 +36,19 @@ struct BatchFavoriteResult: Sendable, Equatable {
 	let failedCount: Int
 }
 
+struct FavoriteFolderBatchUndo {
+	let sourceID: UUID
+	let destinationID: UUID?
+	let keys: Set<FavoriteFeedKey>
+	let addedToDestination: Set<FavoriteFeedKey>
+}
+
+struct FavoriteFolderBatchResult {
+	let processedKeys: Set<FavoriteFeedKey>
+	let failedKeys: Set<FavoriteFeedKey>
+	let undo: FavoriteFolderBatchUndo?
+}
+
 @MainActor final class FavoriteFeedsAllFeed: PseudoFeed {
 
 	var account: Account?
@@ -349,6 +362,53 @@ extension FavoriteFeedsAllFeed: ArticleFetcher {
 		} else {
 			removeFromAllFolders(alias.key)
 		}
+		invalidateAndRebuildFolders()
+		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
+	}
+
+	/// A nil destination removes only the source membership, keeping the feed favorited.
+	func organize(_ requestedKeys: Set<FavoriteFeedKey>, from source: FavoriteFeedsFolder, to destination: FavoriteFeedsFolder? = nil) -> FavoriteFolderBatchResult {
+		rebuildFolders()
+		guard let sourceID = source.userID,
+			  let sourceIndex = folderRecords.firstIndex(where: { $0.id == sourceID }),
+			  destination == nil || (destination?.isUserFolder == true && destination?.userID != sourceID && folderRecords.contains(where: { $0.id == destination?.userID })) else {
+			return FavoriteFolderBatchResult(processedKeys: [], failedKeys: requestedKeys, undo: nil)
+		}
+
+		let validKeys = requestedKeys.intersection(keys).intersection(folderRecords[sourceIndex].feedKeys)
+		var addedToDestination = Set<FavoriteFeedKey>()
+		if let destinationID = destination?.userID,
+		   let destinationIndex = folderRecords.firstIndex(where: { $0.id == destinationID }) {
+			addedToDestination = validKeys.subtracting(folderRecords[destinationIndex].feedKeys)
+			folderRecords[destinationIndex].feedKeys.formUnion(validKeys)
+		}
+		folderRecords[sourceIndex].feedKeys.subtract(validKeys)
+		if !validKeys.isEmpty {
+			publishFolderMembershipChanges()
+		}
+		let undo = validKeys.isEmpty ? nil : FavoriteFolderBatchUndo(sourceID: sourceID, destinationID: destination?.userID, keys: validKeys, addedToDestination: addedToDestination)
+		return FavoriteFolderBatchResult(processedKeys: validKeys, failedKeys: requestedKeys.subtracting(validKeys), undo: undo)
+	}
+
+	/// Revert only memberships touched by this operation, never unrelated folders.
+	func undoOrganization(_ undo: FavoriteFolderBatchUndo) -> FavoriteFolderBatchResult {
+		rebuildFolders()
+		guard let sourceIndex = folderRecords.firstIndex(where: { $0.id == undo.sourceID }) else {
+			return FavoriteFolderBatchResult(processedKeys: [], failedKeys: undo.keys, undo: nil)
+		}
+		let validKeys = undo.keys.intersection(keys)
+		folderRecords[sourceIndex].feedKeys.formUnion(validKeys)
+		if let destinationIndex = folderRecords.firstIndex(where: { $0.id == undo.destinationID }) {
+			folderRecords[destinationIndex].feedKeys.subtract(undo.addedToDestination.intersection(validKeys))
+		}
+		if !validKeys.isEmpty {
+			publishFolderMembershipChanges()
+		}
+		return FavoriteFolderBatchResult(processedKeys: validKeys, failedKeys: undo.keys.subtracting(validKeys), undo: nil)
+	}
+
+	private func publishFolderMembershipChanges() {
+		saveFolders()
 		invalidateAndRebuildFolders()
 		NotificationCenter.default.post(name: .FavoriteFeedsDidChange, object: self)
 	}

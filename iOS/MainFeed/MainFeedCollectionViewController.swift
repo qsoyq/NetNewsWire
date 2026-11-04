@@ -892,6 +892,8 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 	/// Configure folder cell.
 	func configure(_ cell: MainFeedCollectionViewFolderCell, sidebarItemNode: SidebarItemNode) {
 		let node = sidebarItemNode.node
+		cell.folderMenu = nil
+		cell.manageFeeds = nil
 
 		if let folder = node.representedObject as? Folder {
 			cell.folderTitle.text = folder.nameForDisplay
@@ -899,7 +901,19 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 			configureIcon(cell, sidebarItem: folder)
 		} else if let folder = node.representedObject as? FavoriteFeedsFolder {
 			cell.folderTitle.text = folder.nameForDisplay
-
+			if folder.isUserFolder {
+				cell.manageFeeds = { [weak self] in self?.presentFavoriteFolderManagement(folder) }
+				let manage = UIAction(title: NSLocalizedString("Manage Feeds", comment: "Manage favorite folder feeds"), image: UIImage(systemName: "checklist")) { [weak self] _ in
+					self?.presentFavoriteFolderManagement(folder)
+				}
+				let rename = UIAction(title: NSLocalizedString("Rename", comment: "Rename"), image: UIImage(systemName: "pencil")) { [weak self] _ in
+					guard let self, let indexPath = self.coordinator.indexPathFor(node) else {
+						return
+					}
+					self.rename(indexPath: indexPath)
+				}
+				cell.folderMenu = UIMenu(children: [manage, rename, deleteFavoriteFolderAction(folder: folder)])
+			}
 			cell.unreadCount = folder.unreadCount
 			configureIcon(cell, sidebarItem: folder)
 		}
@@ -1543,6 +1557,10 @@ extension MainFeedCollectionViewController {
 			}
 
 				if folder.isUserFolder {
+					let manage = UIAction(title: NSLocalizedString("Manage Feeds", comment: "Manage favorite folder feeds"), image: UIImage(systemName: "checklist")) { [weak self] _ in
+						self?.presentFavoriteFolderManagement(folder)
+					}
+					menuElements.append(manage)
 					menuElements.append(UIMenu(title: "",
 										   options: .displayInline,
 										   children: [
@@ -2229,6 +2247,17 @@ extension MainFeedCollectionViewController {
 		action.accessibilityLabel = title
 		action.backgroundColor = UIColor.systemOrange
 		return action
+	}
+
+	func presentFavoriteFolderManagement(_ folder: FavoriteFeedsFolder) {
+		let controller = FavoriteFolderManagementViewController(folder: folder)
+		let navigation = UINavigationController(rootViewController: controller)
+		navigation.modalPresentationStyle = .pageSheet
+		if let sheet = navigation.sheetPresentationController {
+			sheet.detents = [.large()]
+			sheet.prefersGrabberVisible = true
+		}
+		present(navigation, animated: true)
 	}
 
 	func presentFavoriteFolderPicker(sourceFolder: FavoriteFeedsFolder) {

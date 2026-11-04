@@ -289,6 +289,143 @@ import RSCore
 		XCTAssertTrue(reloaded.userFolders.allSatisfy { $0.unreadCount == 4 })
 	}
 
+	func testBatchMovePreservesOtherFoldersAndExistingDestinationMembershipOnUndo() throws {
+		let first = makeFeed("first", name: "First", count: 2)
+		let second = makeFeed("second", name: "Second", count: 3)
+		let source = controller.createFolder(named: "Post")
+		let destination = controller.createFolder(named: "Reading")
+		let other = controller.createFolder(named: "Other")
+		controller.add([first, second], to: source)
+		controller.add(first, to: destination)
+		controller.add(second, to: other)
+		let selected = Set([first, second].map { FavoriteFeedKey(feed: $0) })
+
+		let result = controller.organize(selected, from: source, to: destination)
+
+		XCTAssertEqual(result.processedKeys, selected)
+		XCTAssertTrue(result.failedKeys.isEmpty)
+		XCTAssertTrue(source.aliases.isEmpty)
+		XCTAssertEqual(destination.aliases.count, 2)
+		XCTAssertTrue(other.contains(second))
+		XCTAssertEqual(controller.allFeed.unreadCount, 5)
+		XCTAssertEqual(accounts[0].flattenedFeeds().count, 2)
+
+		let undone = controller.undoOrganization(try XCTUnwrap(result.undo))
+
+		XCTAssertEqual(undone.processedKeys, selected)
+		XCTAssertEqual(source.aliases.count, 2)
+		XCTAssertTrue(destination.contains(first))
+		XCTAssertFalse(destination.contains(second))
+		XCTAssertTrue(other.contains(second))
+		XCTAssertEqual(source.unreadCount, 5)
+		XCTAssertEqual(controller.allFeed.unreadCount, 5)
+	}
+
+	func testBatchRemovalKeepsFavoritesSubscriptionsAndEmptyFolderAndPersists() throws {
+		let feed = makeFeed("feed", name: "Feed", count: 4)
+		let folder = controller.createFolder(named: "Post")
+		controller.add(feed, to: folder)
+		let result = controller.organize([FavoriteFeedKey(feed: feed)], from: folder)
+
+		XCTAssertTrue(folder.aliases.isEmpty)
+		XCTAssertTrue(controller.userFolders.contains { $0 === folder })
+		XCTAssertTrue(controller.isFavorite(feed))
+		XCTAssertTrue(controller.ungroupedFolder.contains(feed))
+		XCTAssertEqual(controller.allFeed.unreadCount, 4)
+		XCTAssertNotNil(accounts[0].existingFeed(withFeedID: feed.feedID))
+		let reloaded = FavoriteFeedsController(defaults: defaults, accountsProvider: { [accounts] in accounts }, unreadCountQueue: queue)
+		XCTAssertTrue(reloaded.userFolders.first?.aliases.isEmpty == true)
+		XCTAssertTrue(reloaded.ungroupedFolder.contains(feed))
+
+		_ = controller.undoOrganization(try XCTUnwrap(result.undo))
+		XCTAssertTrue(folder.contains(feed))
+		XCTAssertTrue(controller.ungroupedFolder.aliases.isEmpty)
+	}
+
+	func testBatchRemovalOnlyRemovesCurrentMembership() {
+		let feed = makeFeed("feed", name: "Feed", count: 4)
+		let source = controller.createFolder(named: "Post")
+		let other = controller.createFolder(named: "Other")
+		controller.add(feed, to: source)
+		controller.add(feed, to: other)
+
+		_ = controller.organize([FavoriteFeedKey(feed: feed)], from: source)
+
+		XCTAssertFalse(source.contains(feed))
+		XCTAssertTrue(other.contains(feed))
+		XCTAssertFalse(controller.ungroupedFolder.contains(feed))
+	}
+
+	func testBatchRejectsDeletedDestinationAndSameFolderWithoutRemovingSource() {
+		let feed = makeFeed("feed", name: "Feed", count: 4)
+		let source = controller.createFolder(named: "Post")
+		let deleted = controller.createFolder(named: "Deleted")
+		controller.add(feed, to: source)
+		controller.deleteFolder(deleted)
+		let selected: Set<FavoriteFeedKey> = [FavoriteFeedKey(feed: feed)]
+
+		for destination in [deleted, source, controller.ungroupedFolder] {
+			let result = controller.organize(selected, from: source, to: destination)
+			XCTAssertEqual(result.failedKeys, selected)
+			XCTAssertTrue(result.processedKeys.isEmpty)
+			XCTAssertNil(result.undo)
+			XCTAssertTrue(source.contains(feed))
+		}
+	}
+
+	func testBatchPartialFailureDoesNotResurrectDeletedSubscriptionOrUnfavorite() throws {
+		let kept = makeFeed("kept", name: "Kept", count: 3)
+		let removed = makeFeed("removed", name: "Removed", count: 2)
+		let source = controller.createFolder(named: "Post")
+		controller.add([kept, removed], to: source)
+		let selected = Set([kept, removed].map { FavoriteFeedKey(feed: $0) })
+		accounts[0].removeFeedFromTreeAtTopLevel(removed)
+
+		let result = controller.organize(selected, from: source)
+
+		XCTAssertEqual(result.processedKeys, [FavoriteFeedKey(feed: kept)])
+		XCTAssertEqual(result.failedKeys, [FavoriteFeedKey(feed: removed)])
+		controller.remove(kept)
+		let undone = controller.undoOrganization(try XCTUnwrap(result.undo))
+		XCTAssertEqual(undone.failedKeys, [FavoriteFeedKey(feed: kept)])
+		XCTAssertFalse(controller.hasFavorites)
+	}
+
+	func testUndoFailsWhenSourceDeletedAndKeepsDestination() throws {
+		let feed = makeFeed("feed", name: "Feed", count: 4)
+		let source = controller.createFolder(named: "Post")
+		let destination = controller.createFolder(named: "Reading")
+		controller.add(feed, to: source)
+		let result = controller.organize([FavoriteFeedKey(feed: feed)], from: source, to: destination)
+		controller.deleteFolder(source)
+
+		let undone = controller.undoOrganization(try XCTUnwrap(result.undo))
+
+		XCTAssertEqual(undone.failedKeys.count, 1)
+		XCTAssertTrue(destination.contains(feed))
+		XCTAssertFalse(controller.userFolders.contains { $0.folderID == source.folderID })
+	}
+
+	func testBatchUsesAccountIdentityAndPublishesOneCoherentChange() throws {
+		accounts.append(try makeAccount())
+		let first = makeFeed("same", name: "First", count: 2, account: accounts[0])
+		let second = makeFeed("same", name: "Second", count: 3, account: accounts[1])
+		let source = controller.createFolder(named: "Post")
+		let destination = controller.createFolder(named: "Reading")
+		controller.add([first, second], to: source)
+		let recorder = FavoriteUnreadRecorder()
+
+		_ = controller.organize([FavoriteFeedKey(feed: first)], from: source, to: destination)
+
+		XCTAssertFalse(source.contains(first))
+		XCTAssertTrue(source.contains(second))
+		XCTAssertTrue(destination.contains(first))
+		XCTAssertFalse(destination.contains(second))
+		XCTAssertEqual(recorder.count(for: source), 1)
+		XCTAssertEqual(recorder.count(for: destination), 1)
+		XCTAssertEqual(controller.allFeed.unreadCount, 5)
+	}
+
 	private func makeAccount() throws -> Account {
 		let id = UUID().uuidString
 		let folder = dataFolder.appendingPathComponent(id, isDirectory: true)

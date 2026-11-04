@@ -20,6 +20,16 @@ class MainFeedCollectionViewFolderCell: UICollectionViewCell {
 	@IBOutlet var disclosureButton: UIButton!
 
 	var delegate: MainFeedCollectionViewFolderCellDelegate?
+	private let folderMenuButton = UIButton(type: .system)
+	private var menuSpacingConstraint: NSLayoutConstraint?
+	var manageFeeds: (() -> Void)?
+	var folderMenu: UIMenu? {
+		didSet {
+			folderMenuButton.menu = folderMenu
+			folderMenuButton.isHidden = folderMenu == nil
+			menuSpacingConstraint?.constant = folderMenu == nil ? 0 : 44
+		}
+	}
 
 	private var _unreadCount: Int = 0
 	var unreadCount: Int {
@@ -58,6 +68,21 @@ class MainFeedCollectionViewFolderCell: UICollectionViewCell {
 			faviconView.isAccessibilityElement = false
 			disclosureButton.isAccessibilityElement = false
 			disclosureButton.addInteraction(UIPointerInteraction())
+			folderMenuButton.translatesAutoresizingMaskIntoConstraints = false
+			folderMenuButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+			folderMenuButton.showsMenuAsPrimaryAction = true
+			folderMenuButton.isHidden = true
+			folderMenuButton.accessibilityLabel = NSLocalizedString("Folder Actions", comment: "Favorite folder menu")
+			contentView.addSubview(folderMenuButton)
+			NSLayoutConstraint.activate([
+				folderMenuButton.widthAnchor.constraint(equalToConstant: 44),
+				folderMenuButton.heightAnchor.constraint(equalToConstant: 44),
+				folderMenuButton.trailingAnchor.constraint(equalTo: disclosureButton.leadingAnchor),
+				folderMenuButton.centerYAnchor.constraint(equalTo: disclosureButton.centerYAnchor)
+			])
+			menuSpacingConstraint = contentView.constraints.first {
+				($0.firstItem as? UIButton) === disclosureButton && $0.firstAttribute == .leading && ($0.secondItem as? UILabel) === unreadCountLabel
+			}
 		}
 	}
 
@@ -129,7 +154,14 @@ class MainFeedCollectionViewFolderCell: UICollectionViewCell {
 				self?.toggleDisclosure()
 				return true
 			}
-			return [toggleAction]
+			var actions = [toggleAction]
+			if let manageFeeds {
+				actions.append(UIAccessibilityCustomAction(name: NSLocalizedString("Manage Feeds", comment: "Manage favorite folder feeds")) { _ in
+					manageFeeds()
+					return true
+				})
+			}
+			return actions
 		}
 		set {}
 	}
