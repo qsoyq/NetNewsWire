@@ -892,7 +892,6 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 	/// Configure folder cell.
 	func configure(_ cell: MainFeedCollectionViewFolderCell, sidebarItemNode: SidebarItemNode) {
 		let node = sidebarItemNode.node
-		cell.folderMenu = nil
 		cell.manageFeeds = nil
 
 		if let folder = node.representedObject as? Folder {
@@ -903,16 +902,6 @@ final class MainFeedCollectionViewController: UICollectionViewController, Undoab
 			cell.folderTitle.text = folder.nameForDisplay
 			if folder.isUserFolder {
 				cell.manageFeeds = { [weak self] in self?.presentFavoriteFolderManagement(folder) }
-				let manage = UIAction(title: NSLocalizedString("Manage Feeds", comment: "Manage favorite folder feeds"), image: UIImage(systemName: "checklist")) { [weak self] _ in
-					self?.presentFavoriteFolderManagement(folder)
-				}
-				let rename = UIAction(title: NSLocalizedString("Rename", comment: "Rename"), image: UIImage(systemName: "pencil")) { [weak self] _ in
-					guard let self, let indexPath = self.coordinator.indexPathFor(node) else {
-						return
-					}
-					self.rename(indexPath: indexPath)
-				}
-				cell.folderMenu = UIMenu(children: [manage, rename, deleteFavoriteFolderAction(folder: folder)])
 			}
 			cell.unreadCount = folder.unreadCount
 			configureIcon(cell, sidebarItem: folder)

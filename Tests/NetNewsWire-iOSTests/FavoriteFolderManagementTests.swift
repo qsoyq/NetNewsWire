@@ -2,6 +2,7 @@
 import XCTest
 import UIKit
 import RSCore
+import RSTree
 @testable import Account
 @testable import NetNewsWire
 
@@ -69,11 +70,18 @@ import RSCore
 		XCTAssertTrue(manager.toolbarItems?.first?.isEnabled == true)
 	}
 
-	func testFolderMenuUsesReservedSpaceAndResetsForReusedCells() throws {
-		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+	func testFavoriteFolderMatchesOriginalSpacingThroughDisclosureAndReuse() throws {
+		let animationsWereEnabled = UIView.areAnimationsEnabled
+		UIView.setAnimationsEnabled(false)
+		defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+		let fixture = try FavoriteManagementFixture()
+		defer { fixture.close() }
+		let sceneDelegate = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first)
+		let scene = try XCTUnwrap(sceneDelegate.window?.windowScene)
 		let feeds = try XCTUnwrap(UIStoryboard(name: "Main", bundle: nil).instantiateViewController(withIdentifier: "MainFeedCollectionViewController") as? MainFeedCollectionViewController)
 		feeds.loadViewIfNeeded()
 		let collection = try XCTUnwrap(feeds.collectionView)
+		feeds.coordinator = try XCTUnwrap(sceneDelegate.coordinator)
 		let window = UIWindow(windowScene: scene)
 		let host = UIViewController()
 		window.rootViewController = host
@@ -95,22 +103,62 @@ import RSCore
 		collection.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: false)
 		collection.layoutIfNeeded()
 		let cell = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)) as? MainFeedCollectionViewFolderCell)
-		cell.folderTitle.text = "Post"
-		cell.unreadCount = 12345
-		cell.setDisclosure(isExpanded: false, animated: false)
-		cell.folderMenu = UIMenu(children: [UIAction(title: "Manage Feeds") { _ in }])
-		cell.manageFeeds = {}
-		cell.layoutIfNeeded()
-		let menu = try XCTUnwrap(cell.contentView.subviews.compactMap { $0 as? UIButton }.first { $0 !== cell.disclosureButton })
-		XCTAssertFalse(menu.isHidden)
-		XCTAssertLessThanOrEqual(cell.unreadCountLabel.frame.maxX, menu.frame.minX + 0.5)
-		XCTAssertEqual(menu.frame.width, 44)
-		XCTAssertEqual(cell.accessibilityCustomActions?.count, 2)
-		cell.folderMenu = nil
-		cell.manageFeeds = nil
-		cell.layoutIfNeeded()
-		XCTAssertTrue(menu.isHidden)
-		XCTAssertEqual(cell.accessibilityCustomActions?.count, 1)
+		let original = try XCTUnwrap(fixture.account.ensureFolder(with: "Beauty"))
+		let originalNode = SidebarItemNode(Node(representedObject: original, parent: nil))
+		let favoriteNode = SidebarItemNode(Node(representedObject: fixture.source, parent: nil))
+		for width in [375.0, 430.0] {
+			collection.frame.size.width = width
+			layout.itemSize.width = width
+			layout.invalidateLayout()
+			collection.layoutIfNeeded()
+			for count in [0, 52, 5727, 15271] {
+				for expanded in [false, true] {
+					func configure(_ node: SidebarItemNode) {
+						feeds.configure(cell, sidebarItemNode: node)
+						cell.unreadCount = count
+						cell.setDisclosure(isExpanded: expanded, animated: false)
+						cell.layoutIfNeeded()
+					}
+					configure(originalNode)
+					let originalCountRight = cell.unreadCountLabel.frame.maxX
+					let originalDisclosureX = cell.disclosureButton.center.x
+					let originalGap = cell.disclosureButton.frame.minX - originalCountRight
+					XCTAssertEqual(originalGap, 0, accuracy: 0.5)
+					var originalImage: UIImage?
+					if width == 430, count == 15271, !expanded {
+						originalImage = UIGraphicsImageRenderer(bounds: cell.bounds).image { _ in
+							cell.drawHierarchy(in: cell.bounds, afterScreenUpdates: true)
+						}
+					}
+
+					configure(favoriteNode)
+					XCTAssertEqual(cell.unreadCountLabel.frame.maxX, originalCountRight, accuracy: 0.5, "Favorite count must align with original folder at width \(width)")
+					XCTAssertEqual(cell.disclosureButton.center.x, originalDisclosureX, accuracy: 0.5)
+					XCTAssertEqual(cell.disclosureButton.frame.minX - cell.unreadCountLabel.frame.maxX, originalGap, accuracy: 0.5, "Favorite actions must not reserve space between count and disclosure")
+					XCTAssertEqual(cell.unreadCountLabel.alpha, expanded || count == 0 ? 0 : 1)
+					XCTAssertEqual(cell.accessibilityCustomActions?.count, 2)
+					XCTAssertNotNil(cell.manageFeeds)
+					if let originalImage {
+						let favoriteImage = UIGraphicsImageRenderer(bounds: cell.bounds).image { _ in
+							cell.drawHierarchy(in: cell.bounds, afterScreenUpdates: true)
+						}
+						let pair = UIGraphicsImageRenderer(size: CGSize(width: width, height: cell.bounds.height * 2)).image { _ in
+							favoriteImage.draw(at: .zero)
+							originalImage.draw(at: CGPoint(x: 0, y: cell.bounds.height))
+						}
+						let attachment = XCTAttachment(image: pair)
+						attachment.name = "favorite-vs-original-folder-spacing"
+						attachment.lifetime = .keepAlways
+						add(attachment)
+					}
+
+					configure(originalNode)
+					XCTAssertEqual(cell.unreadCountLabel.frame.maxX, originalCountRight, accuracy: 0.5)
+					XCTAssertEqual(cell.accessibilityCustomActions?.count, 1)
+					XCTAssertNil(cell.manageFeeds)
+				}
+			}
+		}
 	}
 
 	func testCompactAndLargeTypeManagementScreens() throws {
