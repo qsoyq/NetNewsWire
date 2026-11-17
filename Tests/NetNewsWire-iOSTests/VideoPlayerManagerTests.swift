@@ -4,6 +4,61 @@ import Testing
 
 @MainActor @Suite struct VideoPlayerManagerTests {
 
+	@Test func lateNotFoundReplacesPendingRetry() {
+		#expect(VideoPlayerManager.playbackFailureAction(notFound: true, attemptResolved: true,
+			retryPending: true, isErrorLog: true) == .skipNotFound)
+	}
+
+	@Test func duplicateNotFoundDoesNotAdvanceTwice() {
+		#expect(VideoPlayerManager.playbackFailureAction(notFound: true, attemptResolved: true,
+			retryPending: false, isErrorLog: true) == .ignore)
+	}
+
+	@Test func nonFatalLogDoesNotStartRecovery() {
+		#expect(VideoPlayerManager.playbackFailureAction(notFound: false, attemptResolved: false,
+			retryPending: false, isErrorLog: true) == .ignore)
+		#expect(VideoPlayerManager.playbackFailureAction(notFound: false, attemptResolved: false,
+			retryPending: false, isErrorLog: false) == .recover)
+	}
+
+	@Test func consecutiveNotFoundAttemptsAlwaysSkipWithoutRetry() {
+		for _ in 0..<5 {
+			#expect(VideoPlayerManager.playbackFailureAction(notFound: true, attemptResolved: false,
+				retryPending: false, isErrorLog: false) == .skipNotFound)
+		}
+	}
+
+	@Test func wrappedAVFoundationNotFoundIsRecognized() {
+		let underlying = NSError(domain: NSOSStatusErrorDomain, code: -12938)
+		let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist,
+			userInfo: [NSUnderlyingErrorKey: underlying])
+		#expect(VideoPlayerManager.isNotFound(error: error, logErrors: []))
+	}
+
+	@Test func notFoundCanBeReportedOnlyInTheErrorLog() {
+		#expect(VideoPlayerManager.isNotFound(error: nil, logErrors: [("HTTP", 404)]))
+		#expect(VideoPlayerManager.isNotFound(error: nil, logErrors: [("HTTP", 404), ("HTTP", 500)]))
+	}
+
+	@Test(arguments: ["CoreMediaErrorDomain", NSOSStatusErrorDomain])
+	func mediaResourceNotFoundIsRecognized(domain: String) {
+		#expect(VideoPlayerManager.isNotFound(error: NSError(domain: domain, code: -12938), logErrors: []))
+	}
+
+	@Test(arguments: [403, 500, -1001, -1009, -1100, 404, -12938])
+	func arbitraryErrorCodesAreNotEnoughToMarkRead(code: Int) {
+		#expect(!VideoPlayerManager.isNotFound(error: NSError(domain: NSURLErrorDomain, code: code), logErrors: []))
+	}
+
+	@Test(arguments: [403, 500, -1001, -1009])
+	func otherStreamErrorsDoNotMarkRead(code: Int) {
+		#expect(!VideoPlayerManager.isNotFound(error: nil, logErrors: [("HTTP", code)]))
+	}
+
+	@Test func absentErrorEvidenceDoesNotMarkRead() {
+		#expect(!VideoPlayerManager.isNotFound(error: nil, logErrors: []))
+	}
+
 	@Test(arguments: [false, true])
 	func pipQueueExhaustionFinishesWithoutArticleNavigation(autoGotoNext: Bool) {
 		#expect(VideoPlayerManager.playbackEndAction(

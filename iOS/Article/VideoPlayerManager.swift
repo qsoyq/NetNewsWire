@@ -116,13 +116,16 @@ final class VideoPlayerManager: NSObject {
 		let replacesExistingItem = player.currentItem != nil
 
 		currentArticleID = articleID
+		playbackIndex = nil
 		if let coordinator {
 			playbackArticles = coordinator.articles
 			if let article = coordinator.articleFor(articleID) {
 				coordinator.retainArticleForVideoPlayback(article)
+				playbackIndex = playbackArticles.firstIndex {
+					$0.articleID == article.articleID && $0.accountID == article.accountID
+				}
 			}
 		}
-		playbackIndex = playbackArticles.firstIndex { $0.articleID == articleID }
 		installPlaybackItem(item)
 
 		let playerViewController = configuredPlayerViewController()
@@ -391,10 +394,23 @@ final class VideoPlayerManager: NSObject {
 		ArticleMediaLog.log(.info, operation: "Native video recovery", message: "request=\(playbackRequestID) action=suspend reason=\(reason)")
 	}
 
-	private func handlePlaybackFailure(_ item: AVPlayerItem, reason: String) {
-		guard playbackRequested, !attemptResolved, !recovery.isSuspended, canRecoverPlayback,
+	private func handlePlaybackFailure(_ item: AVPlayerItem, reason: String, error: NSError? = nil) {
+		guard playbackRequested, !recovery.isSuspended, canRecoverPlayback,
 			Self.isCurrentPlaybackItem(item, currentItem: player?.currentItem) else {
 			return
+		}
+		let logErrors = (item.errorLog()?.events ?? []).map { ($0.errorDomain, $0.errorStatusCode) }
+		let notFound = Self.isNotFound(error: error, logErrors: logErrors)
+			|| Self.isNotFound(error: item.error as NSError?, logErrors: [])
+		switch Self.playbackFailureAction(notFound: notFound, attemptResolved: attemptResolved,
+			retryPending: retryTask != nil, isErrorLog: reason == "error-log") {
+		case .skipNotFound:
+			skipNotFoundVideo()
+			return
+		case .ignore:
+			return
+		case .recover:
+			break
 		}
 		attemptResolved = true
 		if player?.rate != 0 { ignoredPauseRequestID = playbackRequestID }
@@ -437,6 +453,53 @@ final class VideoPlayerManager: NSObject {
 			self.installPlaybackItem(replacement, restoring: self.resumePosition)
 			self.requestPlayback(for: replacement)
 		}
+	}
+
+	enum PlaybackFailureAction: Equatable { case ignore, skipNotFound, recover }
+
+	static func playbackFailureAction(notFound: Bool, attemptResolved: Bool, retryPending: Bool, isErrorLog: Bool) -> PlaybackFailureAction {
+		// A late 404 can replace a pending retry, but a consumed attempt cannot advance twice.
+		guard !attemptResolved || retryPending else {
+			return .ignore
+		}
+		if notFound { return .skipNotFound }
+		// A non-fatal error-log entry alone must not start ordinary recovery.
+		return !attemptResolved && !isErrorLog ? .recover : .ignore
+	}
+
+	static func isNotFound(error: NSError?, logErrors: [(domain: String, code: Int)]) -> Bool {
+		if logErrors.contains(where: { $0.code == 404 }) { return true }
+		var underlying = error
+		var visited = Set<ObjectIdentifier>()
+		while let current = underlying, visited.insert(ObjectIdentifier(current)).inserted {
+			// AVFoundation wraps an HTTP 404 in CoreMedia's resource-not-found error.
+			if (current.domain == "CoreMediaErrorDomain" || current.domain == NSOSStatusErrorDomain),
+				current.code == -12938 { return true }
+			underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError
+		}
+		return false
+	}
+
+	private func skipNotFoundVideo() {
+		guard let coordinator, let index = playbackIndex, playbackArticles.indices.contains(index) else {
+			// Without the queue identity it is unsafe to mark the displayed article read.
+			finishPlaybackSession()
+			return
+		}
+		let article = playbackArticles[index]
+		attemptResolved = true
+		retryTask?.cancel()
+		retryTask = nil
+		pendingPlaybackArticle = nil
+		appDelegate.resumeDatabaseProcessingIfNecessary()
+		markArticles(Set([article]), statusKey: .read, flag: true)
+		ArticleMediaLog.log(.info, operation: "Native video recovery", message: "session=\(playbackSessionID) request=\(playbackRequestID) articleID=\(article.articleID) action=skip-not-found")
+		guard let next = nextArticleForPlayback(coordinator),
+			let url = Self.extractFirstVideoURL(from: next.body) else {
+			finishPlaybackSession()
+			return
+		}
+		startNextVideo(next, url: url)
 	}
 
 	private func startNextVideo(_ article: Article, url: URL) {
@@ -597,7 +660,9 @@ final class VideoPlayerManager: NSObject {
 						return
 					}
 					self.logPlaybackDiagnostics(for: item, event: event, error: error)
-					if event == "failed-to-end" { self.handlePlaybackFailure(item, reason: event) }
+					if event == "failed-to-end" || event == "error-log" {
+						self.handlePlaybackFailure(item, reason: event, error: error)
+					}
 					if event == "time-jumped" {
 						self.recovery.resetSample(now: ProcessInfo.processInfo.systemUptime, mediaTime: item.currentTime().seconds)
 						self.recovery.pause()
