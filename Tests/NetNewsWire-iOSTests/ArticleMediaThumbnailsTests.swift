@@ -33,7 +33,7 @@ import RSParser
 			return {
 			    count: document.querySelectorAll('[data-nnw-media-thumbnails] button').length,
 			    bodyUnchanged: document.querySelectorAll('.articleBody img').length === 4,
-			    noDuplicateMedia: document.querySelectorAll('[data-nnw-media-thumbnails] img,[data-nnw-media-thumbnails] video').length === 0,
+			    noDuplicateMedia: document.querySelectorAll('[data-nnw-media-thumbnails] img').length === 3 && document.querySelectorAll('[data-nnw-media-thumbnails] video').length === 0,
 			    beforeBody: document.querySelector('[data-nnw-media-thumbnails]').nextElementSibling.classList.contains('articleBody'),
 			    scriptRan: document.body.dataset.scriptRan === 'true',
 			    labels: Array.from(document.querySelectorAll('[data-nnw-media-thumbnails] button')).map(button => button.getAttribute('aria-label'))
@@ -74,9 +74,9 @@ import RSParser
 		let (webView, _) = try await makeWebView()
 		try await configure(webView)
 		_ = try await evaluate("document.querySelector('video').poster = '\(Self.image)';", in: webView)
-		try await waitForScript("return document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].style.backgroundImage.includes('data:image/svg+xml');", in: webView)
+		try await waitForScript("return document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].querySelector('img').src.includes('data:image/svg+xml');", in: webView)
 		_ = try await evaluate("document.querySelector('video').removeAttribute('poster');", in: webView)
-		try await waitForScript("return document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].style.backgroundImage === 'none';", in: webView)
+		try await waitForScript("return !document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].querySelector('img').hasAttribute('src');", in: webView)
 		_ = try await evaluate("document.querySelector('.articleBody').insertAdjacentHTML('beforeend', '<img src=https://example.test/late.jpg>');", in: webView)
 		try await waitForScript("return document.querySelectorAll('[data-nnw-media-thumbnails] button').length === 4;", in: webView)
 		try await configure(webView, enabled: false)
@@ -84,6 +84,49 @@ import RSParser
 		try await Task.sleep(for: .milliseconds(100))
 		let absent = try await evaluate("return !document.querySelector('[data-nnw-media-thumbnails]');", in: webView) as? Bool
 		XCTAssertEqual(absent, true)
+	}
+
+	func testVideoBadgeSurvivesPosterChangesAndRefreshWithoutDuplication() async throws {
+		for pageScripts in [false, true] {
+			let (webView, messages) = try await makeWebView(pageScripts: pageScripts)
+			for badgeLabel in ["Video", "视频"] {
+				_ = try await evaluate("window.nnwMediaThumbnails.configure(true, true, {media:'Media',image:'Image',video:'Play Video',videoBadge:'\(badgeLabel)'});", in: webView)
+				for poster in [Self.image, ""] {
+					if poster.isEmpty {
+						_ = try await evaluate("document.querySelector('video').removeAttribute('poster');", in: webView)
+					} else {
+						_ = try await evaluate("document.querySelector('video').poster = '\(poster)';", in: webView)
+					}
+					try await waitForScript("return document.querySelectorAll('[data-nnw-media-thumbnails] button')[1].querySelector('img').getAttribute('src') === \(poster.isEmpty ? "null" : "'\(poster)'");", in: webView)
+					let result = try await evaluate("""
+					const button = document.querySelectorAll('[data-nnw-media-thumbnails] button')[1];
+					const badge = button.querySelector('.nnw-thumbnail-play');
+					const bounds = button.getBoundingClientRect();
+					const mark = badge?.getBoundingClientRect();
+					return {
+					    count: document.querySelectorAll('.nnw-thumbnail-play').length,
+					    text: badge?.textContent, hidden: badge?.getAttribute('aria-hidden'),
+					    label: button.getAttribute('aria-label'),
+					    imageBadges: document.querySelectorAll('button:not([data-nnw-video-url]) .nnw-thumbnail-play').length,
+					    lowerLeft: !!mark && mark.left >= bounds.left && mark.left < bounds.left + 8 && mark.bottom <= bounds.bottom && mark.bottom > bounds.bottom - 8,
+					    fits: !!mark && mark.right <= bounds.right && mark.top >= bounds.top,
+					    white: badge && getComputedStyle(badge).color === 'rgb(255, 255, 255)'
+					};
+					""", in: webView) as? [String: Any]
+					XCTAssertEqual(result?["count"] as? Int, 1)
+					XCTAssertEqual(result?["text"] as? String, badgeLabel)
+					XCTAssertEqual(result?["hidden"] as? String, "true")
+					XCTAssertEqual(result?["label"] as? String, "Play Video 2")
+					XCTAssertEqual(result?["imageBadges"] as? Int, 0)
+					XCTAssertEqual(result?["lowerLeft"] as? Bool, true)
+					XCTAssertEqual(result?["fits"] as? Bool, true)
+					XCTAssertEqual(result?["white"] as? Bool, true)
+				}
+			}
+			_ = try await evaluate("document.querySelector('.nnw-thumbnail-play').click();", in: webView)
+			try await waitUntil { messages.videos.count == 1 }
+			XCTAssertEqual(messages.videos.first, "https://example.test/movie.mp4")
+		}
 	}
 
 	func testEmptyArticleAndNarrowLightDarkLayouts() async throws {
@@ -103,7 +146,7 @@ import RSParser
 			let (webView, _) = try await makeWebView()
 			webView.frame = CGRect(x: 0, y: 80, width: 375, height: 700)
 			controller.view.addSubview(webView)
-			try await configure(webView)
+			_ = try await evaluate("document.querySelector('video').poster = '\(Self.image)'; window.nnwMediaThumbnails.configure(true, true, {media:'Media',image:'Image',video:'Play Video',videoBadge:'视频'});", in: webView)
 			try await Task.sleep(for: .milliseconds(250))
 			let geometry = try await evaluate("""
 			const strip = document.querySelector('[data-nnw-media-thumbnails]');

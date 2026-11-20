@@ -189,12 +189,17 @@
             }
             [data-nnw-media-thumbnails] button:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
             [data-nnw-media-thumbnails] .nnw-thumbnail-play {
-                position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+                position:absolute!important; left:4px!important; bottom:4px!important; z-index:1;
+                display:flex!important; align-items:center; gap:4px;
+                max-width:calc(100% - 8px); box-sizing:border-box;
+                padding:3px 5px; border-radius:4px; background:rgba(0,0,0,.7);
+                color:white!important; font:600 11px/14px system-ui!important;
+                white-space:nowrap; pointer-events:none;
             }
-            [data-nnw-media-thumbnails] .nnw-thumbnail-play::after {
-                content:'▶'; display:flex; align-items:center; justify-content:center;
-                width:32px; height:32px; border-radius:50%; background:rgba(0,0,0,.6);
-                color:white; font:16px system-ui; padding-left:2px; box-sizing:border-box;
+            [data-nnw-media-thumbnails] .nnw-thumbnail-play::before {
+                content:''; flex:0 0 auto; width:0; height:0;
+                border-top:5px solid transparent; border-bottom:5px solid transparent;
+                border-left:7px solid white;
             }
         `;
         document.head.appendChild(style);
@@ -376,11 +381,15 @@
             } else if (entry.state === "idle" && preview) {
                 loadThumbnail(entry, preview);
             }
-            if (item.video && !button.firstChild) {
-                const play = document.createElement("span");
-                play.className = "nnw-thumbnail-play";
-                play.setAttribute("aria-hidden", "true");
-                button.appendChild(play);
+            if (item.video) {
+                let play = button.querySelector(".nnw-thumbnail-play");
+                if (!play) {
+                    play = document.createElement("span");
+                    play.className = "nnw-thumbnail-play";
+                    play.setAttribute("aria-hidden", "true");
+                    button.appendChild(play);
+                }
+                play.textContent = labels.videoBadge || "Video";
             }
             if (strip.children[index] !== button) strip.insertBefore(button, strip.children[index] || null);
             next.set(item.key, entry);

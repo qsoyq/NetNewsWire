@@ -461,6 +461,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "放大图片" } }
       }
     },
+    "Video" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Video" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视频" } }
+      }
+    },
     "Play Video" : {
       "extractionState" : "manual",
       "localizations" : {

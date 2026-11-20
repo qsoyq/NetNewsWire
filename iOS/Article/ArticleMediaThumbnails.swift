@@ -45,7 +45,8 @@ import RSWeb
 				"link": NSLocalizedString("Open Media Link", comment: "Link replacing a hidden linked image"),
 				"media": NSLocalizedString("Article Media", comment: "Article thumbnail strip accessibility label"),
 				"image": NSLocalizedString("Enlarge Image", comment: "Image thumbnail accessibility action"),
-				"video": NSLocalizedString("Play Video", comment: "Video thumbnail accessibility action")
+				"video": NSLocalizedString("Play Video", comment: "Video thumbnail accessibility action"),
+				"videoBadge": NSLocalizedString("Video", comment: "Video thumbnail type badge")
 			]
 		]
 	}
