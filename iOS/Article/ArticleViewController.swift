@@ -461,6 +461,11 @@ final class ArticleViewController: UIViewController {
 		currentWebViewController === controller
 	}
 
+	func endVideoAutoplayOpening() {
+		currentWebViewController?.resetNativeVideoAutoplay()
+		pendingSetViewController?.resetNativeVideoAutoplay()
+	}
+
 	@objc func showBars(_ sender: Any) {
 		currentWebViewController?.showBars()
 	}
@@ -699,6 +704,7 @@ extension ArticleViewController: UIPageViewControllerDelegate {
 		guard let article = currentWebViewController?.article else { return }
 
 		coordinator.selectArticle(article, animations: [.select, .scroll, .navigation])
+		currentWebViewController?.startNativeVideoDirectly()
 		syncArticleExtractorButtonState()
 
 		for viewController in previousViewControllers {

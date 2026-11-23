@@ -30,15 +30,23 @@ final class VideoPlayerManager: NSObject {
 	}
 	private var currentArticleID: String?
 	private var playbackArticles = [Article]()
-	nonisolated private let pictureInPictureState = OSAllocatedUnfairLock(initialState: false)
+	private var autoplaySession = VideoAutoplaySession()
+	private struct PictureInPictureState {
+		var isActive = false
+		var restorationRequested = false
+	}
+	nonisolated private let pictureInPictureState = OSAllocatedUnfairLock(initialState: PictureInPictureState())
 	private var isRestoringUserInterface = false
 
 	nonisolated var isPiPActive: Bool {
-		pictureInPictureState.withLock { $0 }
+		pictureInPictureState.withLock { $0.isActive }
 	}
 
 	nonisolated private func setPictureInPictureActive(_ active: Bool) {
-		pictureInPictureState.withLock { $0 = active }
+		pictureInPictureState.withLock {
+			$0.isActive = active
+			if active { $0.restorationRequested = false }
+		}
 	}
 
 	private var endObserver: NSObjectProtocol?
@@ -102,8 +110,14 @@ final class VideoPlayerManager: NSObject {
 
 	// MARK: - Public API
 
-	func play(url: URL, articleID: String, from presenter: UIViewController) {
+	func hasPlayback(in article: Article) -> Bool {
+		autoplaySession.contains(article)
+	}
+
+	func play(url: URL, article: Article, from presenter: UIViewController) {
 		cancelRecovery()
+		autoplaySession.begin(article)
+		let articleID = article.articleID
 		playbackSessionID = UUID()
 		playbackURL = url
 		recovery = VideoPlaybackRecovery()
@@ -119,11 +133,9 @@ final class VideoPlayerManager: NSObject {
 		playbackIndex = nil
 		if let coordinator {
 			playbackArticles = coordinator.articles
-			if let article = coordinator.articleFor(articleID) {
-				coordinator.retainArticleForVideoPlayback(article)
-				playbackIndex = playbackArticles.firstIndex {
-					$0.articleID == article.articleID && $0.accountID == article.accountID
-				}
+			coordinator.retainArticleForVideoPlayback(article)
+			playbackIndex = playbackArticles.firstIndex {
+				$0.articleID == article.articleID && $0.accountID == article.accountID
 			}
 		}
 		installPlaybackItem(item)
@@ -151,6 +163,7 @@ final class VideoPlayerManager: NSObject {
 
 	func stop() {
 		cancelRecovery()
+		autoplaySession.finish()
 		playbackSessionID = UUID()
 		pendingPlaybackArticle = nil
 		playbackIndex = nil
@@ -373,6 +386,7 @@ final class VideoPlayerManager: NSObject {
 	}
 
 	private func commitPlaybackProgress() {
+		autoplaySession.recordProgress()
 		guard let article = pendingPlaybackArticle, let coordinator else {
 			return
 		}
@@ -506,6 +520,7 @@ final class VideoPlayerManager: NSObject {
 		guard canContinuePlayback else {
 			return
 		}
+		autoplaySession.prepare(article)
 		playbackIndex = playbackArticles.firstIndex { $0.articleID == article.articleID && $0.accountID == article.accountID }
 		currentArticleID = article.articleID
 		pendingPlaybackArticle = article
@@ -788,6 +803,7 @@ final class VideoPlayerManager: NSObject {
 
 	private func finishPlaybackSession(animated: Bool = true, completion: (() -> Void)? = nil) {
 		cancelRecovery()
+		autoplaySession.finish()
 		playbackSessionID = UUID()
 		pendingPlaybackArticle = nil
 		playbackIndex = nil
@@ -831,6 +847,12 @@ final class VideoPlayerManager: NSObject {
 
 		let finish: (Bool) -> Void = { restored in
 			self.isRestoringUserInterface = false
+			if !restored {
+				self.pictureInPictureState.withLock { $0.restorationRequested = false }
+				if !self.isPiPActive, playerViewController.presentingViewController == nil {
+					self.finishPlaybackSession()
+				}
+			}
 			completionHandler(restored)
 		}
 
@@ -859,6 +881,47 @@ final class VideoPlayerManager: NSObject {
 			return
 		}
 		coordinator.selectArticle(article, animations: [.navigation, .scroll])
+	}
+}
+
+// Playback ownership includes a loading or paused item. History only includes real progress.
+struct VideoAutoplaySession {
+	private struct ArticleIdentity: Hashable {
+		let accountID: String
+		let articleID: String
+
+		init(_ article: Article) {
+			accountID = article.accountID
+			articleID = article.articleID
+		}
+	}
+
+	private var currentArticle: ArticleIdentity?
+	private var startedArticles = Set<ArticleIdentity>()
+
+	mutating func begin(_ article: Article) {
+		finish()
+		prepare(article)
+	}
+
+	mutating func prepare(_ article: Article) {
+		currentArticle = ArticleIdentity(article)
+	}
+
+	mutating func recordProgress() {
+		if let currentArticle {
+			startedArticles.insert(currentArticle)
+		}
+	}
+
+	func contains(_ article: Article) -> Bool {
+		let identity = ArticleIdentity(article)
+		return currentArticle == identity || startedArticles.contains(identity)
+	}
+
+	mutating func finish() {
+		currentArticle = nil
+		startedArticles.removeAll()
 	}
 }
 
@@ -955,9 +1018,16 @@ extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 	nonisolated func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
 		setPictureInPictureActive(false)
 		Task { @MainActor in
+			guard playerViewController === self.playerViewController else {
+				return
+			}
 			Self.logger.info("PiP stopped")
 			self.pendingVideoEnd = false
 			self.suspendRecovery(reason: "pip-stopped")
+			if !self.pictureInPictureState.withLock({ $0.restorationRequested }),
+				playerViewController.presentingViewController == nil {
+				self.finishPlaybackSession()
+			}
 			appDelegate.suspendApplicationIfNeededAfterPlayback()
 		}
 	}
@@ -974,6 +1044,8 @@ extension VideoPlayerManager: AVPlayerViewControllerDelegate {
 	}
 
 	nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping @Sendable (Bool) -> Void) {
+		// AVKit can report PiP stopping before the queued restoration task starts.
+		pictureInPictureState.withLock { $0.restorationRequested = true }
 		Task { @MainActor in
 			Self.logger.info("PiP restore requested")
 			restoreUserInterface(completionHandler: completionHandler)

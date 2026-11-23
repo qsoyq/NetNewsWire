@@ -101,7 +101,7 @@ final class WebViewController: UIViewController {
 	var translationViewportSize: CGSize { webView?.bounds.size ?? CGSize(width: 375, height: 800) }
 	private var videoDocumentGeneration = 0
 	private var nativeAutoplayPending = false
-	private var nativeAutoplayStarted = false
+	private(set) var nativeAutoplayStarted = false
 	private var videoPresentationEnabled = false
 	private let articleTranslationController = ArticleTranslationController()
 	private let videoPreviewController = VideoPreviewController()
@@ -218,7 +218,8 @@ final class WebViewController: UIViewController {
 		// Presenting the native player or entering PiP stays within this opening.
 		if presentedViewController == nil, !VideoPlayerManager.shared.isPiPActive,
 			!WebViewPiPManager.shared.isPiPActive {
-			nativeAutoplayStarted = false
+			resetNativeVideoAutoplay()
+			consumeExistingVideoPlayback()
 		}
 	}
 
@@ -300,9 +301,10 @@ final class WebViewController: UIViewController {
 		if article != self.article {
 			videoPreviewController.documentWillChange()
 			articleTranslationController.documentWillChange()
-			nativeAutoplayStarted = false
+			resetNativeVideoAutoplay()
 			invalidateImageDownload()
 			self.article = article
+			consumeExistingVideoPlayback()
 			// A restoration offset belongs only to the article it was saved for.
 			// <https://github.com/Ranchero-Software/NetNewsWire/issues/5243>
 			restoreWindowScrollY = nil
@@ -886,6 +888,9 @@ extension WebViewController: WKScriptMessageHandler {
 	}
 
 	func startNativeVideoDirectly() {
+		if consumeExistingVideoPlayback() {
+			return
+		}
 		guard !AppDefaults.shared.hideArticleBodyMedia, AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo,
 			!nativeAutoplayStarted, !nativeAutoplayPending, let articleID = article?.articleID else {
 			return
@@ -902,6 +907,9 @@ extension WebViewController: WKScriptMessageHandler {
 				return
 			}
 			self.nativeAutoplayPending = false
+			if self.consumeExistingVideoPlayback() {
+				return
+			}
 			guard self.canPresentNativeVideo, !self.nativeAutoplayStarted,
 				!AppDefaults.shared.hideArticleBodyMedia, AppDefaults.shared.useNativeVideoPlayer, AppDefaults.shared.autoplayVideo else {
 				self.logMediaEvent(.info, operation: "Native video autoplay", message: "articleID=\(articleID) outcome=ignored-late-result")
@@ -917,6 +925,21 @@ extension WebViewController: WKScriptMessageHandler {
 			}
 			self.handleNativeVideoPlay(body: source)
 		}
+	}
+
+	func resetNativeVideoAutoplay() {
+		nativeAutoplayStarted = false
+	}
+
+	@discardableResult private func consumeExistingVideoPlayback() -> Bool {
+		guard let article, coordinator?.currentArticle == article,
+			(delegate as? ArticleViewController)?.isCurrentWebViewController(self) == true,
+			VideoPlayerManager.shared.hasPlayback(in: article) else {
+			return false
+		}
+		// A hidden preload has no opening to consume; a selected page covered by PiP does.
+		nativeAutoplayStarted = true
+		return true
 	}
 
 	func resumeNativeVideoAfterPageTransition() {
@@ -952,13 +975,13 @@ extension WebViewController: WKScriptMessageHandler {
 		guard let url = URL(string: urlString) else {
 			return
 		}
-		guard let articleID = article?.articleID else {
+		guard let article else {
 			return
 		}
 		// Both direct autoplay and a queued webpage handoff share this entry point.
 		// Mark before presenting: returning from the player must not autoplay again.
 		nativeAutoplayStarted = true
-		VideoPlayerManager.shared.play(url: url, articleID: articleID, from: self)
+		VideoPlayerManager.shared.play(url: url, article: article, from: self)
 	}
 
 }

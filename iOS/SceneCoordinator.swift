@@ -2071,6 +2071,7 @@ extension SceneCoordinator: UINavigationControllerDelegate {
 		// Also skip during state restoration so we don’t clear the restored article.
 		if viewController === mainTimelineViewController && rootSplitViewController.isCollapsed && !isArticleViewControllerPending && !isRestoringState {
 			currentArticle = nil
+			articleViewController?.endVideoAutoplayOpening()
 			mainTimelineViewController?.updateArticleSelection(animations: [.scroll, .select, .navigation])
 			activityManager.invalidateReading()
 
