@@ -1,6 +1,7 @@
 import AVFoundation
 import AVKit
 import Articles
+import os
 import RSParser
 import Testing
 import UIKit
@@ -79,6 +80,55 @@ import XCTest
 			#expect(VideoPlayerManager.playbackFailureAction(notFound: true, attemptResolved: false,
 				retryPending: false, isErrorLog: false) == .skipNotFound)
 		}
+	}
+
+	@Test func failedOrErroredItemZeroRateStartsFailureHandlingInsteadOfPausing() {
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .failed, hasItemError: false, playerRate: 0, ignoredPause: false,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: false
+		) == .failPlayback)
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .unknown, hasItemError: true, playerRate: 0, ignoredPause: false,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: false
+		) == .failPlayback)
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .failed, hasItemError: true, playerRate: 0, ignoredPause: true,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: false
+		) == .ignore)
+	}
+
+	@Test func loadingItemZeroRateDoesNotClearPlaybackRequest() {
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .unknown, hasItemError: false, playerRate: 0, ignoredPause: false,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: false
+		) == .ignore)
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .readyToPlay, hasItemError: false, playerRate: 1, ignoredPause: false,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: false
+		) == .ignore)
+	}
+
+	@Test func readyOrDeferredItemZeroRatePausesOrSuspendsRecovery() {
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .readyToPlay, hasItemError: false, playerRate: 0, ignoredPause: false,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: false
+		) == .pausePlayback)
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .unknown, hasItemError: false, playerRate: 0, ignoredPause: false,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: true, audioInterrupted: false
+		) == .pausePlayback)
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .unknown, hasItemError: false, playerRate: 0, ignoredPause: false,
+			retryPending: false, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: true
+		) == .pausePlayback)
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .unknown, hasItemError: false, playerRate: 0, ignoredPause: false,
+			retryPending: true, seekingForRecovery: false, pendingVideoEnd: false, audioInterrupted: false
+		) == .suspendRecovery)
+		#expect(VideoPlayerManager.explicitZeroRateAction(
+			itemStatus: .readyToPlay, hasItemError: false, playerRate: 0, ignoredPause: false,
+			retryPending: false, seekingForRecovery: true, pendingVideoEnd: false, audioInterrupted: false
+		) == .suspendRecovery)
 	}
 
 	@Test func wrappedAVFoundationNotFoundIsRecognized() {
@@ -479,6 +529,97 @@ import XCTest
 		XCTAssertNil(root.presentedViewController)
 	}
 
+	func testPiPContinuationSkipsUnavailableVideoAndMarksItReadAfterRateReset() async throws {
+		let settings: [MediaSetting] = [.autoplayVideo, .pipAutoPlayNextVideo, .useNativeVideoPlayer,
+			.hideArticleBodyMedia, .prefetchNextArticleContent, .loadVideoFirstFramePreview]
+		let originals = settings.map { AppDefaults.shared[keyPath: $0.keyPath] }
+		let manager = VideoPlayerManager.shared
+		let fixture = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "video-preview", withExtension: "mp4"))
+		let videoData = try Data(contentsOf: fixture)
+		let server = try EphemeralNotFoundServer(videoData: videoData)
+		defer {
+			server.stop()
+			manager.stop()
+			for (setting, value) in zip(settings, originals) {
+				AppDefaults.shared[keyPath: setting.keyPath] = value
+			}
+		}
+		AppDefaults.shared.autoplayVideo = false
+		AppDefaults.shared.pipAutoPlayNextVideo = true
+		AppDefaults.shared.useNativeVideoPlayer = true
+		AppDefaults.shared.hideArticleBodyMedia = false
+		AppDefaults.shared.prefetchNextArticleContent = false
+		AppDefaults.shared.loadVideoFirstFramePreview = false
+
+		let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first)
+		let coordinator = try XCTUnwrap(scene.coordinator)
+		let account = AccountManager.shared.createAccount(type: .onMyMac)
+		let token = UUID().uuidString
+		let feed = account.createFeed(with: "PiP 404 skip test", url: "https://example.invalid/\(token)",
+			feedID: "https://example.invalid/\(token)", homePageURL: nil)
+		account.addFeedToTreeAtTopLevel(feed)
+		defer {
+			manager.stop()
+			coordinator.selectArticle(nil)
+			coordinator.navigateToTimeline()
+			coordinator.selectFeed(nil)
+			AccountManager.shared.deleteAccount(account)
+		}
+
+		let urls = [
+			server.playableURL.absoluteString,
+			server.notFoundURL.absoluteString,
+			server.playableURL.absoluteString
+		]
+		let now = Date()
+		let items = Set(urls.enumerated().map { index, videoURL in
+			ParsedItem(syncServiceID: nil, uniqueID: "\(token)-\(index)", feedURL: feed.url,
+				url: nil, externalURL: nil, title: "Video article \(index)", language: nil,
+				contentHTML: "<video src=\"\(videoURL)\" controls preload=\"none\"></video>",
+				contentText: nil, markdown: nil, summary: nil, imageURL: nil, bannerImageURL: nil,
+				datePublished: now.addingTimeInterval(Double(-index)), dateModified: nil, authors: nil, tags: nil, attachments: nil)
+		})
+		_ = await account.updateAsync(feedID: feed.feedID, parsedItems: items, deleteOlder: false)
+		await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+			coordinator.discloseFeed(feed, initialLoad: true, animations: []) { continuation.resume() }
+		}
+		try await waitUntil { coordinator.articles.count == 3 }
+		let articles = coordinator.articles
+		XCTAssertFalse(articles[1].status.read)
+		XCTAssertFalse(articles[2].status.read)
+
+		let presenter = UIViewController()
+		let window = try XCTUnwrap(scene.window)
+		window.rootViewController?.view.addSubview(presenter.view)
+		defer { presenter.view.removeFromSuperview() }
+
+		manager.play(url: fixture, article: articles[0], from: presenter)
+		let playerController = try XCTUnwrap(presenter.presentedViewController as? AVPlayerViewController)
+		let player = try XCTUnwrap(playerController.player)
+		let firstItem = try XCTUnwrap(player.currentItem)
+		try await waitUntil { !playerController.isBeingPresented && firstItem.status == .readyToPlay }
+		player.isMuted = true
+		manager.playerViewControllerWillStartPictureInPicture(playerController)
+		await withCheckedContinuation { continuation in
+			presenter.dismiss(animated: false) { continuation.resume() }
+		}
+
+		NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: firstItem)
+		try await waitUntil { player.currentItem !== firstItem && server.hasAcceptedNotFoundRequest }
+		// Simulate AVKit resetting rate to 0 with SetRateCalled while the unavailable item is still loading (.unknown).
+		player.pause()
+		await Task.yield()
+		try await Task.sleep(for: .milliseconds(25))
+		server.releaseNotFoundResponse()
+
+		try await waitUntil {
+			articles[1].status.read && manager.hasPlayback(in: articles[2])
+		}
+		XCTAssertTrue(articles[1].status.read, "Unavailable 404 article must be marked read when skipped")
+		XCTAssertFalse(manager.hasPlayback(in: articles[1]), "Skipped 404 article must not remain in playback history")
+		XCTAssertTrue(manager.hasPlayback(in: articles[2]), "PiP continuation must advance to the following video article")
+	}
+
 	private func waitUntil(_ predicate: () -> Bool) async throws {
 		for _ in 0..<400 {
 			if predicate() { return }
@@ -495,3 +636,110 @@ private func autoplayArticle(_ id: String, accountID: String = "autoplay-test") 
 		summary: nil, imageURL: nil, datePublished: nil, dateModified: nil, authors: nil,
 		status: ArticleStatus(articleID: id, read: false, dateArrived: Date()))
 }
+
+private final class EphemeralNotFoundServer: @unchecked Sendable {
+	let notFoundURL: URL
+	let playableURL: URL
+	private let listenSocket: Int32
+	private let acceptQueue = DispatchQueue(label: "EphemeralNotFoundServer")
+	private let gate = DispatchSemaphore(value: 0)
+	private struct State {
+		var acceptedNotFound = false
+		var releasedNotFound = false
+	}
+	private let state = OSAllocatedUnfairLock(initialState: State())
+
+	var hasAcceptedNotFoundRequest: Bool {
+		state.withLock { $0.acceptedNotFound }
+	}
+
+	func releaseNotFoundResponse() {
+		let shouldSignal = state.withLock { state -> Bool in
+			guard !state.releasedNotFound else {
+				return false
+			}
+			state.releasedNotFound = true
+			return true
+		}
+		if shouldSignal {
+			gate.signal()
+		}
+	}
+
+	init(videoData: Data) throws {
+		let fd = socket(AF_INET, SOCK_STREAM, 0)
+		guard fd >= 0 else {
+			throw POSIXError(.EIO)
+		}
+		var reuse: Int32 = 1
+		_ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+		var addr = sockaddr_in()
+		addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+		addr.sin_family = sa_family_t(AF_INET)
+		addr.sin_port = 0
+		addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+		let bindResult = withUnsafePointer(to: &addr) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+			}
+		}
+		guard bindResult == 0, listen(fd, 16) == 0 else {
+			close(fd)
+			throw POSIXError(.EIO)
+		}
+		var boundAddr = sockaddr_in()
+		var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+		_ = withUnsafeMutablePointer(to: &boundAddr) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				getsockname(fd, $0, &len)
+			}
+		}
+		let port = UInt16(bigEndian: boundAddr.sin_port)
+		guard let missingURL = URL(string: "http://127.0.0.1:\(port)/aweme/v1/play/?video_id=deleted"),
+			let validURL = URL(string: "http://127.0.0.1:\(port)/video-preview.mp4") else {
+			close(fd)
+			throw POSIXError(.EINVAL)
+		}
+		listenSocket = fd
+		notFoundURL = missingURL
+		playableURL = validURL
+		let state = self.state
+		let gate = self.gate
+		acceptQueue.async { [listenSocket] in
+			let notFoundResponse = Array("HTTP/1.1 404 Not Found\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8)
+			let okHeader = Array("HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: \(videoData.count)\r\nConnection: close\r\n\r\n".utf8)
+			let okBody = Array(videoData)
+			while true {
+				let client = accept(listenSocket, nil, nil)
+				guard client >= 0 else {
+					break
+				}
+				var buffer = [UInt8](repeating: 0, count: 2048)
+				let count = read(client, &buffer, buffer.count)
+				let request = count > 0 ? String(decoding: buffer.prefix(count), as: UTF8.self) : ""
+				if request.contains("/video-preview.mp4") {
+					_ = okHeader.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+					_ = okBody.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+				} else {
+					let waitOnGate = state.withLock { s -> Bool in
+						let first = !s.acceptedNotFound
+						s.acceptedNotFound = true
+						return first && !s.releasedNotFound
+					}
+					if waitOnGate {
+						_ = gate.wait(timeout: .now() + 5)
+					}
+					_ = notFoundResponse.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+				}
+				close(client)
+			}
+		}
+	}
+
+	func stop() {
+		releaseNotFoundResponse()
+		shutdown(listenSocket, SHUT_RDWR)
+		close(listenSocket)
+	}
+}
+

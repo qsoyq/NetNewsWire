@@ -295,8 +295,9 @@ final class VideoPlayerManager: NSObject {
 		ignoredPauseRequestID = nil
 		recovery.startAttempt(now: ProcessInfo.processInfo.systemUptime)
 		pendingSeekPosition = position > 0 && position.isFinite ? position : nil
-		observePlayerItemEnd(item)
+		removeEndObserver()
 		player?.replaceCurrentItem(with: item)
+		observePlayerItemEnd(item)
 		let sessionID = playbackSessionID
 		let requestID = playbackRequestID
 		recoveryTask = Task { @MainActor [weak self, weak item] in
@@ -471,6 +472,41 @@ final class VideoPlayerManager: NSObject {
 
 	enum PlaybackFailureAction: Equatable { case ignore, skipNotFound, recover }
 
+	enum ExplicitZeroRateAction: Equatable {
+		case ignore
+		case failPlayback
+		case pausePlayback
+		case suspendRecovery
+	}
+
+	static func explicitZeroRateAction(
+		itemStatus: AVPlayerItem.Status,
+		hasItemError: Bool,
+		playerRate: Float,
+		ignoredPause: Bool,
+		retryPending: Bool,
+		seekingForRecovery: Bool,
+		pendingVideoEnd: Bool,
+		audioInterrupted: Bool
+	) -> ExplicitZeroRateAction {
+		if ignoredPause {
+			return .ignore
+		}
+		if itemStatus == .failed || hasItemError {
+			return .failPlayback
+		}
+		guard playerRate == 0 else {
+			return .ignore
+		}
+		if retryPending || seekingForRecovery {
+			return .suspendRecovery
+		}
+		if itemStatus == .readyToPlay || pendingVideoEnd || audioInterrupted {
+			return .pausePlayback
+		}
+		return .ignore
+	}
+
 	static func playbackFailureAction(notFound: Bool, attemptResolved: Bool, retryPending: Bool, isErrorLog: Bool) -> PlaybackFailureAction {
 		// A late 404 can replace a pending retry, but a consumed attempt cannot advance twice.
 		guard !attemptResolved || retryPending else {
@@ -626,6 +662,10 @@ final class VideoPlayerManager: NSObject {
 					return
 				}
 				self.logPlaybackDiagnostics(for: item, event: "time-control-\(status)")
+				if item.status == .failed {
+					self.handlePlaybackFailure(item, reason: "item-failed")
+					return
+				}
 				if self.player?.timeControlStatus == .paused, item.status == .readyToPlay,
 					!self.seekingForRecovery, !self.attemptResolved {
 					self.recovery.pause()
@@ -643,15 +683,33 @@ final class VideoPlayerManager: NSObject {
 					Self.isCurrentPlaybackItem(item, currentItem: self.player?.currentItem) else {
 					return
 				}
+				self.logPlaybackDiagnostics(for: item, event: "rate-\(rate)")
 				if rate == 0 {
-					if self.ignoredPauseRequestID == requestID {
+					let ignoredPause = self.ignoredPauseRequestID == requestID
+					if ignoredPause {
 						self.ignoredPauseRequestID = nil
-					} else {
+					}
+					switch Self.explicitZeroRateAction(
+						itemStatus: item.status,
+						hasItemError: item.error != nil,
+						playerRate: self.player?.rate ?? 0,
+						ignoredPause: ignoredPause,
+						retryPending: self.retryTask != nil,
+						seekingForRecovery: self.seekingForRecovery,
+						pendingVideoEnd: self.pendingVideoEnd,
+						audioInterrupted: self.audioInterrupted
+					) {
+					case .ignore:
+						break
+					case .failPlayback:
+						self.handlePlaybackFailure(item, reason: "item-failed")
+					case .suspendRecovery:
 						self.playbackRequested = false
-						if self.retryTask != nil || self.seekingForRecovery {
-							self.attemptResolved = true
-							self.suspendRecovery(reason: "user-paused")
-						}
+						self.attemptResolved = true
+						self.suspendRecovery(reason: "user-paused")
+						self.recovery.pause()
+					case .pausePlayback:
+						self.playbackRequested = false
 						self.recovery.pause()
 					}
 				} else {
